@@ -140,7 +140,19 @@ test("the first monthly row is the current month (most recent month first)", asy
           // recent month, i.e. the current month. On the real buggy code the
           // first row is the OLDEST month, so this assertion FAILS — which is the
           // whole point of the walking skeleton (execute vs. trust-the-comment).
-          expect(label).toBe(currentMonthLabel(now));
+          //
+          // This is the ONE AND ONLY ordering assertion in the property, and it
+          // is a plain `expect().toBe()` so a genuine ordering violation surfaces
+          // as an AssertionError (the runner's VERDICT FAIL path), never as a
+          // thrown Error (which the runner classifies as EXECUTION_ERROR). The
+          // custom message spells out the rendered-vs-expected first row in words
+          // so the FAIL reads naturally regardless of which months are involved,
+          // e.g. "expected first row: Jan 2000, actual first row: Aug 1999".
+          const expected = currentMonthLabel(now);
+          expect(
+            label,
+            `expected first row: ${expected}, actual first row: ${label}`,
+          ).toBe(expected);
         } finally {
           // Clean up this iteration's DOM + timers before the next one.
           cleanup();

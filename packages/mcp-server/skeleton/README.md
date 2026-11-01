@@ -74,7 +74,13 @@ How it exercises the real component:
   month). On the real buggy code the first row is the OLDEST month, so this
   assertion FAILS — which is exactly what the walking skeleton is meant to
   expose. (Authoring the correct, runnable property is task 4.1; running it in
-  the container and observing the FAIL is task 4.3.)
+  the container and observing the FAIL is task 4.3.) The assertion is a plain
+  `expect().toBe()` (an AssertionError, not a thrown Error) with a custom
+  message that spells out the rendered-vs-expected first row in words, e.g.
+  `expected first row: Jan 2000, actual first row: Aug 1999`, so the runner
+  (task 4.2) classifies the ordering violation as VERDICT FAIL while
+  render/query failures still propagate as throws/timeouts (EXECUTION_ERROR /
+  TIMEOUT).
 
 ## The prediction
 

@@ -88,6 +88,16 @@
         "executionId": "6876215d-afea-48d7-b63e-b155af3d742b",
         "chatSessionId": "sess_89b05053-6ecf-4082-a04c-9c7efd425152",
         "timestamp": 1793518611965
+      },
+      {
+        "executionId": "3afa798c-ba02-4cf2-9aba-42712a0312dc",
+        "chatSessionId": "sess_89b05053-6ecf-4082-a04c-9c7efd425152",
+        "timestamp": 1793520052792
+      },
+      {
+        "executionId": "3afa798c-ba02-4cf2-9aba-42712a0312dc",
+        "chatSessionId": "sess_89b05053-6ecf-4082-a04c-9c7efd425152",
+        "timestamp": 1793520176850
       }
     ],
     "4.2 Build the minimal local rootless Podman runner for one property": [
@@ -105,6 +115,11 @@
         "executionId": "a5428289-e206-49a4-9b6b-1f26611483f9",
         "chatSessionId": "sess_89b05053-6ecf-4082-a04c-9c7efd425152",
         "timestamp": 1793517587278
+      },
+      {
+        "executionId": "3afa798c-ba02-4cf2-9aba-42712a0312dc",
+        "chatSessionId": "sess_89b05053-6ecf-4082-a04c-9c7efd425152",
+        "timestamp": 1793520180390
       }
     ],
     "4.3 Wire the thinnest execute path and surface the FAIL": [
@@ -122,6 +137,11 @@
         "executionId": "6876215d-afea-48d7-b63e-b155af3d742b",
         "chatSessionId": "sess_89b05053-6ecf-4082-a04c-9c7efd425152",
         "timestamp": 1793518616448
+      },
+      {
+        "executionId": "6876215d-afea-48d7-b63e-b155af3d742b",
+        "chatSessionId": "sess_89b05053-6ecf-4082-a04c-9c7efd425152",
+        "timestamp": 1793519972057
       }
     ],
     "4. Walking skeleton — execute ONE property end-to-end against writing-tracker and observe a FAIL": [
