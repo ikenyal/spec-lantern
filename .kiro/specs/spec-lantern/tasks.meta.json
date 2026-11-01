@@ -189,6 +189,49 @@
         "chatSessionId": "sess_47af5159-c04d-4767-bd9d-7da494337884",
         "timestamp": 1793563871088
       }
+    ],
+    "6.1 Validate Claims, 1:1 Claim→property mapping, and unverifiable Claims": [
+      {
+        "executionId": "4963a08f-1389-4ef4-9306-5d409da80520",
+        "chatSessionId": "sess_e6d98277-1a69-4955-83fb-bfb1c6daecf3",
+        "timestamp": 1793565014983
+      },
+      {
+        "executionId": "4963a08f-1389-4ef4-9306-5d409da80520",
+        "chatSessionId": "sess_e6d98277-1a69-4955-83fb-bfb1c6daecf3",
+        "timestamp": 1793565307647
+      }
+    ],
+    "6.2 Validate Observed_Deviations references and the empty-list case": [
+      {
+        "executionId": "4963a08f-1389-4ef4-9306-5d409da80520",
+        "chatSessionId": "sess_e6d98277-1a69-4955-83fb-bfb1c6daecf3",
+        "timestamp": 1793565312409
+      },
+      {
+        "executionId": "4963a08f-1389-4ef4-9306-5d409da80520",
+        "chatSessionId": "sess_e6d98277-1a69-4955-83fb-bfb1c6daecf3",
+        "timestamp": 1793566732783
+      }
+    ],
+    "6.3 Validate that each property test file is runnable and terminates PASS/FAIL": [
+      {
+        "executionId": "4963a08f-1389-4ef4-9306-5d409da80520",
+        "chatSessionId": "sess_e6d98277-1a69-4955-83fb-bfb1c6daecf3",
+        "timestamp": 1793566736457
+      },
+      {
+        "executionId": "4963a08f-1389-4ef4-9306-5d409da80520",
+        "chatSessionId": "sess_e6d98277-1a69-4955-83fb-bfb1c6daecf3",
+        "timestamp": 1793567246684
+      }
+    ],
+    "6. Build the artifact Validator": [
+      {
+        "executionId": "4963a08f-1389-4ef4-9306-5d409da80520",
+        "chatSessionId": "sess_e6d98277-1a69-4955-83fb-bfb1c6daecf3",
+        "timestamp": 1793567246737
+      }
     ]
   }
 }

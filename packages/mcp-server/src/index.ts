@@ -34,3 +34,29 @@ export {
   type WalkingSkeletonOutcome,
   type ExecuteWalkingSkeletonOptions,
 } from "./execute-path.js";
+
+/**
+ * The artifact Validator (task 6). It reads the on-disk spec-lantern artifacts
+ * and reports contract violations as STRUCTURED DATA (never throwing on a
+ * malformed artifact). Task 6.1 validates Claims, the 1:1 Claim→property
+ * mapping, and unverifiable Claims; task 6.2 validates Observed_Deviations'
+ * references and the empty-list case; task 6.3 extends the same module.
+ */
+export {
+  validateSpec,
+  validateClaimArtifacts,
+  validateClaims,
+  validateObservedDeviationArtifacts,
+  validateObservedDeviations,
+  validatePropertyTestFileArtifacts,
+  validatePropertyTestFiles,
+  discoverPropertyFiles,
+  combineResults,
+  makeResult,
+  type ValidationSeverity,
+  type ValidationCode,
+  type ValidationIssue,
+  type ValidationResult,
+  type DiscoveredPropertyFile,
+  type DiscoveredPropertyFileWithSource,
+} from "./validator/index.js";

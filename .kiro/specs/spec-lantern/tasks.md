@@ -60,16 +60,16 @@ Property-based tests use fast-check + Vitest, each implementing exactly one Corr
 - [x] 5. Checkpoint - Ensure the walking skeleton is green
   - Ensure all tests pass and the single-property FAIL is reproducible end-to-end, ask the user if questions arise.
 
-- [ ] 6. Build the artifact Validator
-  - [ ] 6.1 Validate Claims, 1:1 Claim→property mapping, and unverifiable Claims
+- [x] 6. Build the artifact Validator
+  - [x] 6.1 Validate Claims, 1:1 Claim→property mapping, and unverifiable Claims
     - Validate that each Claim carries non-empty `sourceFile`/`commentRef`; that every expressible Claim maps 1:1 to exactly one Correctness_Property test file; and that every unverifiable Claim carries a non-empty reason and emits no property
     - _Requirements: 1.3, 3.1, 3.6_
 
-  - [ ] 6.2 Validate Observed_Deviations references and the empty-list case
+  - [x] 6.2 Validate Observed_Deviations references and the empty-list case
     - Validate that each Observed_Deviation references a valid originating Claim and carries claimed behavior plus current behavior or an undeterminable marker; validate the empty-list case when no difference is found; validate that an undeterminable entry retains all other evaluated Claims
     - _Requirements: 2.1, 2.2, 2.3, 2.4_
 
-  - [ ] 6.3 Validate that each property test file is runnable and terminates PASS/FAIL
+  - [x] 6.3 Validate that each property test file is runnable and terminates PASS/FAIL
     - Validate that every Correctness_Property test file is runnable and terminates with exactly one of PASS or FAIL
     - _Requirements: 3.2_
 
