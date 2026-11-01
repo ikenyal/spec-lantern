@@ -1,0 +1,21 @@
+# NOTE: Never ignore /.kiro — it is required for Kiroween judging.
+
+# Secrets
+.env
+.env.*
+!.env.example
+*.pem
+
+# Dependencies / build
+node_modules/
+dist/
+build/
+.venv/
+__pycache__/
+
+# Scratch: cloned target repos for local experiments (not part of the submission)
+/sandbox/
+
+# OS / editor
+.DS_Store
+*.log
