@@ -4,11 +4,13 @@
 
 spec-lantern resurrects abandoned "vibe-coded" TypeScript/React applications by replacing *reading* with *executing*. The guiding insight, confirmed by a feasibility test, is that an agent reading source code alone will trust misleading comments and draw wrong conclusions: it predicted a "most recent month first" property would PASS because a comment said so, while an executed property-based test proved the code showed the oldest month first (FAIL). spec-lantern therefore extracts each claim into an executable Correctness_Property, records the agent's read-only Predicted_Result *before* execution, runs the property against the real code inside an Isolated_Runner, and surfaces every place the prediction disagreed with reality.
 
+This design targets a **solo build with a hard deadline of December 4, 2026**. Scope is therefore deliberately narrowed to what one person can ship and demonstrate end-to-end: the in-scope Isolated_Runner is **local rootless Podman only**, and a cloud (AWS Fargate) execution runner is deferred to Future Work. The Hosted_Demo in scope is a **static site** that serves pre-generated sample Lantern_Reports and never executes any Target_Repo code. See the MVP Milestones and Future Work sections for exactly what must work for the demo versus what is stretch scope.
+
 The product is a single pipeline delivered as three cooperating artifacts:
 
 1. **Kiro_Power** (`POWER.md` + steering) — guides Kiro through Reverse_Engineer (EARS requirements + design with Correctness Properties), separating intended from current behavior (Observed_Deviations), extracting each Claim into exactly one Correctness_Property, recording an immutable Predicted_Result, and generating Fix_Tasks for Confirmed_Bugs (the Revive step).
-2. **MCP_Server** — executes properties inside the Isolated_Runner (local rootless Podman; AWS later) across a two-phase lifecycle, renders embedded React component logic in jsdom with mocked data and a Controllable_Clock, records an Execution_Context per execution so Counterexamples replay exactly, and returns PASS/FAIL, Counterexamples, timeouts, and execution errors. It also applies fixes to a Target_Repo_Copy and re-executes to record Pre_Fix_Result / Post_Fix_Result / Property_Transition.
-3. **Lantern_Report_UI** — a web UI showing predicted vs actual per property side by side, visually flagging prediction mismatches, showing Counterexamples and Property_Transitions, plus a publicly accessible Hosted_Demo on AWS presenting sample reports.
+2. **MCP_Server** — executes properties inside the Isolated_Runner (local rootless Podman) across a two-phase lifecycle, renders embedded React component logic in jsdom with mocked data and a Controllable_Clock, records an Execution_Context per execution so Counterexamples replay exactly, and returns PASS/FAIL, Counterexamples, timeouts, and execution errors. It also applies fixes to a Target_Repo_Copy and re-executes to record Pre_Fix_Result / Post_Fix_Result / Property_Transition.
+3. **Lantern_Report_UI** — a web UI showing predicted vs actual per property side by side, visually flagging prediction mismatches, showing Counterexamples and Property_Transitions, plus a publicly accessible **static Hosted_Demo** (AWS S3 + CloudFront) presenting pre-generated sample reports as static JSON/assets. The Hosted_Demo contains no runner and never executes Target_Repo code.
 
 ### Design Principles
 
@@ -21,7 +23,7 @@ The product is a single pipeline delivered as three cooperating artifacts:
 
 ### System Context
 
-spec-lantern spans three runtime roles: the Kiro agent driven by the Kiro_Power, the MCP_Server process that owns the Isolated_Runner boundary, and the Lantern_Report_UI (local and Hosted_Demo). The Kiro_Power never touches target code directly — it always delegates execution to the MCP_Server, which is the sole owner of the sandbox boundary.
+spec-lantern spans three runtime roles: the Kiro agent driven by the Kiro_Power, the MCP_Server process that owns the Isolated_Runner boundary, and the Lantern_Report_UI (local and the static Hosted_Demo). The Kiro_Power never touches target code directly — it always delegates execution to the MCP_Server, which is the sole owner of the sandbox boundary. In MVP scope the Isolated_Runner is a local rootless Podman container; a cloud (AWS Fargate) runner is Future Work. The Hosted_Demo is a static site that serves pre-generated sample reports and performs no execution.
 
 ```mermaid
 flowchart TB
@@ -39,7 +41,7 @@ flowchart TB
         REPLAY[Counterexample Replay]
     end
 
-    subgraph Runner["Isolated_Runner (rootless Podman now / AWS later)"]
+    subgraph Runner["Isolated_Runner (local rootless Podman — MVP)"]
         DEP[Dependency_Install_Phase]
         TEST[Test_Execution_Phase]
         JSDOM[jsdom + Controllable_Clock]
@@ -49,7 +51,7 @@ flowchart TB
         CMP[Predicted vs Actual Comparison]
         LR[Lantern_Report]
         UI[Lantern_Report_UI]
-        DEMO[Hosted_Demo on AWS]
+        DEMO[Static Hosted_Demo - S3 + CloudFront - pre-generated reports, no runner]
     end
 
     RE --> EX --> PR
@@ -60,7 +62,7 @@ flowchart TB
     ORCH --> DEP --> TEST --> JSDOM
     TEST -->|Property_Execution_Result| CMP
     CMP --> LR --> UI
-    LR --> DEMO
+    LR -.->|pre-generated sample exported as static assets| DEMO
     CMP -->|Confirmed_Bug| FIX
     FIX -->|apply to Target_Repo_Copy| GATE
 ```
@@ -86,7 +88,7 @@ sequenceDiagram
     KP->>MCP: Property_Execution_Request (R5.1)
     MCP->>MCP: Safety gate - reject host execution (R12.4)
     MCP->>R: Create Isolated_Runner (R5.3)
-    R->>R: Dependency_Install_Phase (registry only) (R12.2)
+    R->>R: Dependency_Install_Phase (internal net via registry proxy, scripts off) (R12.2)
     R->>R: Test_Execution_Phase (no network) (R12.3)
     R->>R: jsdom render + Controllable_Clock (R4)
     R-->>MCP: PASS/FAIL + Counterexample + Execution_Context (R5, R6)
@@ -102,7 +104,14 @@ sequenceDiagram
 
 ### Two-Phase Execution Lifecycle
 
-The runner lifecycle is deliberately split so that the only moment network access exists is while installing dependencies, and even then only to the package registry with install/lifecycle scripts disabled. Once tests run, the network is fully closed.
+The runner lifecycle is deliberately split so that the only moment any package data can be fetched is while installing dependencies, and even then only from the package registry with install/lifecycle scripts disabled. Once tests run, the network is fully closed.
+
+Rootless Podman cannot natively allowlist outbound domains, so the "package registry only" guarantee is realized by network **topology** rather than by egress filtering. The Dependency_Install_Phase runs two containers on a dedicated **internal-only** Podman network (no direct route to the internet):
+
+- an **install container** that holds the Target_Repo working directory and runs the package manager with install/lifecycle scripts disabled (e.g. `npm install --ignore-scripts`). It has no outbound internet access; its only reachable peer is the registry proxy.
+- a **registry-proxy container** (e.g. [Verdaccio](https://verdaccio.org/)) — the single container granted outbound internet access. The install container's package manager is pointed at the proxy as its registry, so the only thing reachable from the install step is the package registry, exactly as required.
+
+The two-phase split still holds: the Test_Execution_Phase runs with no network at all, and the proxy container is torn down with the install network before tests begin.
 
 ```mermaid
 stateDiagram-v2
@@ -113,11 +122,14 @@ stateDiagram-v2
     RunnerCreate --> RunnerUnavailable: cannot create (R5.8, R12.5)
     DependencyInstall --> TestExecution: install complete (R5.4)
     note right of DependencyInstall
-        Network: package registry ONLY
-        Install/lifecycle scripts: DISABLED (R12.2)
+        Topology: internal-only Podman network
+        Install container: NO outbound internet
+        Only outbound peer: registry-proxy (Verdaccio)
+        => package registry ONLY (R12.2)
+        Install/lifecycle scripts: DISABLED (--ignore-scripts) (R12.2)
     end note
     TestExecution --> Result: PASS/FAIL + Counterexample (R5.5, R5.6)
-    TestExecution --> Timeout: > 30s (R5.7)
+    TestExecution --> Timeout: > execution timeout (default 30s, tunable) (R5.7)
     TestExecution --> ExecError: uncaught error / load failure (R5.9)
     note right of TestExecution
         Network: fully DISABLED inbound+outbound (R12.3)
@@ -135,7 +147,7 @@ stateDiagram-v2
 The MCP_Server is the single chokepoint through which any target code reaches execution. Three enforcement layers guarantee host safety:
 
 1. **Safety Gate (pre-execution).** Every Property_Execution_Request and every fix-application request passes through a gate that classifies the operation. If an operation would run a Target_Repo process, script, or build step in the host process or host shell, the gate rejects it before anything runs, reports a safety violation, and leaves the host filesystem and process state unchanged (R12.1, R12.4).
-2. **Runner boundary (during execution).** All target code executes inside the Isolated_Runner. The runner mounts only the Target_Repo (or Target_Repo_Copy) working directory and confines file reads/writes to that boundary (R12.6). Network is governed per phase (R12.2, R12.3).
+2. **Runner boundary (during execution).** All target code executes inside the Isolated_Runner (local rootless Podman). The runner mounts only the Target_Repo (or Target_Repo_Copy) working directory and confines file reads/writes to that boundary (R12.6). Network is governed per phase (R12.2, R12.3): the install phase runs on an internal-only Podman network whose sole outbound peer is a registry-proxy container, so only the package registry is reachable; the test phase runs with no network at all.
 3. **No-fallback invariant.** If the runner cannot be created or is unavailable, the MCP_Server aborts target execution, reports a runner-unavailable error, and never executes target code on the host (R5.8, R12.5). There is no code path from a runner failure to host execution.
 
 ### Technology Choices
@@ -144,9 +156,11 @@ The MCP_Server is the single chokepoint through which any target code reaches ex
 - **Component rendering:** [jsdom](https://github.com/jsdom/jsdom) via [@testing-library/react](https://testing-library.com/docs/react-testing-library/intro/) to render React components headlessly for Component_Rendered_Property evaluation (R4).
 - **Controllable clock:** fake timers (e.g. Vitest/Sinon fake timers) pinned to Fixed_Current_Time plus a fixed `TZ` so time-dependent rendering is deterministic (R4.3, R6.1).
 - **Test runner inside the sandbox:** [Vitest](https://vitest.dev/) with the jsdom environment, invoked inside the Isolated_Runner only.
-- **Local isolation:** rootless [Podman](https://podman.io/) containers with network namespaces controlled per phase (R5.3, R12.2, R12.3). Rootless avoids host root privileges.
+- **Isolation (MVP, in scope):** rootless [Podman](https://podman.io/) containers with network namespaces controlled per phase (R5.3, R12.2, R12.3). Rootless avoids host root privileges. This is the only runner implementation in MVP scope.
+- **Registry proxy (install-phase network topology):** [Verdaccio](https://verdaccio.org/) (or an equivalent caching registry proxy) runs as the single outbound-capable container on the install-phase internal-only Podman network. Because rootless Podman cannot natively allowlist outbound domains, the "package registry only" guarantee (R12.2) is realized by this topology: the install container reaches only the proxy, and the proxy reaches only the registry.
+- **Configurable limits:** the execution timeout (default 30s), report-generation limit (default 10s), and UI render limit (default 3s) are tunable configuration values, not hard-coded constants. The defaults satisfy the requirement thresholds (R5.7, R9.1, R10.2) out of the box while remaining adjustable per environment. See the configuration note under Data Models.
 - **MCP transport:** the [Model Context Protocol](https://modelcontextprotocol.io/) TypeScript SDK exposing tools the Kiro_Power calls.
-- **Cloud path (later):** AWS Fargate tasks (or Firecracker-backed CodeBuild) provide the same two-phase, network-gated isolation; the Hosted_Demo serves static sample Lantern_Reports from S3 + CloudFront.
+- **Static Hosted_Demo (in scope):** the Hosted_Demo is a static site on AWS S3 + CloudFront that serves **pre-generated** sample Lantern_Reports as static JSON/assets consumed by the same Lantern_Report_UI. It contains no runner and never executes Target_Repo code, so it satisfies Requirement 11 with no execution surface. (The AWS Fargate *execution* runner is a separate concern and is Future Work.)
 
 ## Components and Interfaces
 
@@ -160,7 +174,7 @@ Responsibilities:
 - Report unreadable or non-analyzable repos without producing a partial spec (R1.4, R1.5).
 - Build the Observed_Deviations list, one entry per claimed-vs-current difference, each referencing its originating Claim; empty list when no difference; an "undeterminable" entry when a Claim cannot be evaluated (R2).
 - Convert each Claim into exactly one Correctness_Property; record an immutable Predicted_Result before execution; mark unverifiable Claims with a reason (R3).
-- Mark embedded component logic and derive Component_Rendered_Properties (R4.1, R4.4).
+- Mark embedded component logic and derive Component_Rendered_Properties, but only for **props-driven** React components (components whose data arrives via props). If the embedded logic lives in a component that fetches its own data internally (e.g. via a Supabase client or any internal data fetch), it cannot be rendered deterministically for verification, so instead of deriving a Component_Rendered_Property the corresponding Claim is recorded as unverifiable with a reason that names the internal data dependency (R3.6). Props-driven components are rendered and verified normally (R4.1, R4.4).
 - Generate at least one Fix_Task per Confirmed_Bug and apply fixes only to the Target_Repo_Copy (R8.1, R8.2).
 
 Interface (steering-level contracts, realized as MCP tool calls and spec files):
@@ -181,19 +195,21 @@ MCP tools (contracts between Kiro_Power and the runner):
 
 `execute_properties` behavior:
 - Pass the request through the Safety Gate; reject host-bound requests with a safety violation (R12.4).
-- Create the Isolated_Runner (rootless Podman locally); on failure return a runner-unavailable execution error with no host fallback (R5.3, R5.8, R12.5).
-- Run Dependency_Install_Phase (registry-only network, scripts disabled) fully before Test_Execution_Phase (R5.4, R12.2).
-- In Test_Execution_Phase (network fully disabled), execute each property, returning exactly PASS or FAIL on normal completion; a Counterexample on FAIL; a timeout outcome after 30s with no PASS/FAIL; an execution error on uncaught error/load failure with no PASS/FAIL (R5.5–R5.9, R12.3).
+- Create the Isolated_Runner (local rootless Podman); on failure return a runner-unavailable execution error with no host fallback (R5.3, R5.8, R12.5).
+- Run Dependency_Install_Phase fully before Test_Execution_Phase. The install phase uses an internal-only Podman network whose only outbound-capable peer is a registry-proxy container, so the install container reaches only the package registry, with install/lifecycle scripts disabled (`--ignore-scripts`) (R5.4, R12.2).
+- In Test_Execution_Phase (network fully disabled), execute each property, returning exactly PASS or FAIL on normal completion; a Counterexample on FAIL; a timeout outcome after the configured execution timeout (default 30s) with no PASS/FAIL; an execution error on uncaught error/load failure with no PASS/FAIL (R5.5–R5.9, R12.3).
 - Record an Execution_Context (Random_Seed, timezone, Fixed_Current_Time) per execution and attach it to Counterexamples (R6.1, R6.2).
 
 ### Component 3: Isolated_Runner
 
-The sandboxed environment. Local implementation = rootless Podman container; AWS implementation = Fargate task with equivalent guarantees. Shared contract:
+The sandboxed environment. The **only MVP-scope implementation is a local rootless Podman container** (a cloud AWS Fargate runner is Future Work). Contract:
 
 - Mount only the target working directory; confine file access to the runner boundary (R12.6).
-- Enforce per-phase network policy via network namespace / egress rules.
+- Enforce the per-phase network policy via network topology. **Install phase:** an internal-only Podman network with no direct outbound route; the install container runs the package manager with lifecycle scripts disabled (`--ignore-scripts`) and reaches only a registry-proxy container (Verdaccio or equivalent), which is the sole container with outbound internet access. This realizes the "package registry only" guarantee without native domain allowlisting (R12.2). **Test phase:** no network namespace access at all, inbound or outbound (R12.3).
 - Host the Vitest + jsdom harness; inject mocked data and a Controllable_Clock when evaluating embedded component logic (R4.2, R4.3).
 - Seed fast-check from the recorded Random_Seed and pin `TZ` + fake timer to Fixed_Current_Time so replay is exact (R6.3).
+
+Component-rendered evaluation is **limited to React components whose data arrives via props**. A component that fetches its own data internally (e.g. through a Supabase client or any internal data fetch) is not rendered for verification; see Component 1 and the Data Models note on `component_rendered` properties for how such a Claim is recorded as unverifiable.
 
 ### Component 4: Comparison Engine (spec-lantern)
 
@@ -204,7 +220,7 @@ Pure logic that pairs predictions with actual results and builds the Lantern_Rep
 - Exclude timeouts from mismatch flagging and Confirmed_Bug classification, marking "not compared" (R7.4).
 - Mark properties with a Predicted_Result but no Actual_Result as "not executed" (R7.5).
 - Build Property_Transition from Pre_Fix_Result and Post_Fix_Result, including FAIL→FAIL ("not resolved") and PASS→FAIL ("regression") (R8.4–R8.7).
-- Produce the Lantern_Report within 10s of comparison completion, listing every evaluated property, Counterexamples for Confirmed_Bugs, Observed_Deviations, and Property_Transitions, with explicit "none found" indications (R9).
+- Produce the Lantern_Report within the configured report-generation limit (default 10s, tunable) of comparison completion, listing every evaluated property, Counterexamples for Confirmed_Bugs, Observed_Deviations, and Property_Transitions, with explicit "none found" indications (R9).
 
 ### Component 5: Lantern_Report_UI and Hosted_Demo
 
@@ -215,7 +231,9 @@ A web UI rendering a Lantern_Report.
 - Confirmed_Bug rows show the Counterexample, or an "unavailable" indication if missing (R10.4, R10.6).
 - Property_Transition rows show Pre_Fix_Result and Post_Fix_Result (R10.5).
 - A "no report exists" message when no Lantern_Report is available (R10.7).
-- The Hosted_Demo is reachable over the public internet with no local install, presents sample Lantern_Reports, and exposes the same predicted-vs-actual, Counterexample, and Property_Transition views (R11).
+- Each property row and the counterexample/transition views render within the configured UI render limit (default 3s, tunable) (R10.2).
+
+The **Hosted_Demo is a static site** (AWS S3 + CloudFront). It serves one or more **pre-generated** sample Lantern_Reports as static JSON/assets that the same Lantern_Report_UI loads client-side. It is reachable over the public internet with no local install and exposes the same predicted-vs-actual, Counterexample, and Property_Transition views (R11). Crucially, the Hosted_Demo **contains no runner and never executes Target_Repo code** — the sample reports are produced ahead of time by the local pipeline and exported as static assets. This keeps the demo entirely in scope for the solo MVP while the AWS Fargate *execution* runner remains Future Work.
 
 ## Data Models
 
@@ -251,9 +269,13 @@ interface CorrectnessProperty {
   title: string;
   statement: string;          // "for all ..." universal statement
   kind: "function" | "component_rendered";  // R4
-  embeddedComponentLogic?: {  // R4.1
+  // R4.1: component_rendered is only used for PROPS-DRIVEN components
+  // (data supplied via props). Components that fetch data internally
+  // (e.g. a Supabase client) are NOT rendered; the Claim is instead
+  // recorded as unverifiable (see Claim.unverifiable, R3.6).
+  embeddedComponentLogic?: {
     componentPath: string;
-    mockedData: unknown;
+    mockedData: unknown;   // injected via props
   };
   validatesRequirements: string[];  // e.g. ["7.1","7.2"]
 }
@@ -284,7 +306,7 @@ interface Counterexample {
 // Outcome of executing one property. Exactly one of these shapes.
 type ActualResult =
   | { propertyId: string; outcome: "VERDICT"; verdict: Verdict; counterexample?: Counterexample }
-  | { propertyId: string; outcome: "TIMEOUT"; limitSeconds: 30 }            // R5.7
+  | { propertyId: string; outcome: "TIMEOUT"; limitSeconds: number }        // R5.7 (configured execution timeout; default 30)
   | { propertyId: string; outcome: "EXECUTION_ERROR"; reason: string }     // R5.9
   | { propertyId: string; outcome: "RUNNER_UNAVAILABLE"; reason: string }  // R5.8, R12.5
   | { propertyId: string; outcome: "SAFETY_VIOLATION"; reason: string };   // R12.4
@@ -341,6 +363,27 @@ interface LanternReport {
   generatedAt: string;                     // within 10s of comparison (R9.1)
 }
 ```
+
+### Configurable Limits
+
+The three time limits are **tunable defaults**, not hard-coded constants. They are read from configuration and default to the values that satisfy the requirement thresholds, so the system is compliant out of the box while remaining adjustable per environment (slower machines, larger repos, CI budgets).
+
+```typescript
+// Tunable limits. Defaults satisfy R5.7 (<=30s), R9.1 (<=10s), R10.2 (<=3s).
+interface LimitsConfig {
+  executionTimeoutSeconds: number;   // default 30 (R5.7)
+  reportGenerationLimitSeconds: number;  // default 10 (R9.1)
+  uiRenderLimitSeconds: number;      // default 3  (R10.2)
+}
+
+const DEFAULT_LIMITS: LimitsConfig = {
+  executionTimeoutSeconds: 30,
+  reportGenerationLimitSeconds: 10,
+  uiRenderLimitSeconds: 3,
+};
+```
+
+The requirement thresholds are satisfied by these defaults; the `ActualResult` `TIMEOUT` outcome carries the limit value actually in effect (`limitSeconds`) rather than a literal constant, so a replayed or reconfigured run records the timeout it was actually subject to.
 
 ### Entity Relationships
 
@@ -407,11 +450,11 @@ These properties are organized by the pipeline layer they validate. The property
 
 **Validates: Requirements 3.4, 3.5**
 
-### Property 8: Embedded component logic yields a rendered-output property
+### Property 8: Props-driven embedded component logic yields a rendered-output property; internally-fetching components are recorded unverifiable
 
-*For any* logic that resides inside a React component and is not exported as a standalone function, it is marked as embedded component logic and the derived Correctness_Property is of kind `component_rendered` and asserts on the rendered output rather than on source.
+*For any* logic that resides inside a React component and is not exported as a standalone function, if the component is props-driven (its data arrives via props) it is marked as embedded component logic and the derived Correctness_Property is of kind `component_rendered` and asserts on the rendered output rather than on source; if instead the component fetches its own data internally (e.g. via a Supabase client or any internal data fetch) no Component_Rendered_Property is derived and the originating Claim is recorded as unverifiable with a non-empty reason.
 
-**Validates: Requirements 4.1, 4.4**
+**Validates: Requirements 4.1, 4.4, 3.6**
 
 ### Property 9: Rendering under a fixed clock is deterministic
 
@@ -553,13 +596,13 @@ These properties are organized by the pipeline layer they validate. The property
 
 ### Property 32: Timeouts terminate with no verdict
 
-*For any* Correctness_Property execution exceeding its 30-second limit, the execution is terminated and a timeout outcome is returned with no PASS or FAIL Actual_Result.
+*For any* Correctness_Property execution exceeding the configured execution timeout (default 30 seconds), the execution is terminated and a timeout outcome is returned, carrying the limit in effect, with no PASS or FAIL Actual_Result.
 
 **Validates: Requirements 5.7**
 
-### Property 33: Install-phase network policy allows only the package registry with scripts disabled
+### Property 33: Install-phase topology permits only the package registry with scripts disabled
 
-*For any* Dependency_Install_Phase, outbound network access is permitted only to the package registry and install/lifecycle scripts are disabled.
+*For any* Dependency_Install_Phase, the install container has no direct outbound internet route and its only reachable peer is the registry-proxy container, so outbound access resolves only to the package registry, and install/lifecycle scripts are disabled. (The "package registry only" guarantee is realized by the internal-only network plus proxy topology rather than by domain allowlisting.)
 
 **Validates: Requirements 12.2**
 
@@ -586,14 +629,15 @@ Errors are modeled as distinct, typed outcomes rather than as PASS/FAIL verdicts
 | Claim not expressible as a property | Claim recorded as unverifiable with a reason; no property emitted | 3.6 |
 | Claim not evaluable against current behavior | Observed_Deviation records the claim as undeterminable; other claims retained | 2.4 |
 | Kiro-side property test non-terminating | Test halted at 60s and recorded FAIL with a timeout reason | 3.3 |
-| Runner-side execution exceeds 30s | Execution terminated; `TIMEOUT` outcome returned with no verdict; excluded from comparison | 5.7, 7.4 |
+| Runner-side execution exceeds the configured execution timeout (default 30s) | Execution terminated; `TIMEOUT` outcome returned (carrying the limit in effect) with no verdict; excluded from comparison | 5.7, 7.4 |
+| Embedded logic lives in an internally-fetching component (not props-driven) | No Component_Rendered_Property derived; the Claim is recorded as unverifiable with a reason naming the internal data dependency | 3.6, 4.1 |
 | Target code uncaught error / load failure | `EXECUTION_ERROR` outcome with reason; no verdict | 5.9 |
 | Isolated_Runner cannot be created / unavailable | `RUNNER_UNAVAILABLE` outcome with reason; execution aborted; **no host fallback** | 5.8, 12.5 |
 | Request would run target code on the host | Rejected at the Safety Gate before any code runs; `SAFETY_VIOLATION` reported; host state unchanged | 12.4 |
 | Confirmed_Bug missing a Counterexample in the UI | UI shows a Counterexample-unavailable indication | 10.6 |
 | No Lantern_Report available | UI shows a "no report exists" message | 10.7 |
 
-Two safety invariants override all other error handling: (1) there is no code path from any error condition to executing target code on the host, and (2) a safety violation or runner failure must leave the host filesystem and process state unchanged.
+Two safety invariants override all other error handling: (1) there is no code path from any error condition to executing target code on the host, and (2) a safety violation or runner failure must leave the host filesystem and process state unchanged. A third install-phase invariant supports these: the install container never has a direct outbound route — its only reachable peer is the registry-proxy container — and that internal-only network (together with the proxy) is torn down before the Test_Execution_Phase begins, so no network path survives into test execution.
 
 ## Testing Strategy
 
@@ -615,8 +659,8 @@ Used where behavior does not vary meaningfully across inputs or where a precise 
 - **R1.4 / R1.5** — unreadable repo and no-analyzable-TypeScript branches: assert the specific failure report and that no partial spec is written.
 - **R3.3** — Kiro-side 60s non-termination guard, driven by a mocked timer: assert halt at 60s and FAIL-with-timeout.
 - **R3.6** — inexpressible Claim: assert the unverifiable record and reason.
-- **R9.1** — report produced within 10s of comparison completion (timed).
-- **R10.2** — UI renders all entries within 3s (timed).
+- **R9.1** — report produced within the configured report-generation limit (default 10s) of comparison completion (timed, using default limits).
+- **R10.2** — UI renders all entries within the configured UI render limit (default 3s) (timed, using default limits).
 - **R10.6** — Confirmed_Bug with no Counterexample: assert the unavailable indication.
 - **R10.7** — no Lantern_Report: assert the no-report message.
 
@@ -624,11 +668,47 @@ Used where behavior does not vary meaningfully across inputs or where a precise 
 
 Used for infrastructure and external-service wiring where input variation does not reveal logic bugs; run with 1–3 representative cases:
 
-- **R4.2** — render a representative embedded-logic component in jsdom with injected mocked data and assert the render used the injected data.
-- **R5.1 / R5.3** — a request is dispatched into the runner (not the host); the local runner is a rootless Podman container (smoke check).
+- **R4.2** — render a representative **props-driven** embedded-logic component in jsdom with mocked data injected via props and assert the render used the injected data. A separate negative case asserts an internally-fetching component is recorded as unverifiable (R3.6) rather than rendered.
+- **R5.1 / R5.3** — a request is dispatched into the runner (not the host); the local runner is a rootless Podman container (smoke check). A second smoke check brings up the install-phase internal-only network plus registry-proxy container and asserts the install container reaches the proxy but has no direct outbound internet route (R12.2).
 - **R8.3** — after fixes are applied to the Target_Repo_Copy, the same property set is re-executed against the copy inside the runner.
-- **R11.1 / R11.2 / R11.3** — the Hosted_Demo is reachable over the public internet without local install, presents sample Lantern_Reports, and exposes the predicted-vs-actual, Counterexample, and Property_Transition views (reusing the UI property tests for view parity).
+- **R11.1 / R11.2 / R11.3** — the **static** Hosted_Demo (S3 + CloudFront) is reachable over the public internet without local install, serves pre-generated sample Lantern_Reports as static assets (no runner, no Target_Repo execution), and exposes the predicted-vs-actual, Counterexample, and Property_Transition views (reusing the UI property tests for view parity).
 
 ### Safety Verification
 
 Because host safety is the product's core guarantee, the safety-gate and runner-boundary logic (Properties 28–35) are tested both as property-based tests (over generated requests and policies) and with targeted negative tests that attempt to escape the boundary and assert the host filesystem and process state remain unchanged.
+
+## MVP Milestones
+
+This is a **solo build with a hard deadline of December 4, 2026**. The reference Target_Repo for the demo is **writing-tracker**. The milestones below separate what must work for the demo from what is explicitly stretch scope, so effort stays on the end-to-end pipeline rather than breadth.
+
+### Must-have for the demo
+
+The MVP must demonstrate the full pipeline end-to-end on **writing-tracker**:
+
+- Reverse-engineer a Kiro spec (EARS requirements + design with Correctness Properties) from writing-tracker.
+- Extract Claims into Correctness_Properties with an immutable Predicted_Result recorded before execution.
+- Execute those properties in the **local rootless Podman runner** using the two-phase lifecycle: install phase on an internal-only network through the Verdaccio registry proxy (scripts disabled), then a no-network test phase.
+- Produce the **predicted-vs-actual Lantern_Report** containing at least one **Confirmed_Bug** with its **Counterexample**.
+- Show the **Revive transition (FAIL → PASS)** for at least one property, applied to the Target_Repo_Copy and re-executed.
+- Serve a **pre-generated writing-tracker Lantern_Report** from the **static Hosted_Demo** (S3 + CloudFront) with no local install and no execution surface.
+- Host-safety invariants hold throughout: no Target_Repo code runs on the host, and runner/registry-proxy failures abort with no host fallback.
+
+### Stretch (not required for the demo)
+
+- The **AWS Fargate execution runner** (see Future Work).
+- **Broader component coverage** beyond props-driven React components (e.g. deterministic rendering of internally-fetching components).
+- **Richer fix generation** for Confirmed_Bugs.
+- **Multiple target repos** beyond writing-tracker.
+
+## Future Work
+
+These items are explicitly **out of MVP scope** for the December 4, 2026 solo build and are deferred. None of them weaken the in-scope host-safety or execute-don't-trust guarantees.
+
+### AWS Fargate execution runner
+
+A cloud Isolated_Runner implemented as an AWS Fargate task (or a Firecracker-backed CodeBuild job) that provides the same two-phase, network-gated isolation as the local rootless Podman runner: a dependency-install phase whose outbound access is limited to the package registry with install/lifecycle scripts disabled, followed by a test phase with no network, with file access confined to the runner boundary. This would let executions run off the developer's machine and scale beyond a single host. It is a separate concern from the **static Hosted_Demo**, which remains in scope and never executes Target_Repo code — the Fargate runner would be an alternative *execution* backend behind the same MCP_Server contract, selectable without changing the safety gate, the comparison engine, or the report/UI layers.
+
+### Other deferred items
+
+- Broader Component_Rendered_Property coverage for components that fetch data internally (would require a deterministic data-injection strategy that does not yet exist in MVP).
+- Richer automated fix generation and multi-repo batch analysis.
