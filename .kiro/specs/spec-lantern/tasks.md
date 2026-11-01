@@ -87,8 +87,8 @@ Property-based tests use fast-check + Vitest, each implementing exactly one Corr
     - Assert the unverifiable record and reason for an inexpressible Claim; assert the validator rejects a Claim missing `sourceFile`/`commentRef`, a Claim with zero or multiple property files, and a deviation with a dangling Claim reference
     - _Requirements: 1.3, 3.1, 3.6_
 
-- [ ] 7. Build the prediction-lock MCP tool
-  - [ ] 7.1 Lock Predicted_Results before execution
+- [x] 7. Build the prediction-lock MCP tool
+  - [x] 7.1 Lock Predicted_Results before execution
     - Expose an MCP tool that computes a content hash + timestamp over each Predicted_Result and the Correctness_Property artifact it refers to, and persists a lock so the prediction cannot change once execution begins; later comparison reads the locked value
     - _Requirements: 3.4, 3.5_
 

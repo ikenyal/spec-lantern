@@ -206,6 +206,58 @@ export const PREDICTED_RESULT_SCHEMA: JsonSchemaDocument = {
 };
 
 /* -------------------------------------------------------------------------- */
+/* Prediction locks (R3.4, R3.5)                                              */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * On-disk schema for a single Prediction_Lock.
+ *
+ * R3.4/R3.5: once execution of a Correctness_Property begins, its
+ * Predicted_Result is immutable and any later comparison (task 14) must read
+ * the ORIGINALLY recorded value. A lock makes that tamper-evident on disk: it
+ * captures the exact Predicted_Result verdict together with a `contentHash`
+ * computed over the serialized Predicted_Result AND the bytes of the
+ * Correctness_Property test file it refers to, plus a `lockedAt` timestamp. If
+ * either the prediction or the property artifact is edited after the lock is
+ * written, recomputing the hash no longer matches the stored `contentHash`, so
+ * the drift is detectable and the comparison can keep using the locked verdict.
+ *
+ * `hashAlgorithm` is pinned so a reader hashes with the same algorithm the
+ * writer used; `verdict` is duplicated out of the hashed prediction so a reader
+ * has the originally recorded value directly, without re-reading (and
+ * re-trusting) the prediction file.
+ */
+export const PREDICTION_LOCK_SCHEMA: JsonSchemaDocument = {
+  $schema: JSON_SCHEMA_DIALECT,
+  $id: `${SCHEMA_ID_BASE}/prediction-lock.schema.json`,
+  title: "PredictionLock",
+  type: "object",
+  additionalProperties: false,
+  required: [
+    "propertyId",
+    "verdict",
+    "hashAlgorithm",
+    "contentHash",
+    "lockedAt",
+  ],
+  properties: {
+    // Ties the lock to the property it locks (matches the Predicted_Result).
+    propertyId: { type: "string", minLength: 1 },
+    // The originally recorded verdict, surfaced for direct reads by task 14.
+    verdict: { type: "string", enum: ["PASS", "FAIL"] },
+    // Pinned so a reader hashes with the same algorithm the writer used.
+    hashAlgorithm: { type: "string", const: "sha256" },
+    // Hex digest over (serialized Predicted_Result + Correctness_Property bytes).
+    contentHash: { type: "string", pattern: "^[0-9a-f]{64}$" },
+    // When the lock was written (execution-start boundary).
+    lockedAt: { type: "string", format: "date-time", minLength: 1 },
+  },
+};
+
+/** The hashing algorithm every Prediction_Lock uses. */
+export const PREDICTION_LOCK_HASH_ALGORITHM = "sha256" as const;
+
+/* -------------------------------------------------------------------------- */
 /* Correctness_Property executable test-file convention (R3.1, R4.1, R4.4)    */
 /* -------------------------------------------------------------------------- */
 
@@ -344,17 +396,20 @@ export function parsePropertyTag(source: string): ParsedPropertyTag | null {
  *       property-{n}.{claimId}.test.ts             // one per expressible Claim
  *     predictions/
  *       property-{n}.{claimId}.predicted.json      // PREDICTED_RESULT_SCHEMA, one per property
+ *     locks/
+ *       property-{n}.{claimId}.lock.json           // PREDICTION_LOCK_SCHEMA, one per locked property
  *
  * The 1:1 mapping is expressible AND discoverable: for a given Claim `c`, its
- * property test file and its prediction file share the same `{n}.{claimId}`
- * stem, so a tool can walk from `claims.json` to the property file to the
- * prediction without any separate index.
+ * property test file, its prediction file, and its lock file all share the same
+ * `{n}.{claimId}` stem, so a tool can walk from `claims.json` to the property
+ * file to the prediction to the lock without any separate index.
  */
 export const ARTIFACT_PATHS = {
   claimsFile: "claims.json",
   observedDeviationsFile: "observed-deviations.json",
   propertiesDir: "properties",
   predictionsDir: "predictions",
+  locksDir: "locks",
 } as const;
 
 /** Join path segments with `/` (POSIX), the on-disk layout's canonical separator. */
@@ -419,6 +474,37 @@ export function predictedResultFilePath(
   );
 }
 
+/** Canonical basename for a property's Prediction_Lock file. */
+export function predictionLockFileName(
+  propertyNumber: PropertyNumber,
+  claimId: string,
+): string {
+  if (!Number.isInteger(propertyNumber) || propertyNumber < 1) {
+    throw new Error(
+      `propertyNumber must be a positive integer, got ${String(propertyNumber)}`,
+    );
+  }
+  if (claimId.length === 0 || claimId.includes(".")) {
+    throw new Error(
+      `claimId must be non-empty and contain no '.' characters, got "${claimId}"`,
+    );
+  }
+  return `property-${propertyNumber}.${claimId}.lock.json`;
+}
+
+/** Path to a property's Prediction_Lock file. */
+export function predictionLockFilePath(
+  specRoot: string,
+  propertyNumber: PropertyNumber,
+  claimId: string,
+): string {
+  return joinPosix(
+    specRoot,
+    ARTIFACT_PATHS.locksDir,
+    predictionLockFileName(propertyNumber, claimId),
+  );
+}
+
 /**
  * The discoverable 1:1 linkage for a single Claim: its property test file and
  * its prediction file, both derivable from the Claim id + property number. A
@@ -430,6 +516,8 @@ export interface ClaimArtifactLinkage {
   propertyNumber: PropertyNumber;
   propertyTestFile: string;
   predictedResultFile: string;
+  /** Where the property's Prediction_Lock is written/read (R3.4, R3.5). */
+  predictionLockFile: string;
 }
 
 /** Resolve the on-disk linkage for a Claim under a spec root. */
@@ -447,6 +535,11 @@ export function resolveClaimLinkage(
       propertyNumber,
       claimId,
     ),
+    predictionLockFile: predictionLockFilePath(
+      specRoot,
+      propertyNumber,
+      claimId,
+    ),
   };
 }
 
@@ -457,4 +550,5 @@ export const ARTIFACT_SCHEMAS = {
   observedDeviation: OBSERVED_DEVIATION_SCHEMA,
   observedDeviations: OBSERVED_DEVIATIONS_FILE_SCHEMA,
   predictedResult: PREDICTED_RESULT_SCHEMA,
+  predictionLock: PREDICTION_LOCK_SCHEMA,
 } as const;

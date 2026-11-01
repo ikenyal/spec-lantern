@@ -60,3 +60,24 @@ export {
   type DiscoveredPropertyFile,
   type DiscoveredPropertyFileWithSource,
 } from "./validator/index.js";
+
+/**
+ * The prediction-lock tool (task 7.1). At the execution-start boundary it
+ * computes a content hash (SHA-256) + timestamp over each Predicted_Result and
+ * the Correctness_Property test file it refers to, and persists a
+ * Prediction_Lock so the prediction cannot silently change once execution
+ * begins (R3.4, R3.5). `readPredictionLock`/`readLockedVerdict` read the locked
+ * value back for the Comparison Engine (task 14), flagging any drift of the
+ * prediction or property artifact from what the lock was taken over.
+ */
+export {
+  lockPrediction,
+  readPredictionLock,
+  readLockedVerdict,
+  type LockCode,
+  type LockIssue,
+  type LockResult,
+  type LockReadResult,
+  type LockTarget,
+  type LockPredictionOptions,
+} from "./prediction-lock/index.js";

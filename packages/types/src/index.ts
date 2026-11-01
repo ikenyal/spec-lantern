@@ -74,6 +74,28 @@ export interface PredictedResult {
   immutable: true;
 }
 
+/**
+ * A tamper-evident lock over a Predicted_Result, written before execution
+ * begins so the prediction cannot silently change afterward. (R3.4, R3.5)
+ *
+ * `contentHash` is computed over the serialized Predicted_Result AND the bytes
+ * of the Correctness_Property test file it refers to; a later edit to either
+ * makes a recomputed hash disagree with `contentHash`, so drift is detectable.
+ * `verdict` is the originally recorded value, surfaced directly so comparison
+ * (R7) reads it without re-trusting the (possibly edited) prediction file.
+ */
+export interface PredictionLock {
+  propertyId: string;
+  /** The originally recorded verdict (R3.5). */
+  verdict: Verdict;
+  /** Pinned so a reader hashes with the same algorithm the writer used. */
+  hashAlgorithm: "sha256";
+  /** Hex digest over (Predicted_Result + Correctness_Property bytes). */
+  contentHash: string;
+  /** Execution-start boundary: when the prediction was locked. */
+  lockedAt: string;
+}
+
 /** Reproduction values for a single execution. (R6.1) */
 export interface ExecutionContext {
   /** fast-check seed (R6). */
