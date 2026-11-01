@@ -78,6 +78,16 @@
         "executionId": "a5428289-e206-49a4-9b6b-1f26611483f9",
         "chatSessionId": "sess_89b05053-6ecf-4082-a04c-9c7efd425152",
         "timestamp": 1793516956669
+      },
+      {
+        "executionId": "6876215d-afea-48d7-b63e-b155af3d742b",
+        "chatSessionId": "sess_89b05053-6ecf-4082-a04c-9c7efd425152",
+        "timestamp": 1793518283801
+      },
+      {
+        "executionId": "6876215d-afea-48d7-b63e-b155af3d742b",
+        "chatSessionId": "sess_89b05053-6ecf-4082-a04c-9c7efd425152",
+        "timestamp": 1793518611965
       }
     ],
     "4.2 Build the minimal local rootless Podman runner for one property": [
@@ -102,6 +112,23 @@
         "executionId": "a5428289-e206-49a4-9b6b-1f26611483f9",
         "chatSessionId": "sess_89b05053-6ecf-4082-a04c-9c7efd425152",
         "timestamp": 1793517590899
+      },
+      {
+        "executionId": "a5428289-e206-49a4-9b6b-1f26611483f9",
+        "chatSessionId": "sess_89b05053-6ecf-4082-a04c-9c7efd425152",
+        "timestamp": 1793518082490
+      },
+      {
+        "executionId": "6876215d-afea-48d7-b63e-b155af3d742b",
+        "chatSessionId": "sess_89b05053-6ecf-4082-a04c-9c7efd425152",
+        "timestamp": 1793518616448
+      }
+    ],
+    "4. Walking skeleton — execute ONE property end-to-end against writing-tracker and observe a FAIL": [
+      {
+        "executionId": "a5428289-e206-49a4-9b6b-1f26611483f9",
+        "chatSessionId": "sess_89b05053-6ecf-4082-a04c-9c7efd425152",
+        "timestamp": 1793518082570
       }
     ]
   }

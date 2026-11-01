@@ -39,7 +39,7 @@ Property-based tests use fast-check + Vitest, each implementing exactly one Corr
     - Write everything in the on-disk artifact formats from task 2.2 and delegate ALL execution to the MCP_Server tools (`execute_properties`, `apply_fixes_and_reexecute`, `replay_counterexample`) and prediction locking to the lock tool
     - _Requirements: 1.1, 1.2, 1.3, 1.4, 1.5, 2.1, 2.2, 2.3, 2.4, 3.1, 3.4, 3.6, 4.1, 4.4, 8.1, 8.2_
 
-- [ ] 4. Walking skeleton — execute ONE property end-to-end against writing-tracker and observe a FAIL
+- [x] 4. Walking skeleton — execute ONE property end-to-end against writing-tracker and observe a FAIL
   - [x] 4.1 Author the minimal walking-skeleton artifacts for the monthly-ordering claim
     - Using the formats from task 2.2 and the steering from task 3.1, hand-produce the single Claim for writing-tracker's monthly-ordering behavior (comment: "Reverse to have most recent month first"), its one Correctness_Property test file asserting most-recent-month-first, and a Predicted_Result of PASS (the read-only, comment-trusting prediction)
     - _Requirements: 1.3, 3.1, 3.4_

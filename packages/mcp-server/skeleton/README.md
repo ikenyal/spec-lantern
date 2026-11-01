@@ -41,10 +41,40 @@ actually yields OLDEST month first. The comment promises the opposite.
 ## The property
 
 `property-1.claim-monthly-order.test.ts` asserts the comment's INTENDED behavior
-— the first monthly row is the current month — against a faithful reproduction
-of the ordering algorithm. It is tagged
-`Feature: spec-lantern, Property 1: ...`, runs a minimum of 100 fast-check
-iterations, and terminates with exactly one of PASS or FAIL.
+— the first monthly row is the current month — by exercising the **REAL**
+`PeriodProgressSummary` component (it does NOT reproduce `getPeriods()` inline).
+It is tagged `Feature: spec-lantern, Property 1: ...`, runs a minimum of 100
+fast-check iterations, and terminates with exactly one of PASS or FAIL.
+
+How it exercises the real component:
+
+- **Import via the `@` alias.** `import PeriodProgressSummary from
+  "@/components/statistics/PeriodProgressSummary"`. The `@` → `./src` alias is
+  supplied by the working-copy vitest config that task 4.3 drops next to a copy
+  of writing-tracker (so `@/components/ui/*`, the `Book` service, and its
+  transitive `@/integrations/supabase/client` all resolve against the working
+  copy's own `node_modules` inside the container). The property never imports
+  from `sandbox/` directly.
+- **Render in jsdom** with `@testing-library/react` (`render` +
+  `createElement`; the file keeps its `.test.ts` stem so it uses
+  `React.createElement` instead of JSX).
+- **Generate inputs** with fast-check (≥100 runs): a plausible "now" instant
+  (year 2000–2100, month 0–11, day 1–28) and a possibly-empty `books: Book[]`
+  array passed via props.
+- **Pin the clock.** `getPeriods()` calls `new Date()` directly (host clock), so
+  each run does `vi.useFakeTimers()` + `vi.setSystemTime(now)` and sets
+  `process.env.TZ = "UTC"` so month boundaries are deterministic; timers are
+  restored after each run.
+- **Switch to Monthly and read the first row.** It clicks the "Monthly"
+  `TabsTrigger` (Radix activates the monthly `TabsContent` via `onValueChange`),
+  waits for the active tabpanel, then reads the first data row's first cell —
+  the Month-column label — using role-based queries scoped to the tabpanel.
+- **Assert the intended behavior:** the first row label equals
+  `` `${MONTH_NAMES[now.getMonth()]} ${now.getFullYear()}` `` (the current
+  month). On the real buggy code the first row is the OLDEST month, so this
+  assertion FAILS — which is exactly what the walking skeleton is meant to
+  expose. (Authoring the correct, runnable property is task 4.1; running it in
+  the container and observing the FAIL is task 4.3.)
 
 ## The prediction
 
@@ -54,17 +84,29 @@ prediction: `PASS` with a pre-execution `recordedAt` timestamp and
 PASS — tasks 4.2/4.3 run the property in the runner and observe FAIL with a
 counterexample (e.g. "now" = Jan 2000 → first row `Aug 1999`, not `Jan 2000`).
 
-## Running the property locally
+## Running the property
 
 These tests live OUTSIDE the host CI suite (the root `vitest.config.ts` only
 includes `packages/**/src/**`) because they are meant to run inside the runner
-against writing-tracker. To run the skeleton property directly (what the runner
-does inside the container):
+against writing-tracker.
 
-```sh
-cd packages/mcp-server/skeleton
-npx vitest run --root "$PWD" --config "$PWD/vitest.skeleton.config.ts"
-```
+Because the property now imports the **real** component through the `@` → `src`
+alias and renders it in **jsdom**, it can NOT be run directly against this
+skeleton directory — there is no `@` alias or jsdom environment here, and the
+real-component import (and its transitive `@/integrations/supabase/client`
+dependency) only resolves inside a copy of writing-tracker with its own
+`node_modules`. That is exactly what task 4.3 stands up: it copies
+`sandbox/writing-tracker` into a gitignored working dir, writes a vitest config
+there providing the `@` → `src` alias + the `jsdom` environment +
+`@testing-library/react` (and friends), drops this property file into the
+working copy, and runs it **inside the container**.
 
-Expected result today: FAIL with a counterexample, proving execution contradicts
-the comment-trusting PASS prediction.
+So the property is authored to be self-consistent with that plan — import via
+`@`, render in jsdom, pin the clock with Vitest fake timers + `TZ=UTC` — and the
+container (task 4.3), not the host, executes it. The host
+`vitest.skeleton.config.ts` remains only as the include-glob marker that keeps
+these files discoverable and out of host CI.
+
+Expected result when task 4.3 runs it in the container: FAIL with a
+counterexample, proving execution contradicts the comment-trusting PASS
+prediction (e.g. "now" = Jan 2000 → first row `Aug 1999`, not `Jan 2000`).

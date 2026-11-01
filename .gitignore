@@ -16,9 +16,12 @@ __pycache__/
 # Scratch: cloned target repos for local experiments (not part of the submission)
 /sandbox/
 
-# Podman runner verification fixture (repo-relative so it is visible inside the
-# macOS Podman machine, which shares /Users but not /tmp). Not part of the
-# submission — it is staged at verify time and mounted into the container.
+# Podman runner working copy of the writing-tracker Target_Repo (repo-relative
+# so it is visible inside the macOS Podman machine, which shares /Users but not
+# /tmp). Not part of the submission — the execute path copies sandbox/writing-
+# tracker here at verify time (excluding node_modules) and mounts it into the
+# container. The legacy minimal fixture dir is kept ignored for older checkouts.
+/packages/mcp-server/skeleton/.worktree/
 /packages/mcp-server/skeleton/.fixture/
 
 # OS / editor

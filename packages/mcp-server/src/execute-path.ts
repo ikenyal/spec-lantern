@@ -10,6 +10,14 @@
  *    comment-trusting         Container, rootless    prediction vs the
  *    PASS prediction)         Podman)                execution-observed FAIL)
  *
+ * Why this file was REVISED. Task 4.1's property no longer reproduces
+ * `getPeriods()` inline — it imports and RENDERS the REAL writing-tracker
+ * `PeriodProgressSummary` component (via the `@` → src alias) in jsdom, clicks
+ * the "Monthly" tab, and reads the first monthly row's label off the real DOM.
+ * A minimal `package.json` + property-file fixture therefore can no longer
+ * resolve the import. So the execute path now stands up a real, runnable copy
+ * of writing-tracker and mounts THAT.
+ *
  * What it does, minimally:
  *  1. Loads the task-4.1 Claim / property-test-file / Predicted_Result for the
  *     writing-tracker monthly-ordering claim, using `resolveClaimLinkage()`
@@ -17,15 +25,31 @@
  *     and property number (so the 1:1 Claim → property → prediction linkage is
  *     resolved from the canonical layout, not hard-coded paths).
  *  2. Reads the read-only, comment-trusting Predicted_Result (PASS).
- *  3. Dispatches the ONE property into `runPropertyInContainer` — the task-4.2
- *     rootless-Podman runner — executing it against the writing-tracker target
- *     INSIDE the container, never on the host. It reuses the repo-relative
- *     fixture-staging approach from `verify-runner.mjs` so it works on macOS
- *     (the Podman machine shares `/Users` but NOT `/tmp`, so the mounted
- *     fixture must live under the repo).
- *  4. Compares the executed `ActualResult` (expected VERDICT FAIL, oldest-month
+ *  3. Copies `sandbox/writing-tracker` (READ-ONLY source — never mutated) into a
+ *     GITIGNORED working copy UNDER THE REPO (under `/Users`, because the macOS
+ *     Podman machine shares `/Users` but NOT `/tmp`), excluding `node_modules`,
+ *     `.git` and build output so the container installs deps fresh. It drops the
+ *     task-4.1 property test file into the working copy under
+ *     `src/__spec_lantern__/` (covered by the `@` alias + the include glob) and
+ *     writes a `vitest.config.ts` INSIDE the working copy that defines the `@` →
+ *     `src` alias, sets the jsdom environment, and includes the property file.
+ *  4. Dispatches the ONE property into `runPropertyInContainer` — the task-4.2
+ *     rootless-Podman runner — mounting ONLY the working copy and executing the
+ *     property against the REAL component INSIDE the container, never on the
+ *     host.
+ *  5. Compares the executed `ActualResult` (expected VERDICT FAIL, oldest-month
  *     first, with its Counterexample) against the PASS prediction and SURFACES
  *     the contradiction.
+ *
+ * Supabase dependency note. The real component imports `Book` from
+ * `../../services/bookService`, which imports `@/integrations/supabase/client`.
+ * That `Book` import is TYPE-ONLY, so esbuild/Vite elides it and the supabase
+ * module graph is never pulled in at runtime — the real `getPeriods()` runs
+ * without any backend. As belt-and-suspenders (and so the slice stays robust if
+ * a future edit turns that into a value import), the working-copy vitest config
+ * also aliases `@/integrations/supabase/client` to a tiny inert stub. This
+ * mocks ONLY the unrelated backend dependency, never the component under test or
+ * its ordering logic.
  *
  * Scope: this is the THIN skeleton wiring, not the full pipeline. Prediction
  * locking (task 7), the Safety Gate (task 8), the two-phase network topology
@@ -65,6 +89,9 @@ const SKELETON_PROPERTY_ID = `property-${SKELETON_PROPERTY_NUMBER}.${SKELETON_CL
 
 const here = dirname(fileURLToPath(import.meta.url));
 
+/** The repo root, resolved from the compiled module (dist/) location. */
+const REPO_ROOT = resolve(here, "..", "..", "..");
+
 /**
  * Default spec root holding the task-4.1 artifacts:
  *   packages/mcp-server/skeleton/writing-tracker-monthly-order/
@@ -78,8 +105,25 @@ const DEFAULT_SPEC_ROOT = resolve(
   "writing-tracker-monthly-order",
 );
 
-/** Default home for the repo-relative staged fixture (gitignored). */
-const DEFAULT_FIXTURE_DIR = resolve(here, "..", "skeleton", ".fixture");
+/**
+ * The READ-ONLY source Target_Repo. Never written to — we only copy OUT of it.
+ */
+const DEFAULT_TARGET_SOURCE = resolve(REPO_ROOT, "sandbox", "writing-tracker");
+
+/**
+ * Default home for the repo-relative working copy (gitignored). It MUST live
+ * under the repo (under `/Users` on macOS) so it is visible inside the Podman
+ * machine, which shares `/Users` but NOT `/tmp`.
+ */
+const DEFAULT_WORKTREE_DIR = resolve(here, "..", "skeleton", ".worktree");
+
+/**
+ * Where the property test file lands inside the working copy. Under `src/` so
+ * the `@` → `src` alias and the include glob both cover it, and so its own
+ * `@/...` imports resolve exactly like the component's.
+ */
+const WORKTREE_PROPERTY_REL =
+  "src/__spec_lantern__/property-1.claim-monthly-order.test.ts";
 
 /* -------------------------------------------------------------------------- */
 /* Result shape surfaced to callers                                           */
@@ -124,17 +168,24 @@ export interface ExecuteWalkingSkeletonOptions {
   /** Spec root holding the task-4.1 artifacts. Defaults to the skeleton dir. */
   specRoot?: string;
   /**
-   * Where to stage the repo-relative fixture the container mounts. MUST live
-   * under the repo (under `/Users` on macOS). Defaults to
-   * `packages/mcp-server/skeleton/.fixture`.
+   * READ-ONLY source Target_Repo to copy from. Defaults to
+   * `sandbox/writing-tracker`. This directory is never modified.
    */
-  fixtureDir?: string;
+  targetSource?: string;
+  /**
+   * Where to create the repo-relative WORKING COPY the container mounts. MUST
+   * live under the repo (under `/Users` on macOS). Defaults to
+   * `packages/mcp-server/skeleton/.worktree`.
+   */
+  worktreeDir?: string;
   /**
    * Per-run execution timeout in seconds handed to the runner. Generous by
    * default because the first container run pulls the image and installs the
-   * toolchain.
+   * target's full dependency tree (React + Radix + the test toolchain).
    */
   timeoutSeconds?: number;
+  /** Keep the working copy on disk after the run (for debugging). */
+  keepWorktree?: boolean;
   /** Optional sink for progress lines (defaults to no-op). */
   log?: (message: string) => void;
 }
@@ -170,16 +221,147 @@ async function loadPrediction(specRoot: string): Promise<PredictedResult> {
   return parsed;
 }
 
+/* -------------------------------------------------------------------------- */
+/* Working-copy preparation (sandbox → gitignored copy under the repo)        */
+/* -------------------------------------------------------------------------- */
+
 /**
- * Stage the self-contained, repo-relative fixture the container mounts, exactly
- * as `verify-runner.mjs` does: a minimal `package.json` plus the single task-4.1
- * property test file, under `fixtureDir` (which lives under the repo so it is
- * visible in the macOS Podman VM). Returns the in-fixture relative path to the
- * property test file.
+ * The vitest config written INSIDE the working copy. It is what makes the REAL
+ * component render:
+ *  - `@` → `<workingCopy>/src` matches the target's vite.config.ts / tsconfig
+ *    `paths`, so `@/components/ui/*`, the `Book` service, etc. resolve against
+ *    the working copy's own `node_modules` (installed fresh in the container);
+ *  - `environment: "jsdom"` so `@testing-library/react` can render + query;
+ *  - `include` points at exactly the dropped property file;
+ *  - `globals: true` is harmless and keeps role queries / matchers working;
+ *  - a `setupFiles` entry (see {@link WORKTREE_SETUP}) wires two interaction
+ *    PLUMBING shims the real-DOM render needs (never touching the property's
+ *    assertion): a `jest`-style fake-timer shim so `waitFor` cooperates with the
+ *    property's `vi.useFakeTimers()`, and a `fireEvent.click` wrapper that emits
+ *    the pointerdown/mousedown Radix Tabs requires to switch tabs;
+ *  - the `@/integrations/supabase/client` alias points at an inert local stub so
+ *    the component's module graph loads without a live backend. This mocks only
+ *    the unrelated backend dependency — NOT the component under test or its
+ *    ordering logic (the property still renders the real component and the FAIL
+ *    comes from the real `getPeriods()`/`reverse()` bug).
+ *
+ * Note: this is emitted as a string so it can be written verbatim into the
+ * working copy and picked up by the in-container Vitest (which auto-detects
+ * `vitest.config.ts` and prefers it over the target's `vite.config.ts`).
  */
-async function stageFixture(
+const WORKTREE_VITEST_CONFIG = `import { defineConfig } from "vitest/config";
+import { fileURLToPath } from "node:url";
+import { dirname, resolve } from "node:path";
+
+// Resolve paths relative to this config file so the working copy is relocatable.
+const rootDir = dirname(fileURLToPath(import.meta.url));
+const srcDir = resolve(rootDir, "src");
+
+// Vitest config dropped into the writing-tracker WORKING COPY by the
+// spec-lantern execute path (task 4.3). It renders the REAL
+// PeriodProgressSummary component against the task-4.1 property.
+export default defineConfig({
+  resolve: {
+    alias: [
+      // Inert stub for the unrelated Supabase backend dependency so the
+      // component's module graph loads without a live backend. This does NOT
+      // mock the component under test. (The Book import is type-only and is
+      // normally elided anyway; this is belt-and-suspenders.)
+      {
+        find: /^@\\/integrations\\/supabase\\/client$/,
+        replacement: resolve(srcDir, "__spec_lantern__/supabase-stub.ts"),
+      },
+      // The project's own "@" -> src alias (must come AFTER the more specific
+      // supabase alias so the specific rule wins).
+      { find: /^@\\//, replacement: srcDir + "/" },
+    ],
+  },
+  test: {
+    environment: "jsdom",
+    globals: true,
+    setupFiles: ["src/__spec_lantern__/setup.ts"],
+    include: ["src/__spec_lantern__/**/*.test.ts"],
+    exclude: ["**/node_modules/**", "**/dist/**"],
+    // The first container run installs React + Radix + the test toolchain; give
+    // the single property generous headroom for its >=100 fast-check runs.
+    testTimeout: 120000,
+    hookTimeout: 120000,
+  },
+});
+`;
+
+/**
+ * Setup file written INSIDE the working copy, wired via `setupFiles`. It patches
+ * two interaction-PLUMBING gaps that only appear when rendering the REAL
+ * component in jsdom. It never touches any property's assertion:
+ *
+ *  1. `waitFor` + fake timers. @testing-library's `waitFor` polls on real timers
+ *     unless it detects a jest-style fake-timer global; the authored property
+ *     pins the clock with `vi.useFakeTimers()`, which would otherwise freeze
+ *     `waitFor`'s polling and hang the test. A minimal `jest` shim proxying
+ *     `advanceTimersByTime` to `vi` lets `waitFor` drive the fake clock forward.
+ *
+ *  2. Radix Tabs activation. Radix UI Tabs switch on pointerdown/mousedown, not
+ *     a bare synthetic `click`. The authored property uses `fireEvent.click` to
+ *     select the "Monthly" tab; without the pointer events the tab never
+ *     switches in jsdom. The shim makes `fireEvent.click` first dispatch the
+ *     pointerdown/mousedown Radix listens for, exactly as a real pointer click
+ *     (or `@testing-library/user-event`) would.
+ */
+const WORKTREE_SETUP = `import { vi } from "vitest";
+import { fireEvent } from "@testing-library/react";
+
+// (1) Make waitFor cooperate with Vitest fake timers.
+(globalThis as unknown as { jest: unknown }).jest = {
+  advanceTimersByTime: (ms: number) => vi.advanceTimersByTime(ms),
+};
+
+// (2) Radix Tabs activate on pointerdown/mousedown, not a bare click.
+const originalClick = fireEvent.click.bind(fireEvent);
+fireEvent.click = ((element: Element | Node | Document | Window, init?: object) => {
+  if (element instanceof Element) {
+    fireEvent.pointerDown(element, init as never);
+    fireEvent.mouseDown(element, init as never);
+  }
+  return originalClick(element as never, init as never);
+}) as typeof fireEvent.click;
+`;
+
+/**
+ * The inert Supabase client stub. Only has to satisfy the module graph if the
+ * `Book` import ever becomes a value import; it never talks to a backend.
+ */
+const WORKTREE_SUPABASE_STUB = `// Inert Supabase client stub injected by the spec-lantern execute path
+// (task 4.3). The real component only uses the backend's \`Book\` TYPE, so this
+// is never actually called at runtime — it exists so the module graph resolves
+// without a live backend. It does NOT alter the component's ordering logic.
+export const supabase = new Proxy(
+  {},
+  {
+    get() {
+      throw new Error(
+        "spec-lantern stub: the Supabase backend is not available inside the " +
+          "Isolated_Runner (the monthly-ordering property does not need it).",
+      );
+    },
+  },
+);
+`;
+
+/**
+ * Copy the READ-ONLY writing-tracker source into a gitignored working copy under
+ * the repo, excluding `node_modules`/`.git`/build output (the container installs
+ * deps fresh), then drop the task-4.1 property file and the working-copy vitest
+ * config into it. Returns the property file path RELATIVE to the working copy
+ * (the runner treats a relative `propertyTestFile` as in-mount, so the file runs
+ * in place from within the single mounted dir).
+ *
+ * sandbox/ is treated as immutable: we only ever read from it.
+ */
+async function prepareWorkingCopy(
   specRoot: string,
-  fixtureDir: string,
+  targetSource: string,
+  worktreeDir: string,
 ): Promise<{ propertyTestFile: string }> {
   const linkage = resolveClaimLinkage(
     specRoot,
@@ -187,32 +369,41 @@ async function stageFixture(
     SKELETON_PROPERTY_NUMBER,
   );
 
-  // Fresh fixture every run — NEVER under /tmp (invisible in the macOS VM).
-  await rm(fixtureDir, { recursive: true, force: true });
-  await mkdir(join(fixtureDir, "properties"), { recursive: true });
+  // Fresh working copy every run — NEVER under /tmp (invisible in the macOS VM).
+  await rm(worktreeDir, { recursive: true, force: true });
+  await mkdir(worktreeDir, { recursive: true });
 
-  // Minimal package.json so the container's npm install resolves the test
-  // toolchain the runner adds (vitest + fast-check). The skeleton property
-  // reproduces the ordering algorithm inline (task 4.1) so no target deps are
-  // required.
-  await writeFile(
-    join(fixtureDir, "package.json"),
-    JSON.stringify(
-      {
-        name: "spec-lantern-runner-fixture",
-        private: true,
-        version: "0.0.0",
-        type: "module",
-      },
-      null,
-      2,
-    ) + "\n",
-  );
+  // Copy sandbox/writing-tracker → working copy, excluding the heavy/irrelevant
+  // dirs. node_modules is intentionally excluded so the container installs a
+  // clean tree; copying it would be huge and slow. .git and build output are
+  // irrelevant to the run.
+  const excluded = new Set(["node_modules", ".git", "dist", "build"]);
+  await cp(targetSource, worktreeDir, {
+    recursive: true,
+    filter: (source) => {
+      // `source` is an absolute path inside targetSource; exclude a path if any
+      // of its segments (relative to the source root) is in the excluded set.
+      const relToSource = source.slice(targetSource.length).replace(/^[/\\]/, "");
+      if (relToSource === "") return true;
+      const segments = relToSource.split(/[/\\]/);
+      return !segments.some((segment) => excluded.has(segment));
+    },
+  });
 
-  const propertyTestFile = "properties/property-1.claim-monthly-order.test.ts";
-  await cp(linkage.propertyTestFile, join(fixtureDir, propertyTestFile));
+  // Drop the inert supabase stub + the task-4.1 property file into the working
+  // copy under src/__spec_lantern__/ (covered by the "@" alias + include glob).
+  const injectedDir = join(worktreeDir, "src", "__spec_lantern__");
+  await mkdir(injectedDir, { recursive: true });
+  await writeFile(join(injectedDir, "supabase-stub.ts"), WORKTREE_SUPABASE_STUB);
+  await writeFile(join(injectedDir, "setup.ts"), WORKTREE_SETUP);
+  await cp(linkage.propertyTestFile, join(worktreeDir, WORKTREE_PROPERTY_REL));
 
-  return { propertyTestFile };
+  // Write the working-copy vitest config at the working-copy root. Vitest
+  // auto-detects `vitest.config.ts` and prefers it over the target's
+  // `vite.config.ts` (which imports dev-only plugins we don't want in-container).
+  await writeFile(join(worktreeDir, "vitest.config.ts"), WORKTREE_VITEST_CONFIG);
+
+  return { propertyTestFile: WORKTREE_PROPERTY_REL };
 }
 
 /* -------------------------------------------------------------------------- */
@@ -222,9 +413,10 @@ async function stageFixture(
 /**
  * Run the thinnest execute path end-to-end and surface the contradiction.
  *
- * Loads the task-4.1 artifacts, reads the PASS prediction, dispatches the ONE
- * property into the task-4.2 rootless-Podman runner (executing against the
- * writing-tracker ordering logic INSIDE the container), then compares the
+ * Loads the task-4.1 artifacts, reads the PASS prediction, copies the REAL
+ * writing-tracker into a gitignored working copy, dispatches the ONE property
+ * into the task-4.2 rootless-Podman runner (rendering the REAL
+ * PeriodProgressSummary component INSIDE the container), then compares the
  * executed `ActualResult` against the prediction and reports the mismatch.
  *
  * This never runs target code on the host: all execution happens via
@@ -235,8 +427,9 @@ export async function executeWalkingSkeleton(
   options: ExecuteWalkingSkeletonOptions = {},
 ): Promise<WalkingSkeletonOutcome> {
   const specRoot = options.specRoot ?? DEFAULT_SPEC_ROOT;
-  const fixtureDir = options.fixtureDir ?? DEFAULT_FIXTURE_DIR;
-  const timeoutSeconds = options.timeoutSeconds ?? 300;
+  const targetSource = options.targetSource ?? DEFAULT_TARGET_SOURCE;
+  const worktreeDir = options.worktreeDir ?? DEFAULT_WORKTREE_DIR;
+  const timeoutSeconds = options.timeoutSeconds ?? 600;
   const log = options.log ?? (() => undefined);
 
   // 1. Load the comment-trusting prediction (read-only, pre-execution).
@@ -245,17 +438,25 @@ export async function executeWalkingSkeleton(
   log(`Comment-trusting Predicted_Result: ${predicted.verdict}`);
 
   try {
-    // 2. Stage the repo-relative fixture the container will mount (macOS-safe).
-    log(`Staging repo-relative fixture at ${fixtureDir}`);
-    const { propertyTestFile } = await stageFixture(specRoot, fixtureDir);
+    // 2. Copy sandbox/writing-tracker → gitignored working copy (macOS-safe),
+    //    excluding node_modules; drop the property + vitest config into it.
+    log(
+      `Copying read-only target ${targetSource} → working copy ${worktreeDir} ` +
+        `(excluding node_modules/.git/build)`,
+    );
+    const { propertyTestFile } = await prepareWorkingCopy(
+      specRoot,
+      targetSource,
+      worktreeDir,
+    );
 
-    // 3. Dispatch the ONE property into the task-4.2 runner. Execution happens
-    //    INSIDE the rootless Podman container against the fixture mount, never
-    //    on the host.
+    // 3. Dispatch the ONE property into the task-4.2 runner. ONLY the working
+    //    copy is mounted; install + render of the REAL component happen INSIDE
+    //    the rootless Podman container, never on the host.
     log("Dispatching the property into the rootless Podman runner…");
     const actual = await runPropertyInContainer({
       propertyId: SKELETON_PROPERTY_ID,
-      targetRepoPath: fixtureDir,
+      targetRepoPath: worktreeDir,
       propertyTestFile,
       timeoutSeconds,
     });
@@ -264,10 +465,13 @@ export async function executeWalkingSkeleton(
     // 4. Compare the executed result against the prediction and surface it.
     return surfaceOutcome(predicted, actual);
   } finally {
-    // 5. Clean up the staged fixture so nothing leaks between runs.
-    await rm(fixtureDir, { recursive: true, force: true }).catch(
-      () => undefined,
-    );
+    // 5. Clean up the working copy so nothing leaks between runs (unless the
+    //    caller asked to keep it for debugging).
+    if (!options.keepWorktree) {
+      await rm(worktreeDir, { recursive: true, force: true }).catch(
+        () => undefined,
+      );
+    }
   }
 }
 

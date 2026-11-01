@@ -7,16 +7,22 @@
  *   1. loads the task-4.1 Claim / property test file / comment-trusting PASS
  *      Predicted_Result for the writing-tracker monthly-ordering claim (via
  *      `resolveClaimLinkage` in @spec-lantern/types),
- *   2. stages a self-contained, repo-relative fixture (NEVER /tmp — the macOS
- *      Podman machine shares /Users but not /tmp) and mounts ONLY that dir,
+ *   2. copies sandbox/writing-tracker (READ-ONLY source) into a GITIGNORED
+ *      working copy under the repo (NEVER /tmp — the macOS Podman machine shares
+ *      /Users but not /tmp), excluding node_modules, drops the task-4.1 property
+ *      file + a vitest config (@ -> src alias + jsdom) into it, and mounts ONLY
+ *      that working copy,
  *   3. dispatches the ONE property into the task-4.2 rootless-Podman runner,
- *      executing it INSIDE the container (never the host), and
+ *      rendering the REAL PeriodProgressSummary component INSIDE the container
+ *      (never the host), and
  *   4. surfaces the executed ActualResult next to the PASS prediction and makes
  *      the contradiction explicit.
  *
- * Expected result: VERDICT FAIL with a Counterexample (the code reverses an
- * already-most-recent-first array, so the first row is the OLDEST month, not
- * the current month), contradicting the comment-trusting PASS prediction.
+ * Expected result: VERDICT FAIL with a Counterexample (the real component builds
+ * the 6 months already most-recent-first then calls `.reverse()`, so the first
+ * monthly row is the OLDEST month, not the current month — e.g. now = Jan 2000
+ * yields first row "Aug 1999"), contradicting the comment-trusting PASS
+ * prediction.
  *
  * Exit status: non-zero unless the prediction was contradicted by an executed
  * verdict, so this doubles as a smoke check of the skeleton.

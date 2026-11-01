@@ -4,7 +4,16 @@ import tsparser from "@typescript-eslint/parser";
 
 export default [
   {
-    ignores: ["**/dist/**", "**/node_modules/**", "sandbox/**"],
+    // Ignore build output, deps, the read-only sandbox target repos, and the
+    // gitignored writing-tracker working copy / legacy fixture the Podman
+    // execute path (task 4.3) stages and mounts into the container.
+    ignores: [
+      "**/dist/**",
+      "**/node_modules/**",
+      "sandbox/**",
+      "packages/mcp-server/skeleton/.worktree/**",
+      "packages/mcp-server/skeleton/.fixture/**",
+    ],
   },
   js.configs.recommended,
   {
