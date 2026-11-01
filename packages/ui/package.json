@@ -1,0 +1,17 @@
+{
+  "name": "@spec-lantern/ui",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "scripts": {
+    "build": "tsc --build",
+    "clean": "rm -rf dist tsconfig.tsbuildinfo"
+  },
+  "dependencies": {
+    "@spec-lantern/types": "*",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  }
+}

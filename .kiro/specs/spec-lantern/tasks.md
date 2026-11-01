@@ -14,7 +14,7 @@ Property-based tests use fast-check + Vitest, each implementing exactly one Corr
 
 ## Tasks
 
-- [ ] 1. Set up project structure, shared types, and testing framework
+- [x] 1. Set up project structure, shared types, and testing framework
   - Create the TypeScript monorepo/package layout for the three deliverables (`kiro-power/`, `mcp-server/`, `ui/`) with a shared `types` module
   - Configure Vitest (jsdom environment available) and install fast-check, @testing-library/react, jsdom
   - Set up lint/build/test scripts; add a Vitest config that enforces a minimum of 100 iterations for fast-check runs

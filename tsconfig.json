@@ -1,0 +1,9 @@
+{
+  "files": [],
+  "references": [
+    { "path": "./packages/types" },
+    { "path": "./packages/kiro-power" },
+    { "path": "./packages/mcp-server" },
+    { "path": "./packages/ui" }
+  ]
+}
