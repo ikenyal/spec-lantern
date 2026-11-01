@@ -57,7 +57,7 @@ Property-based tests use fast-check + Vitest, each implementing exactly one Corr
     - Assert the one property executes inside the runner (not the host) and yields FAIL with a Counterexample for the writing-tracker monthly-ordering claim
     - _Requirements: 5.1, 5.6, 12.1_
 
-- [ ] 5. Checkpoint - Ensure the walking skeleton is green
+- [x] 5. Checkpoint - Ensure the walking skeleton is green
   - Ensure all tests pass and the single-property FAIL is reproducible end-to-end, ask the user if questions arise.
 
 - [ ] 6. Build the artifact Validator
