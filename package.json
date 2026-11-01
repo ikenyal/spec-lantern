@@ -15,6 +15,7 @@
     "build": "npm run build --workspaces --if-present",
     "lint": "eslint .",
     "test": "vitest run",
+    "test:smoke": "SPEC_LANTERN_SMOKE=1 vitest run packages/mcp-server/src/execute-path.test.ts",
     "test:watch": "vitest",
     "typecheck": "tsc --build"
   },

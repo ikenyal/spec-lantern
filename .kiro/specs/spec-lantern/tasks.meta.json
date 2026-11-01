@@ -165,6 +165,18 @@
         "chatSessionId": "sess_89b05053-6ecf-4082-a04c-9c7efd425152",
         "timestamp": 1793518082570
       }
+    ],
+    "4.4 Write a walking-skeleton smoke test for the single-property FAIL": [
+      {
+        "executionId": "1f428970-8e2b-40b7-9447-9acd351354ae",
+        "chatSessionId": "sess_b0e64233-8561-4cf8-bb07-3b85142b8f54",
+        "timestamp": 1793562430664
+      },
+      {
+        "executionId": "251214e0-f913-4339-8180-ad003f9841b9",
+        "chatSessionId": "sess_b0e64233-8561-4cf8-bb07-3b85142b8f54",
+        "timestamp": 1793563342108
+      }
     ]
   }
 }

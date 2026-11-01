@@ -53,7 +53,7 @@ Property-based tests use fast-check + Vitest, each implementing exactly one Corr
     - Connect skeleton artifact (4.1) → minimal runner (4.2): dispatch the one property into the runner, execute it against writing-tracker, and surface the resulting FAIL (oldest-month-first) with its Counterexample, proving execution contradicts the comment-trusting PASS prediction
     - _Requirements: 5.1, 5.5, 5.6_
 
-  - [ ]* 4.4 Write a walking-skeleton smoke test for the single-property FAIL
+  - [x] 4.4 Write a walking-skeleton smoke test for the single-property FAIL
     - Assert the one property executes inside the runner (not the host) and yields FAIL with a Counterexample for the writing-tracker monthly-ordering claim
     - _Requirements: 5.1, 5.6, 12.1_
 
