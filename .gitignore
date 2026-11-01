@@ -16,6 +16,11 @@ __pycache__/
 # Scratch: cloned target repos for local experiments (not part of the submission)
 /sandbox/
 
+# Podman runner verification fixture (repo-relative so it is visible inside the
+# macOS Podman machine, which shares /Users but not /tmp). Not part of the
+# submission — it is staged at verify time and mounted into the container.
+/packages/mcp-server/skeleton/.fixture/
+
 # OS / editor
 .DS_Store
 *.log

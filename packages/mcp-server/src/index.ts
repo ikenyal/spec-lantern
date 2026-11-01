@@ -10,3 +10,27 @@
 import { SPEC_LANTERN } from "@spec-lantern/types";
 
 export const MCP_SERVER_FEATURE = SPEC_LANTERN;
+
+/**
+ * Minimal local rootless Podman runner for a single Correctness_Property
+ * (task 4.2). Task 4.3 dispatches one property into the runner via
+ * `runPropertyInContainer`.
+ */
+export {
+  runPropertyInContainer,
+  type PodmanRunnerRequest,
+} from "./runner/podman-runner.js";
+
+/**
+ * The thinnest end-to-end execute path (task 4.3): load the task-4.1 Claim /
+ * property / comment-trusting PASS prediction, dispatch the one property into
+ * the task-4.2 runner, execute it against writing-tracker inside the container,
+ * and surface the resulting FAIL as a contradiction of the PASS prediction.
+ * This is the seam the full pipeline (comparison, report, UI) builds on.
+ */
+export {
+  executeWalkingSkeleton,
+  surfaceOutcome,
+  type WalkingSkeletonOutcome,
+  type ExecuteWalkingSkeletonOptions,
+} from "./execute-path.js";

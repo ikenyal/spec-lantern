@@ -67,6 +67,42 @@
         "chatSessionId": "sess_698f3442-472a-480d-ad2c-cec4f71afd70",
         "timestamp": 1793515880648
       }
+    ],
+    "4.1 Author the minimal walking-skeleton artifacts for the monthly-ordering claim": [
+      {
+        "executionId": "a7343fc7-cda0-4305-9572-03ff1c807dd8",
+        "chatSessionId": "sess_89b05053-6ecf-4082-a04c-9c7efd425152",
+        "timestamp": 1793516357187
+      },
+      {
+        "executionId": "a5428289-e206-49a4-9b6b-1f26611483f9",
+        "chatSessionId": "sess_89b05053-6ecf-4082-a04c-9c7efd425152",
+        "timestamp": 1793516956669
+      }
+    ],
+    "4.2 Build the minimal local rootless Podman runner for one property": [
+      {
+        "executionId": "a7343fc7-cda0-4305-9572-03ff1c807dd8",
+        "chatSessionId": "sess_89b05053-6ecf-4082-a04c-9c7efd425152",
+        "timestamp": 1793516357984
+      },
+      {
+        "executionId": "a5428289-e206-49a4-9b6b-1f26611483f9",
+        "chatSessionId": "sess_89b05053-6ecf-4082-a04c-9c7efd425152",
+        "timestamp": 1793517004988
+      },
+      {
+        "executionId": "a5428289-e206-49a4-9b6b-1f26611483f9",
+        "chatSessionId": "sess_89b05053-6ecf-4082-a04c-9c7efd425152",
+        "timestamp": 1793517587278
+      }
+    ],
+    "4.3 Wire the thinnest execute path and surface the FAIL": [
+      {
+        "executionId": "a5428289-e206-49a4-9b6b-1f26611483f9",
+        "chatSessionId": "sess_89b05053-6ecf-4082-a04c-9c7efd425152",
+        "timestamp": 1793517590899
+      }
     ]
   }
 }

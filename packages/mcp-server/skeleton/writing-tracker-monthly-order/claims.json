@@ -1,0 +1,10 @@
+{
+  "claims": [
+    {
+      "id": "claim-monthly-order",
+      "description": "The monthly Progress Summary shows the most recent month first (the first row is the current month).",
+      "sourceFile": "sandbox/writing-tracker/src/components/statistics/PeriodProgressSummary.tsx",
+      "commentRef": "L54 // Reverse to have most recent month first"
+    }
+  ]
+}

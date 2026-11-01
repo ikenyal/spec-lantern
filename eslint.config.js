@@ -8,6 +8,25 @@ export default [
   },
   js.configs.recommended,
   {
+    // Node runtime globals for server-side code (the MCP server / Podman runner)
+    // and Node-run scripts. The type-only `NodeJS` namespace is declared so
+    // `NodeJS.Timeout` / `NodeJS.Signals` references resolve under no-undef.
+    files: ["packages/mcp-server/**/*.{ts,mjs,js}"],
+    languageOptions: {
+      globals: {
+        process: "readonly",
+        Buffer: "readonly",
+        console: "readonly",
+        setTimeout: "readonly",
+        clearTimeout: "readonly",
+        setInterval: "readonly",
+        clearInterval: "readonly",
+        URL: "readonly",
+        NodeJS: "readonly",
+      },
+    },
+  },
+  {
     files: ["**/*.{ts,tsx}"],
     languageOptions: {
       parser: tsparser,

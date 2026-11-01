@@ -40,16 +40,16 @@ Property-based tests use fast-check + Vitest, each implementing exactly one Corr
     - _Requirements: 1.1, 1.2, 1.3, 1.4, 1.5, 2.1, 2.2, 2.3, 2.4, 3.1, 3.4, 3.6, 4.1, 4.4, 8.1, 8.2_
 
 - [ ] 4. Walking skeleton — execute ONE property end-to-end against writing-tracker and observe a FAIL
-  - [ ] 4.1 Author the minimal walking-skeleton artifacts for the monthly-ordering claim
+  - [x] 4.1 Author the minimal walking-skeleton artifacts for the monthly-ordering claim
     - Using the formats from task 2.2 and the steering from task 3.1, hand-produce the single Claim for writing-tracker's monthly-ordering behavior (comment: "Reverse to have most recent month first"), its one Correctness_Property test file asserting most-recent-month-first, and a Predicted_Result of PASS (the read-only, comment-trusting prediction)
     - _Requirements: 1.3, 3.1, 3.4_
 
-  - [ ] 4.2 Build the minimal local rootless Podman runner for one property
+  - [x] 4.2 Build the minimal local rootless Podman runner for one property
     - Create a rootless Podman container that mounts only the writing-tracker working directory, installs dependencies, and runs the single Correctness_Property test file via Vitest inside the container; return a VERDICT (PASS/FAIL) with a Counterexample on FAIL
     - Keep topology minimal for now (full two-phase network hardening is task 9); the only requirement here is that target code runs in the container, never the host
     - _Requirements: 5.1, 5.3, 5.5, 5.6, 12.1_
 
-  - [ ] 4.3 Wire the thinnest execute path and surface the FAIL
+  - [-] 4.3 Wire the thinnest execute path and surface the FAIL
     - Connect skeleton artifact (4.1) → minimal runner (4.2): dispatch the one property into the runner, execute it against writing-tracker, and surface the resulting FAIL (oldest-month-first) with its Counterexample, proving execution contradicts the comment-trusting PASS prediction
     - _Requirements: 5.1, 5.5, 5.6_
 
