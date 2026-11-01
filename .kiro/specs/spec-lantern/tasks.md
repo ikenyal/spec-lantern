@@ -20,15 +20,15 @@ Property-based tests use fast-check + Vitest, each implementing exactly one Corr
   - Set up lint/build/test scripts; add a Vitest config that enforces a minimum of 100 iterations for fast-check runs
   - _Requirements: foundational for all_
 
-- [ ] 2. Define the artifact formats Kiro produces
-  - [ ] 2.1 Define the serializable JSON domain types and configurable limits
+- [x] 2. Define the artifact formats Kiro produces
+  - [x] 2.1 Define the serializable JSON domain types and configurable limits
     - Define `Verdict`, `Claim` (with `unverifiable`), `ObservedDeviation`, `CorrectnessProperty` (with `kind` and `embeddedComponentLogic`), `PredictedResult`, `ExecutionContext`, `Counterexample`
     - Define the `ActualResult` discriminated union with outcomes `VERDICT`, `TIMEOUT`, `EXECUTION_ERROR`, `RUNNER_UNAVAILABLE`, `SAFETY_VIOLATION` (timeouts and execution errors are never encoded as PASS/FAIL)
     - Define `PropertyExecutionRequest`, `PropertyExecutionResult`, `FixTask`, `PropertyTransition`, `PropertyComparison`, `LanternReport`
     - Define `LimitsConfig` and `DEFAULT_LIMITS` (executionTimeoutSeconds=30, reportGenerationLimitSeconds=10, uiRenderLimitSeconds=3) read from configuration, not hard-coded constants; ensure the `TIMEOUT` outcome carries the limit actually in effect (`limitSeconds`)
     - _Requirements: 5.5, 5.6, 5.7, 5.8, 5.9, 6.1, 7.3, 7.4, 7.5, 8.1, 8.4, 8.5, 9.1, 9.2, 10.2, 12.4_
 
-  - [ ] 2.2 Define the on-disk artifact schemas and the property-test-file convention
+  - [x] 2.2 Define the on-disk artifact schemas and the property-test-file convention
     - Define concrete on-disk formats that Kiro writes and downstream tooling consumes: a JSON schema for Claims (each carrying non-empty `sourceFile`/`commentRef` and an optional `unverifiable.reason`), a JSON schema for Observed_Deviations (each referencing its originating Claim, allowing an undeterminable marker and the empty-list case), a JSON schema for Predicted_Results (verdict + pre-execution timestamp), and the executable property-test-file convention for Correctness_Properties (one test file per expressible Claim, tagged `Feature: spec-lantern, Property {n}`, terminating with exactly PASS or FAIL)
     - Define the on-disk layout tying a Claim id → its Correctness_Property test file → its Predicted_Result so a 1:1 mapping is expressible on disk
     - _Requirements: 1.1, 1.2, 1.3, 2.1, 3.1, 3.4, 3.6, 4.1, 4.4_

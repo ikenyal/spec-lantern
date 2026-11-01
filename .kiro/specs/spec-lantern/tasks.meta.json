@@ -12,6 +12,42 @@
         "chatSessionId": "sess_06100a9b-c153-4959-bf7d-c9683b9c198d",
         "timestamp": 1793514277187
       }
+    ],
+    "2. Define the artifact formats Kiro produces": [
+      {
+        "executionId": "3de69e0e-fc16-41a4-b906-c2ea8a94191d",
+        "chatSessionId": "sess_7af055ec-5c67-45f0-aec0-c6d96cb88b21",
+        "timestamp": 1793514372696
+      },
+      {
+        "executionId": "3de69e0e-fc16-41a4-b906-c2ea8a94191d",
+        "chatSessionId": "sess_7af055ec-5c67-45f0-aec0-c6d96cb88b21",
+        "timestamp": 1793514998847
+      }
+    ],
+    "2.1 Define the serializable JSON domain types and configurable limits": [
+      {
+        "executionId": "3de69e0e-fc16-41a4-b906-c2ea8a94191d",
+        "chatSessionId": "sess_7af055ec-5c67-45f0-aec0-c6d96cb88b21",
+        "timestamp": 1793514376004
+      },
+      {
+        "executionId": "3de69e0e-fc16-41a4-b906-c2ea8a94191d",
+        "chatSessionId": "sess_7af055ec-5c67-45f0-aec0-c6d96cb88b21",
+        "timestamp": 1793514589578
+      }
+    ],
+    "2.2 Define the on-disk artifact schemas and the property-test-file convention": [
+      {
+        "executionId": "3de69e0e-fc16-41a4-b906-c2ea8a94191d",
+        "chatSessionId": "sess_7af055ec-5c67-45f0-aec0-c6d96cb88b21",
+        "timestamp": 1793514593336
+      },
+      {
+        "executionId": "3de69e0e-fc16-41a4-b906-c2ea8a94191d",
+        "chatSessionId": "sess_7af055ec-5c67-45f0-aec0-c6d96cb88b21",
+        "timestamp": 1793514998792
+      }
     ]
   }
 }
