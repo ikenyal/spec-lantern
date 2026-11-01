@@ -33,8 +33,8 @@ Property-based tests use fast-check + Vitest, each implementing exactly one Corr
     - Define the on-disk layout tying a Claim id → its Correctness_Property test file → its Predicted_Result so a 1:1 mapping is expressible on disk
     - _Requirements: 1.1, 1.2, 1.3, 2.1, 3.1, 3.4, 3.6, 4.1, 4.4_
 
-- [ ] 3. Author the Kiro_Power artifacts (POWER.md + steering)
-  - [ ] 3.1 Write POWER.md and steering that produces the artifact formats and delegates execution
+- [x] 3. Author the Kiro_Power artifacts (POWER.md + steering)
+  - [x] 3.1 Write POWER.md and steering that produces the artifact formats and delegates execution
     - Author the steering that drives Kiro to Reverse_Engineer the spec (EARS requirements + a design whose Correctness_Properties section has at least one property per requirement), record each comment-described behavior as a distinct referenced Claim, report unreadable / no-analyzable-source repos without a partial spec, build the Observed_Deviations list (including undeterminable entries and the empty-list case), convert each expressible Claim 1:1 into a Correctness_Property test file while recording inexpressible Claims as unverifiable with a reason, record an immutable Predicted_Result before execution, handle embedded component logic (props-driven → `component_rendered`; internally-fetching → unverifiable), and generate Fix_Tasks for Confirmed_Bugs
     - Write everything in the on-disk artifact formats from task 2.2 and delegate ALL execution to the MCP_Server tools (`execute_properties`, `apply_fixes_and_reexecute`, `replay_counterexample`) and prediction locking to the lock tool
     - _Requirements: 1.1, 1.2, 1.3, 1.4, 1.5, 2.1, 2.2, 2.3, 2.4, 3.1, 3.4, 3.6, 4.1, 4.4, 8.1, 8.2_

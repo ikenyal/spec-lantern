@@ -48,6 +48,25 @@
         "chatSessionId": "sess_7af055ec-5c67-45f0-aec0-c6d96cb88b21",
         "timestamp": 1793514998792
       }
+    ],
+    "3.1 Write POWER.md and steering that produces the artifact formats and delegates execution": [
+      {
+        "executionId": "6ec08f3b-c7e3-427e-8c1c-24a16a40cdbe",
+        "chatSessionId": "sess_698f3442-472a-480d-ad2c-cec4f71afd70",
+        "timestamp": 1793515256036
+      },
+      {
+        "executionId": "6ec08f3b-c7e3-427e-8c1c-24a16a40cdbe",
+        "chatSessionId": "sess_698f3442-472a-480d-ad2c-cec4f71afd70",
+        "timestamp": 1793515880562
+      }
+    ],
+    "3. Author the Kiro_Power artifacts (POWER.md + steering)": [
+      {
+        "executionId": "6ec08f3b-c7e3-427e-8c1c-24a16a40cdbe",
+        "chatSessionId": "sess_698f3442-472a-480d-ad2c-cec4f71afd70",
+        "timestamp": 1793515880648
+      }
     ]
   }
 }
