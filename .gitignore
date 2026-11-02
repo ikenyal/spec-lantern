@@ -23,6 +23,9 @@ __pycache__/
 # container. The legacy minimal fixture dir is kept ignored for older checkouts.
 /packages/mcp-server/skeleton/.worktree/
 /packages/mcp-server/skeleton/.fixture/
+# The task 10.5 runner-dispatch smoke test uses its own working copy so it never
+# races the skeleton execute path's .worktree.
+/packages/mcp-server/skeleton/.worktree-smoke-10-5/
 
 # OS / editor
 .DS_Store

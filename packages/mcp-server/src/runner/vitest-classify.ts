@@ -332,6 +332,40 @@ export function parseVitestJson(
   return classifyVitestReport(propertyId, report, stderr, ctx);
 }
 
+/**
+ * Stamp a TIMEOUT {@link ActualResult} with the execution timeout actually in
+ * effect for the run (task 10.2, R5.7).
+ *
+ * WHY THIS EXISTS. {@link parseVitestJson} can only observe that Vitest reported
+ * a per-test/hook timeout; it cannot know the per-run limit the orchestrator
+ * configured, so it emits a sentinel `limitSeconds: 0`. The runner, which DOES
+ * know the configured limit (its own wall-clock ceiling), funnels every TIMEOUT
+ * it is about to surface through this one helper so the outcome carries the real
+ * limit rather than the sentinel — whether the timeout was detected by the
+ * runner's wall-clock kill OR reported by Vitest. Centralizing the stamp here
+ * (a) keeps the "TIMEOUT carries the limit in effect, never a hard-coded
+ * literal" guarantee in one pure, directly-testable place, and (b) makes it
+ * impossible for a TIMEOUT to escape with the sentinel still on it.
+ *
+ * It is a NO-OP for any non-TIMEOUT outcome: PASS/FAIL verdicts, EXECUTION_ERROR,
+ * RUNNER_UNAVAILABLE and SAFETY_VIOLATION pass through byte-for-byte, so a caller
+ * can safely route every result through it without special-casing the outcome.
+ *
+ * @param result the classified outcome (possibly a sentinel TIMEOUT)
+ * @param limitSeconds the execution timeout in effect for this run (seconds)
+ * @returns the result with `limitSeconds` set to the real limit when it is a
+ *   TIMEOUT; the identical result otherwise
+ */
+export function applyTimeoutLimit(
+  result: ActualResult,
+  limitSeconds: number,
+): ActualResult {
+  if (result.outcome === "TIMEOUT") {
+    return { ...result, limitSeconds };
+  }
+  return result;
+}
+
 /* -------------------------------------------------------------------------- */
 /* Counterexample readability (task 4.2 revision, goal 2)                     */
 /* -------------------------------------------------------------------------- */

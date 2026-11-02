@@ -410,6 +410,62 @@ async function prepareWorkingCopy(
 }
 
 /* -------------------------------------------------------------------------- */
+/* Reusable working-copy seam (so other callers don't duplicate the setup)    */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * The propertyId the walking skeleton evaluates, surfaced so other callers (the
+ * task 10.5 runner-dispatch smoke test) can build a request/runner call for the
+ * SAME property the skeleton artifacts describe without re-deriving the stem.
+ */
+export const WALKING_SKELETON_PROPERTY_ID = SKELETON_PROPERTY_ID;
+
+/** What {@link prepareWalkingSkeletonWorkingCopy} hands back to a caller. */
+export interface PreparedWalkingSkeletonWorkingCopy {
+  /** The gitignored working copy under the repo (the ONE dir to mount). */
+  worktreeDir: string;
+  /** The property test file path RELATIVE to the working copy (in-mount). */
+  propertyTestFile: string;
+  /** The property the working copy is set up to execute. */
+  propertyId: string;
+}
+
+/**
+ * Prepare the walking-skeleton writing-tracker WORKING COPY exactly the way
+ * {@link executeWalkingSkeleton} does — copy `sandbox/writing-tracker` into a
+ * gitignored, macOS-visible working copy (excluding `node_modules`/`.git`/build
+ * output), drop the task-4.1 property file + the working-copy vitest config into
+ * it — and return the one directory to mount, the in-mount property path, and
+ * the propertyId.
+ *
+ * This is the SAME production preparation the skeleton execute path performs;
+ * it is factored out so a caller that wants to dispatch the prepared copy
+ * through a DIFFERENT seam (the orchestrator / the {@link IsolatedRunner}
+ * contract — the task 10.5 smoke test) reuses the real setup instead of
+ * duplicating it. The caller owns teardown of `worktreeDir`.
+ */
+export async function prepareWalkingSkeletonWorkingCopy(
+  options: {
+    specRoot?: string;
+    targetSource?: string;
+    worktreeDir?: string;
+  } = {},
+): Promise<PreparedWalkingSkeletonWorkingCopy> {
+  const specRoot = options.specRoot ?? DEFAULT_SPEC_ROOT;
+  const targetSource = options.targetSource ?? DEFAULT_TARGET_SOURCE;
+  const worktreeDir = options.worktreeDir ?? DEFAULT_WORKTREE_DIR;
+  const { propertyTestFile } = await prepareWorkingCopy(
+    specRoot,
+    targetSource,
+    worktreeDir,
+  );
+  return { worktreeDir, propertyTestFile, propertyId: SKELETON_PROPERTY_ID };
+}
+
+/** The default read-only source Target_Repo the walking skeleton copies from. */
+export const WALKING_SKELETON_TARGET_SOURCE = DEFAULT_TARGET_SOURCE;
+
+/* -------------------------------------------------------------------------- */
 /* The execute path                                                           */
 /* -------------------------------------------------------------------------- */
 

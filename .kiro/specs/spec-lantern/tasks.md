@@ -134,19 +134,19 @@ Property-based tests use fast-check + Vitest, each implementing exactly one Corr
     - **Property 35: Target file access is confined to the runner boundary** — Feature: spec-lantern, Property 35
     - **Validates: Requirements 5.4, 12.2, 12.3, 12.6**
 
-- [ ] 10. Implement the MCP_Server execution orchestrator and `execute_properties` tool
-  - [ ] 10.1 Wire the MCP transport and the `execute_properties` tool
+- [x] 10. Implement the MCP_Server execution orchestrator and `execute_properties` tool
+  - [x] 10.1 Wire the MCP transport and the `execute_properties` tool
     - Expose the MCP tool using the MCP TypeScript SDK; route requests through the Safety Gate (task 8) then the runner lifecycle (task 9)
     - Execute each property against the Target_Repo inside the runner; return VERDICT (PASS/FAIL) on normal completion
     - _Requirements: 5.1, 5.2, 5.3, 5.5_
 
-  - [ ] 10.2 Implement Counterexample, timeout, and execution-error outcomes
+  - [x] 10.2 Implement Counterexample, timeout, and execution-error outcomes
     - On FAIL, return a Counterexample with triggering input values and observed output
     - On exceeding the configured execution timeout (default 30s), terminate and return a `TIMEOUT` outcome carrying the limit in effect, with no PASS/FAIL
     - On uncaught error / load failure, return an `EXECUTION_ERROR` with a reason and no PASS/FAIL
     - _Requirements: 5.6, 5.7, 5.9_
 
-  - [ ] 10.3 Record Execution_Context per execution
+  - [x] 10.3 Record Execution_Context per execution
     - Seed fast-check from a recorded Random_Seed and pin timezone and Fixed_Current_Time; attach the Execution_Context to each Counterexample
     - _Requirements: 6.1, 6.2_
 
@@ -157,7 +157,7 @@ Property-based tests use fast-check + Vitest, each implementing exactly one Corr
     - **Property 32: Timeouts terminate with no verdict** — Feature: spec-lantern, Property 32
     - **Validates: Requirements 3.2, 5.5, 5.6, 5.7, 5.9, 6.1, 6.2**
 
-  - [ ] 10.5 Write an integration smoke test for runner dispatch and install topology
+  - [x] 10.5 Write an integration smoke test for runner dispatch and install topology
     - Assert a request is dispatched into the rootless Podman runner (not the host); bring up the install-phase internal-only network + proxy and assert the install container reaches the proxy but has no direct outbound internet route
     - _Requirements: 5.1, 5.3, 12.2_
 

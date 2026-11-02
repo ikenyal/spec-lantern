@@ -33,8 +33,13 @@
  * reason }`) is the one and only way an implementation reports that it could not
  * stand up the isolation boundary.
  */
-import type { ActualResult } from "@spec-lantern/types";
-import { runTwoPhase, type TestPhaseRequest } from "./test-phase.js";
+import type { ActualResult, ExecutionContext } from "@spec-lantern/types";
+import {
+  runTwoPhase,
+  runTwoPhaseWithContext,
+  type ExecutionWithContext,
+  type TestPhaseRequest,
+} from "./test-phase.js";
 
 /**
  * A request to run exactly one Correctness_Property inside the Isolated_Runner.
@@ -96,6 +101,24 @@ export interface IsolatedRunner {
    *   reason — never a host-executed verdict.
    */
   runProperty(request: IsolatedRunnerRequest): Promise<ActualResult>;
+
+  /**
+   * OPTIONAL context-aware variant (task 10.3). Run one Correctness_Property
+   * and resolve with its {@link ActualResult} TOGETHER WITH the
+   * {@link ExecutionContext} recorded for the run.
+   *
+   * This is the channel by which the per-execution Execution_Context reaches
+   * the orchestrator for EVERY execution (R6.1) — not only when a FAIL
+   * Counterexample happens to carry one. An implementation that records an
+   * Execution_Context (the MVP-scope Podman runner does) SHOULD implement this;
+   * the orchestrator prefers it when present and otherwise falls back to reading
+   * the context off a FAIL Counterexample via {@link runProperty}. The resolved
+   * `result` obeys the identical closed-union + no-host-fallback contract as
+   * {@link runProperty}.
+   */
+  runPropertyWithContext?(
+    request: IsolatedRunnerRequest,
+  ): Promise<{ result: ActualResult; executionContext: ExecutionContext }>;
 }
 
 /**
@@ -118,6 +141,13 @@ export interface IsolatedRunner {
 export const podmanIsolatedRunner: IsolatedRunner = {
   runProperty(request: IsolatedRunnerRequest): Promise<ActualResult> {
     return runTwoPhase(request);
+  },
+  runPropertyWithContext(
+    request: IsolatedRunnerRequest,
+  ): Promise<ExecutionWithContext> {
+    // Delegates to the context-aware two-phase core so the Execution_Context
+    // recorded for the run (R6.1) is surfaced alongside the ActualResult.
+    return runTwoPhaseWithContext(request);
   },
 };
 

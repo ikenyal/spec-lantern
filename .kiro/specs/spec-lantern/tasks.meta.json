@@ -320,6 +320,61 @@
         "chatSessionId": "sess_8bd9e7f5-c87d-4b3a-afd5-685d17a7b442",
         "timestamp": 1793584046279
       }
+    ],
+    "10.1 Wire the MCP transport and the `execute_properties` tool": [
+      {
+        "executionId": "d1c8b64c-b4f5-468c-a4a7-61e6f3612d66",
+        "chatSessionId": "sess_6bfe8bc0-8f16-4e5d-b03e-bff69c681f6a",
+        "timestamp": 1793587036061
+      },
+      {
+        "executionId": "d1c8b64c-b4f5-468c-a4a7-61e6f3612d66",
+        "chatSessionId": "sess_6bfe8bc0-8f16-4e5d-b03e-bff69c681f6a",
+        "timestamp": 1793587561622
+      }
+    ],
+    "10.2 Implement Counterexample, timeout, and execution-error outcomes": [
+      {
+        "executionId": "d1c8b64c-b4f5-468c-a4a7-61e6f3612d66",
+        "chatSessionId": "sess_6bfe8bc0-8f16-4e5d-b03e-bff69c681f6a",
+        "timestamp": 1793587566002
+      },
+      {
+        "executionId": "d1c8b64c-b4f5-468c-a4a7-61e6f3612d66",
+        "chatSessionId": "sess_6bfe8bc0-8f16-4e5d-b03e-bff69c681f6a",
+        "timestamp": 1793589659977
+      }
+    ],
+    "10.3 Record Execution_Context per execution": [
+      {
+        "executionId": "d1c8b64c-b4f5-468c-a4a7-61e6f3612d66",
+        "chatSessionId": "sess_6bfe8bc0-8f16-4e5d-b03e-bff69c681f6a",
+        "timestamp": 1793587566657
+      },
+      {
+        "executionId": "d1c8b64c-b4f5-468c-a4a7-61e6f3612d66",
+        "chatSessionId": "sess_6bfe8bc0-8f16-4e5d-b03e-bff69c681f6a",
+        "timestamp": 1793589660664
+      }
+    ],
+    "10.5 Write an integration smoke test for runner dispatch and install topology": [
+      {
+        "executionId": "d1c8b64c-b4f5-468c-a4a7-61e6f3612d66",
+        "chatSessionId": "sess_6bfe8bc0-8f16-4e5d-b03e-bff69c681f6a",
+        "timestamp": 1793589665253
+      },
+      {
+        "executionId": "7f41b424-3707-4162-aaf7-c090a4ebffda",
+        "chatSessionId": "sess_6bfe8bc0-8f16-4e5d-b03e-bff69c681f6a",
+        "timestamp": 1793598135346
+      }
+    ],
+    "10. Implement the MCP_Server execution orchestrator and `execute_properties` tool": [
+      {
+        "executionId": "7f41b424-3707-4162-aaf7-c090a4ebffda",
+        "chatSessionId": "sess_6bfe8bc0-8f16-4e5d-b03e-bff69c681f6a",
+        "timestamp": 1793598135401
+      }
     ]
   }
 }

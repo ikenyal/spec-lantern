@@ -1,0 +1,163 @@
+// Feature: spec-lantern — Execution_Context recording + seeding/clock pinning
+// unit tests (task 10.3)
+//
+// EXAMPLE-BASED unit tests for the pure, I/O-free helpers in
+// {@link ./execution-context.ts}. They assert the seeding + context-recording
+// concern WITHOUT standing up a container:
+//
+//   - A context is RECORDED for an execution with a chosen Random_Seed, a
+//     pinned timezone, and a Fixed_Current_Time (R6.1); a pinned context (for
+//     replay, task 11) is used verbatim.
+//   - The recorded context is threaded INTO the container as the exact env vars
+//     the in-container setup module reads (TZ + seed + Fixed_Current_Time).
+//   - The generated setup module seeds fast-check from the recorded Random_Seed
+//     via `fc.configureGlobal` and re-asserts TZ (the mechanism that makes the
+//     recorded values actually drive the run, so replay reproduces it).
+//   - The generated Vitest config MERGES the target's own config and only adds
+//     the seed/clock setup module + pinned TZ.
+
+import { describe, expect, it } from "vitest";
+import type { ExecutionContext } from "@spec-lantern/types";
+import {
+  FIXED_TIME_ENV,
+  SEED_ENV,
+  TIMEZONE_ENV,
+  buildExecutionContextEnv,
+  buildSeedClockSetupModule,
+  buildSeedClockVitestConfig,
+  recordExecutionContext,
+} from "./execution-context.js";
+
+describe("recordExecutionContext — per-execution recording (R6.1)", () => {
+  it("records a context with a chosen 32-bit seed, a timezone, and a Fixed_Current_Time", () => {
+    const ctx = recordExecutionContext();
+
+    // All three reproduction values are present and well-typed.
+    expect(Number.isInteger(ctx.randomSeed)).toBe(true);
+    expect(ctx.randomSeed).toBeGreaterThanOrEqual(0);
+    expect(ctx.randomSeed).toBeLessThanOrEqual(0xff_ff_ff_ff);
+    expect(typeof ctx.timezone).toBe("string");
+    expect(ctx.timezone.length).toBeGreaterThan(0);
+    // A valid ISO instant for the Controllable_Clock.
+    expect(Number.isNaN(Date.parse(ctx.fixedCurrentTime))).toBe(false);
+  });
+
+  it("uses a caller-pinned context verbatim (replay path, R6.3)", () => {
+    const pinned: ExecutionContext = {
+      randomSeed: 123456,
+      timezone: "America/New_York",
+      fixedCurrentTime: "1999-08-15T09:30:00.000Z",
+    };
+    expect(recordExecutionContext(pinned)).toEqual(pinned);
+  });
+
+  it("chooses a fresh seed on each unpinned recording (not a constant)", () => {
+    // Record several contexts; the seeds should not all be identical. (A chosen
+    // seed is what makes the run reproducible — it is recorded, not left to an
+    // unrecorded internal default.)
+    const seeds = new Set(
+      Array.from({ length: 16 }, () => recordExecutionContext().randomSeed),
+    );
+    expect(seeds.size).toBeGreaterThan(1);
+  });
+});
+
+describe("buildExecutionContextEnv — threading the context into the container", () => {
+  it("carries TZ + seed + Fixed_Current_Time as the env the setup module reads", () => {
+    const ctx: ExecutionContext = {
+      randomSeed: 42,
+      timezone: "UTC",
+      fixedCurrentTime: "2025-01-01T00:00:00.000Z",
+    };
+    const env = buildExecutionContextEnv(ctx);
+
+    // TZ is the canonical process-timezone variable, pinned to the recorded zone.
+    expect(env.TZ).toBe("UTC");
+    expect(env[TIMEZONE_ENV]).toBe("UTC");
+    // The seed travels as a string (env values are strings) and round-trips.
+    expect(env[SEED_ENV]).toBe("42");
+    expect(Number(env[SEED_ENV])).toBe(ctx.randomSeed);
+    // The Fixed_Current_Time is made available for a Controllable_Clock.
+    expect(env[FIXED_TIME_ENV]).toBe("2025-01-01T00:00:00.000Z");
+  });
+
+  it("is pure — same context yields the same env", () => {
+    const ctx: ExecutionContext = {
+      randomSeed: 7,
+      timezone: "UTC",
+      fixedCurrentTime: "2025-01-01T00:00:00.000Z",
+    };
+    expect(buildExecutionContextEnv(ctx)).toEqual(buildExecutionContextEnv(ctx));
+  });
+});
+
+describe("buildSeedClockSetupModule — seeds fast-check + pins TZ in-container", () => {
+  const module = buildSeedClockSetupModule();
+
+  it("seeds fast-check from the recorded Random_Seed via configureGlobal", () => {
+    // Reads the seed from the canonical env var and pins it on fast-check's
+    // global config (the supported seeding mechanism).
+    expect(module).toContain(`process.env[${JSON.stringify(SEED_ENV)}]`);
+    expect(module).toContain("configureGlobal");
+    expect(module).toContain("fast-check");
+  });
+
+  it("re-asserts the pinned timezone from the recorded context", () => {
+    expect(module).toContain(`process.env[${JSON.stringify(TIMEZONE_ENV)}]`);
+    expect(module).toContain("process.env.TZ");
+  });
+
+  it("preserves a property's own global config (spreads existing before pinning seed)", () => {
+    // `{ ...existing, seed }` — the property's numRuns (the >=100 requirement)
+    // must survive; only the seed is pinned.
+    expect(module).toContain("...existing");
+  });
+
+  it("is tolerant when fast-check is absent (never crashes a non-fast-check run)", () => {
+    // Wrapped in try/catch so a non-fast-check property is not perturbed.
+    expect(module).toContain("try");
+    expect(module).toContain("catch");
+  });
+});
+
+describe("buildSeedClockVitestConfig — merges the target's own config", () => {
+  it("statically imports a resolved base config and adds the setup module + pinned TZ", () => {
+    const cfg = buildSeedClockVitestConfig({
+      setupModuleRel: "./.spec-lantern-seed-setup.mjs",
+      // The ONE base config the target actually has, resolved by the caller.
+      baseConfigModule: "./vitest.config.ts",
+      timezone: "UTC",
+    });
+
+    // Uses mergeConfig so the target's aliases / jsdom env survive.
+    expect(cfg).toContain("mergeConfig");
+    // STATICALLY imports the resolved base config (so a .ts base loads through
+    // Vite instead of escaping to Node, which cannot import raw .ts).
+    expect(cfg).toContain(`import baseRaw from "./vitest.config.ts"`);
+    // It must NOT use a runtime dynamic import of the base config (the defect
+    // that silently dropped the target's aliases).
+    expect(cfg).not.toContain(`await import("./vitest.config.ts")`);
+    // Adds the seed/clock setup module to setupFiles.
+    expect(cfg).toContain("setupFiles");
+    expect(cfg).toContain("./.spec-lantern-seed-setup.mjs");
+    // Pins TZ under test.env.
+    expect(cfg).toContain('TZ: "UTC"');
+    // Normalizes a config that may be a factory function.
+    expect(cfg).toContain("typeof baseExport === \"function\"");
+  });
+
+  it("uses an empty base (no import) when the target has no config", () => {
+    const cfg = buildSeedClockVitestConfig({
+      setupModuleRel: "./.spec-lantern-seed-setup.mjs",
+      baseConfigModule: null,
+      timezone: "UTC",
+    });
+
+    // No base config to import — an empty base object, still a valid run.
+    expect(cfg).toContain("const baseRaw = {}");
+    expect(cfg).not.toContain("import baseRaw from");
+    // Still wires the setup module + pinned TZ.
+    expect(cfg).toContain("./.spec-lantern-seed-setup.mjs");
+    expect(cfg).toContain('TZ: "UTC"');
+  });
+});

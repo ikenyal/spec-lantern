@@ -152,7 +152,60 @@ export {
  */
 export {
   runTestPhase,
+  runTestPhaseWithContext,
   runTwoPhase,
+  runTwoPhaseWithContext,
+  type ExecutionWithContext,
   type TestPhaseRequest,
   type TwoPhaseRequest,
 } from "./runner/test-phase.js";
+
+/**
+ * Execution_Context recording + deterministic seeding/clock pinning (task 10.3).
+ * {@link recordExecutionContext} CHOOSES/records the per-execution context
+ * (Random_Seed, timezone, Fixed_Current_Time); {@link buildExecutionContextEnv}
+ * and {@link buildSeedClockSetupModule}/{@link buildSeedClockVitestConfig}
+ * thread it INTO the no-network test container so fast-check is seeded from the
+ * recorded Random_Seed and `TZ` is pinned, making the run deterministic and
+ * replayable (R6.1, R6.3).
+ */
+export {
+  recordExecutionContext,
+  buildExecutionContextEnv,
+  buildSeedClockSetupModule,
+  buildSeedClockVitestConfig,
+  SEED_ENV,
+  FIXED_TIME_ENV,
+  TIMEZONE_ENV,
+  SEED_SETUP_FILE,
+  SEED_CONFIG_FILE,
+} from "./runner/execution-context.js";
+
+/**
+ * The execution orchestrator (task 10.1). {@link executeProperties} turns a
+ * `PropertyExecutionRequest` into a `PropertyExecutionResult` by routing it
+ * through the Safety Gate (task 8) and then the two-phase Isolated_Runner
+ * (task 9): a host-bound request is rejected as `SAFETY_VIOLATION` without
+ * creating a runner; accepted properties execute inside the runner and return a
+ * `VERDICT` (PASS/FAIL) on normal completion (R5.1, R5.2, R5.3, R5.5). Richer
+ * Counterexample/timeout/execution-error surfacing (task 10.2) and per-execution
+ * Execution_Context recording (task 10.3) build on this seam.
+ */
+export {
+  executeProperties,
+  type ExecutePropertiesOptions,
+} from "./orchestrator/index.js";
+
+/**
+ * The MCP transport + `execute_properties` tool wiring (task 10.1). Exposes the
+ * MCP_Server over the MCP TypeScript SDK and registers the `execute_properties`
+ * tool, whose handler delegates to {@link executeProperties}.
+ * {@link createMcpServer} builds the configured server (transport-agnostic, for
+ * tests); {@link startStdioServer} connects it to the stdio transport so a local
+ * Kiro_Power can launch it as a subprocess.
+ */
+export {
+  createMcpServer,
+  startStdioServer,
+  type CreateMcpServerOptions,
+} from "./mcp-server.js";
