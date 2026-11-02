@@ -96,18 +96,18 @@ Property-based tests use fast-check + Vitest, each implementing exactly one Corr
     - **Property 7: Predicted_Result is a verdict recorded before execution and is immutable** — Feature: spec-lantern, Property 7
     - **Validates: Requirements 3.4, 3.5**
 
-- [ ] 8. Harden the Safety Gate and runner boundary contract
-  - [ ] 8.1 Implement the Safety Gate (pre-execution classification)
+- [~] 8. Harden the Safety Gate and runner boundary contract
+  - [x] 8.1 Implement the Safety Gate (pre-execution classification)
     - Classify every Property_Execution_Request and fix-application request; accept only runner-targeted operations
     - Reject any operation that would run a Target_Repo process, script, or build step in the host process or host shell before anything runs, report a `SAFETY_VIOLATION`, and leave host filesystem and process state unchanged
     - _Requirements: 5.2, 12.1, 12.4_
 
-  - [ ] 8.2 Define the Isolated_Runner interface and no-fallback invariant
+  - [x] 8.2 Define the Isolated_Runner interface and no-fallback invariant
     - Define the runner contract (mount only the target working directory, confine file access to the boundary) as the single execution target, generalizing the minimal skeleton runner from task 4.2
     - On runner-create failure or unavailability, abort with a `RUNNER_UNAVAILABLE` error identifying the reason and never fall back to host execution
     - _Requirements: 5.8, 12.5, 12.6_
 
-  - [ ] 8.3 Write property tests for safety-gate decisions
+  - [-] 8.3 Write property tests for safety-gate decisions
     - **Property 28: Accepted executions always target the runner, never the host** — Feature: spec-lantern, Property 28
     - **Property 29: Host-bound requests are rejected before any code runs** — Feature: spec-lantern, Property 29
     - **Property 30: Runner unavailability aborts without host fallback** — Feature: spec-lantern, Property 30

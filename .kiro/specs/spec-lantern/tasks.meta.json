@@ -251,6 +251,44 @@
         "chatSessionId": "sess_ff551596-7826-43b6-8b06-4f56f8e378fa",
         "timestamp": 1793569594678
       }
+    ],
+    "8.1 Implement the Safety Gate (pre-execution classification)": [
+      {
+        "executionId": "ec9b85ff-1774-4224-bb6e-6cb3b3748ae8",
+        "chatSessionId": "sess_0df53efc-f0b6-406d-be51-a1436bd3d5af",
+        "timestamp": 1793569733306
+      },
+      {
+        "executionId": "ec9b85ff-1774-4224-bb6e-6cb3b3748ae8",
+        "chatSessionId": "sess_0df53efc-f0b6-406d-be51-a1436bd3d5af",
+        "timestamp": 1793571595373
+      }
+    ],
+    "8.2 Define the Isolated_Runner interface and no-fallback invariant": [
+      {
+        "executionId": "ec9b85ff-1774-4224-bb6e-6cb3b3748ae8",
+        "chatSessionId": "sess_0df53efc-f0b6-406d-be51-a1436bd3d5af",
+        "timestamp": 1793569734303
+      },
+      {
+        "executionId": "ec9b85ff-1774-4224-bb6e-6cb3b3748ae8",
+        "chatSessionId": "sess_0df53efc-f0b6-406d-be51-a1436bd3d5af",
+        "timestamp": 1793571596400
+      }
+    ],
+    "8.3 Write property tests for safety-gate decisions": [
+      {
+        "executionId": "ec9b85ff-1774-4224-bb6e-6cb3b3748ae8",
+        "chatSessionId": "sess_0df53efc-f0b6-406d-be51-a1436bd3d5af",
+        "timestamp": 1793571601555
+      }
+    ],
+    "8.4 Write targeted negative safety tests": [
+      {
+        "executionId": "ec9b85ff-1774-4224-bb6e-6cb3b3748ae8",
+        "chatSessionId": "sess_0df53efc-f0b6-406d-be51-a1436bd3d5af",
+        "timestamp": 1793571602303
+      }
     ]
   }
 }

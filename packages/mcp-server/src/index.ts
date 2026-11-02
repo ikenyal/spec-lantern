@@ -22,6 +22,26 @@ export {
 } from "./runner/podman-runner.js";
 
 /**
+ * The Isolated_Runner contract (task 8.2). This GENERALIZES the concrete
+ * task-4.2 skeleton runner into an explicit interface — the single execution
+ * target for Target_Repo code — so the Safety Gate (task 8.1), network topology
+ * (task 9), and orchestrator (task 10) program against the contract rather than
+ * the concrete Podman function. The contract codifies the two overriding
+ * host-safety invariants: mount ONLY the target working directory and confine
+ * file access to that boundary (R12.6); and on runner-create failure or
+ * unavailability abort with a `RUNNER_UNAVAILABLE` outcome identifying the
+ * reason, never falling back to host execution (R5.8, R12.5).
+ * `podmanIsolatedRunner` is the MVP-scope implementation (a thin adapter over
+ * `runPropertyInContainer`); `getIsolatedRunner` selects it.
+ */
+export {
+  getIsolatedRunner,
+  podmanIsolatedRunner,
+  type IsolatedRunner,
+  type IsolatedRunnerRequest,
+} from "./runner/isolated-runner.js";
+
+/**
  * The thinnest end-to-end execute path (task 4.3): load the task-4.1 Claim /
  * property / comment-trusting PASS prediction, dispatch the one property into
  * the task-4.2 runner, execute it against writing-tracker inside the container,
@@ -81,3 +101,27 @@ export {
   type LockTarget,
   type LockPredictionOptions,
 } from "./prediction-lock/index.js";
+
+/**
+ * The Safety Gate (task 8.1): the MCP_Server's PRE-execution classification
+ * chokepoint for host safety. Every Property_Execution_Request and every
+ * fix-application request passes through {@link classifyOperation} before
+ * anything runs; the gate accepts only runner-targeted operations and rejects
+ * any that would run Target_Repo code in the host process or host shell,
+ * reporting a `SAFETY_VIOLATION` (reusing the closed `ActualResult` union) and
+ * leaving host filesystem and process state unchanged (R5.2, R12.1, R12.4). It
+ * is pure/decision-only — it never spawns a process; enforcing
+ * container-not-host AT execution time is the runner's job (task 8.2 / 9).
+ */
+export {
+  classifyOperation,
+  classifyPropertyExecution,
+  classifyFixApplication,
+  isAccepted,
+  type GateOperation,
+  type FixApplicationRequest,
+  type SafetyDecision,
+  type SafetyViolation,
+  type SafetyViolationCode,
+  type ExecutionTarget,
+} from "./safety-gate/index.js";
