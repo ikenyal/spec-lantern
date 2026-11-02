@@ -524,6 +524,47 @@
         "executionId": "283261d8-2db1-4d02-85ef-19b6c957ea7e",
         "chatSessionId": "sess_c299763f-50a7-4155-b450-ef21a1c3b592",
         "timestamp": 1793651815156
+      },
+      {
+        "executionId": "f6337b86-81e3-4ecf-aa31-68797ad62231",
+        "chatSessionId": "sess_08ef6c48-f2bb-409b-b5a0-dee1df06ed50",
+        "timestamp": 1793654043209
+      },
+      {
+        "executionId": "f6337b86-81e3-4ecf-aa31-68797ad62231",
+        "chatSessionId": "sess_08ef6c48-f2bb-409b-b5a0-dee1df06ed50",
+        "timestamp": 1793654412298
+      }
+    ],
+    "18.1 Render property rows with predicted vs actual and mismatch indicator": [
+      {
+        "executionId": "15576544-4da5-4c23-a47b-c3ad9f645d96",
+        "chatSessionId": "sess_043afc3c-d117-41e7-a341-161f84d23230",
+        "timestamp": 1793654512707
+      },
+      {
+        "executionId": "15576544-4da5-4c23-a47b-c3ad9f645d96",
+        "chatSessionId": "sess_043afc3c-d117-41e7-a341-161f84d23230",
+        "timestamp": 1793658743107
+      }
+    ],
+    "18.2 Render counterexamples, transitions, and empty/missing states": [
+      {
+        "executionId": "15576544-4da5-4c23-a47b-c3ad9f645d96",
+        "chatSessionId": "sess_043afc3c-d117-41e7-a341-161f84d23230",
+        "timestamp": 1793658746602
+      },
+      {
+        "executionId": "15576544-4da5-4c23-a47b-c3ad9f645d96",
+        "chatSessionId": "sess_043afc3c-d117-41e7-a341-161f84d23230",
+        "timestamp": 1793659183429
+      }
+    ],
+    "18. Implement the Lantern_Report_UI": [
+      {
+        "executionId": "15576544-4da5-4c23-a47b-c3ad9f645d96",
+        "chatSessionId": "sess_043afc3c-d117-41e7-a341-161f84d23230",
+        "timestamp": 1793659183489
       }
     ]
   }

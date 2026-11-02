@@ -240,13 +240,13 @@ Property-based tests use fast-check + Vitest, each implementing exactly one Corr
 - [x] 17. Checkpoint - Ensure all tests pass
   - Ensure all tests pass, ask the user if questions arise.
 
-- [ ] 18. Implement the Lantern_Report_UI
-  - [ ] 18.1 Render property rows with predicted vs actual and mismatch indicator
+- [x] 18. Implement the Lantern_Report_UI
+  - [x] 18.1 Render property rows with predicted vs actual and mismatch indicator
     - Render each Correctness_Property row with Predicted_Result and Actual_Result positioned adjacently in the same row; render all entries within the configured UI render limit (default 3s)
     - Apply a visual mismatch indicator exactly on rows where Predicted differs from Actual, absent where they match
     - _Requirements: 10.1, 10.2, 10.3_
 
-  - [ ] 18.2 Render counterexamples, transitions, and empty/missing states
+  - [x] 18.2 Render counterexamples, transitions, and empty/missing states
     - Render the Counterexample on Confirmed_Bug rows, or an "unavailable" indication when missing; render Pre_Fix_Result and Post_Fix_Result on Property_Transition rows
     - Show a "no report exists" message when no Lantern_Report is available
     - _Requirements: 10.4, 10.5, 10.6, 10.7_
