@@ -221,8 +221,8 @@ Property-based tests use fast-check + Vitest, each implementing exactly one Corr
     - After fixes are applied to the Target_Repo_Copy, re-execute the same property set against the copy inside the runner
     - _Requirements: 8.3_
 
-- [ ] 16. Implement Lantern_Report assembly
-  - [ ] 16.1 Assemble the Lantern_Report
+- [x] 16. Implement Lantern_Report assembly
+  - [x] 16.1 Assemble the Lantern_Report
     - Build a report listing exactly one comparison per evaluated property (with Predicted_Result and Actual_Result), Counterexamples for Confirmed_Bugs, Observed_Deviations with their associated property and predicted-vs-actual difference, and Property_Transitions
     - Set explicit no-Confirmed_Bug and no-Observed_Deviation indications when empty; produce within the configured report-generation limit (default 10s)
     - _Requirements: 9.1, 9.2, 9.3, 9.4, 9.5, 9.6, 9.7_

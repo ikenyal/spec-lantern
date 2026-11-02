@@ -318,6 +318,34 @@ export {
 } from "./revive/apply-fixes-reexecute.js";
 
 /**
+ * Lantern_Report assembly (task 16.1, design Component 4). PURE LOGIC that turns
+ * the Comparison Engine's `PropertyComparison[]` plus the recorded
+ * `ObservedDeviation[]` into a single `LanternReport`: exactly one comparison
+ * per evaluated property, each carrying its Predicted_Result/Actual_Result
+ * (R9.2) with Counterexamples for Confirmed_Bugs (R9.3) and Property_Transitions
+ * (R9.5) riding along on `actual`/`transition`; the Observed_Deviations listed
+ * as-is and joinable to their property via {@link describeDeviation} (R9.4); and
+ * explicit `noConfirmedBug` (R9.6) / `noObservedDeviation` (R9.7) indications.
+ * {@link assembleLanternReport} is the plain entry point;
+ * {@link assembleLanternReportTimed} additionally MEASURES generation against
+ * the configured report-generation limit (read from `LimitsConfig`, never a
+ * literal, R9.1). {@link counterexampleOf} reads a Confirmed_Bug's Counterexample
+ * off `actual`; an injectable {@link ReportClock} makes timing/timestamps
+ * deterministic for the timed test (task 16.3). It executes nothing and never
+ * touches the host.
+ */
+export {
+  assembleLanternReport,
+  assembleLanternReportTimed,
+  counterexampleOf,
+  describeDeviation,
+  SYSTEM_REPORT_CLOCK,
+  type ReportClock,
+  type AssembleLanternReportOptions,
+  type TimedLanternReport,
+} from "./report/index.js";
+
+/**
  * The MCP transport + tool wiring (tasks 10.1, 11.1). Exposes the MCP_Server
  * over the MCP TypeScript SDK and registers the `execute_properties` and
  * `replay_counterexample` tools, whose handlers delegate to
