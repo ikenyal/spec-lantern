@@ -42,7 +42,6 @@ import type {
 import {
   classifyOperation,
   isAccepted,
-  type FixApplicationRequest,
   type GateOperation,
   type SafetyViolationCode,
 } from "./index.js";

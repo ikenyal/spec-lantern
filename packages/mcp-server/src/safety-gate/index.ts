@@ -180,6 +180,30 @@ function normalized(value: string): string {
 }
 
 /**
+ * Does a NORMALIZED (trimmed, lower-cased) directive begin with a host-command
+ * prefix?
+ *
+ * Prefixes that end in a space — e.g. `"npm run "`, `"node "`, `"npx "` — denote
+ * a command KEYWORD that must appear as a whole token. Because {@link normalized}
+ * trims the directive, a bare keyword with nothing after it (e.g. `"npm run "` →
+ * `"npm run"`, `"node "` → `"node"`) would otherwise slip past a naive
+ * `startsWith(prefix)` check. We instead match the trimmed keyword only when the
+ * directive IS that keyword or continues with a word boundary (a space), so
+ * `"node "` and `"node ./x.js"` are both caught while a benign
+ * `"node_modules ..."` description is NOT a false positive.
+ *
+ * Prefixes that do not end in a space (schemes like `"host:"`, operators like
+ * `"./"`, and flagged invocations like `"sh -c"`) keep plain prefix matching.
+ */
+function startsWithCommandPrefix(description: string, prefix: string): boolean {
+  if (prefix.endsWith(" ")) {
+    const keyword = prefix.trimEnd();
+    return description === keyword || description.startsWith(`${keyword} `);
+  }
+  return description.startsWith(prefix);
+}
+
+/**
  * Classify a target reference (the repo/copy the operation runs against).
  *
  * A safe reference is a non-empty, opaque target-repo reference the runner can
@@ -244,7 +268,7 @@ function classifyProperty(property: CorrectnessProperty): SafetyViolation | null
 function classifyFixTask(task: FixTask): SafetyViolation | null {
   const description = normalized(task.description);
   for (const prefix of HOST_COMMAND_PREFIXES) {
-    if (description.startsWith(prefix)) {
+    if (startsWithCommandPrefix(description, prefix)) {
       return {
         code: "HOST_EXECUTION_DIRECTIVE",
         reason: `fix task "${task.id}" encodes a host command/build-step directive ("${task.description}"); fixes are applied to the copy inside the runner, never run on the host`,
