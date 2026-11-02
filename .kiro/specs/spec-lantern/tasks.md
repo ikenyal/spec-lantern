@@ -187,8 +187,8 @@ Property-based tests use fast-check + Vitest, each implementing exactly one Corr
 - [x] 13. Checkpoint - Ensure all tests pass
   - Ensure all tests pass, ask the user if questions arise.
 
-- [ ] 14. Implement the Comparison Engine
-  - [ ] 14.1 Pair predictions with actual results and classify
+- [x] 14. Implement the Comparison Engine
+  - [x] 14.1 Pair predictions with actual results and classify
     - Pair Predicted_Result (read from the lock, task 7) with Actual_Result when both PASS/FAIL exist and flag inequality as a prediction mismatch
     - Classify FAIL as a Confirmed_Bug and attach its Counterexample; exclude timeouts (mark NOT_COMPARED_TIMEOUT); mark predicted-only properties NOT_EXECUTED
     - _Requirements: 7.1, 7.2, 7.3, 7.4, 7.5_

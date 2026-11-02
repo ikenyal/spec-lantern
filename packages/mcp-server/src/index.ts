@@ -245,6 +245,29 @@ export {
 } from "./orchestrator/replay.js";
 
 /**
+ * The Comparison Engine (task 14.1, design Component 4). PURE LOGIC that pairs
+ * each property's LOCKED Predicted_Result (read back via the task-7 lock so the
+ * ORIGINALLY recorded value is used, R3.5) with its Actual_Result and
+ * classifies the pairing into a `PropertyComparison`: `PREDICTION_MISMATCH`
+ * exactly when a predicted PASS/FAIL and an actual PASS/FAIL disagree (R7.1,
+ * R7.2), `confirmedBug` only when the actual verdict is FAIL with its
+ * Counterexample attached (R7.3), `NOT_COMPARED_TIMEOUT` for timeouts (R7.4),
+ * and `NOT_EXECUTED` for a predicted property with no PASS/FAIL actual result
+ * (R7.5). {@link compareProperties} is the in-memory entry point;
+ * {@link comparePropertiesFromLocks} layers the task-7 lock reader on top for
+ * on-disk locks; {@link noActualResult} builds the NOT_EXECUTED placeholder. The
+ * full Lantern_Report assembly is task 16, not here.
+ */
+export {
+  compareProperty,
+  compareProperties,
+  comparePropertiesFromLocks,
+  noActualResult,
+  type ComparisonInput,
+  type LockedComparisonInput,
+} from "./comparison/index.js";
+
+/**
  * The MCP transport + tool wiring (tasks 10.1, 11.1). Exposes the MCP_Server
  * over the MCP TypeScript SDK and registers the `execute_properties` and
  * `replay_counterexample` tools, whose handlers delegate to
