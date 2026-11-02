@@ -193,7 +193,7 @@ Property-based tests use fast-check + Vitest, each implementing exactly one Corr
     - Classify FAIL as a Confirmed_Bug and attach its Counterexample; exclude timeouts (mark NOT_COMPARED_TIMEOUT); mark predicted-only properties NOT_EXECUTED
     - _Requirements: 7.1, 7.2, 7.3, 7.4, 7.5_
 
-  - [ ]* 14.2 Write property tests for the comparison logic
+  - [x] 14.2 Write property tests for the comparison logic
     - **Property 14: Prediction mismatch is flagged exactly when predicted differs from actual** — Feature: spec-lantern, Property 14
     - **Property 15: FAIL classifies a Confirmed_Bug with its Counterexample; non-FAIL does not** — Feature: spec-lantern, Property 15
     - **Property 16: Timeout outcomes are excluded from comparison** — Feature: spec-lantern, Property 16
