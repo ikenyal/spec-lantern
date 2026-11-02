@@ -12,18 +12,8 @@ import { SPEC_LANTERN } from "@spec-lantern/types";
 export const MCP_SERVER_FEATURE = SPEC_LANTERN;
 
 /**
- * Minimal local rootless Podman runner for a single Correctness_Property
- * (task 4.2). Task 4.3 dispatches one property into the runner via
- * `runPropertyInContainer`.
- */
-export {
-  runPropertyInContainer,
-  type PodmanRunnerRequest,
-} from "./runner/podman-runner.js";
-
-/**
  * The Isolated_Runner contract (task 8.2). This GENERALIZES the concrete
- * task-4.2 skeleton runner into an explicit interface — the single execution
+ * task-9 two-phase runner into an explicit interface — the single execution
  * target for Target_Repo code — so the Safety Gate (task 8.1), network topology
  * (task 9), and orchestrator (task 10) program against the contract rather than
  * the concrete Podman function. The contract codifies the two overriding
@@ -32,7 +22,7 @@ export {
  * unavailability abort with a `RUNNER_UNAVAILABLE` outcome identifying the
  * reason, never falling back to host execution (R5.8, R12.5).
  * `podmanIsolatedRunner` is the MVP-scope implementation (a thin adapter over
- * `runPropertyInContainer`); `getIsolatedRunner` selects it.
+ * `runTwoPhase`); `getIsolatedRunner` selects it.
  */
 export {
   getIsolatedRunner,
@@ -43,10 +33,11 @@ export {
 
 /**
  * The thinnest end-to-end execute path (task 4.3): load the task-4.1 Claim /
- * property / comment-trusting PASS prediction, dispatch the one property into
- * the task-4.2 runner, execute it against writing-tracker inside the container,
- * and surface the resulting FAIL as a contradiction of the PASS prediction.
- * This is the seam the full pipeline (comparison, report, UI) builds on.
+ * property / comment-trusting PASS prediction, dispatch the one property through
+ * the task-9 two-phase runner (`runTwoPhase`), execute it against writing-tracker
+ * inside the container, and surface the resulting FAIL as a contradiction of the
+ * PASS prediction. This is the seam the full pipeline (comparison, report, UI)
+ * builds on.
  */
 export {
   executeWalkingSkeleton,

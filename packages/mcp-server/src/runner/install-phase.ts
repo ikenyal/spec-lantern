@@ -41,7 +41,7 @@
  * down in a `finally`, so no install-phase network or container survives into
  * the test phase — even on failure.
  *
- * HOST-SAFETY INVARIANTS (identical discipline to {@link ./podman-runner.ts},
+ * HOST-SAFETY INVARIANTS (identical discipline to {@link ./test-phase.ts},
  * see steering 00-pipeline-and-safety.md):
  *  1. No host execution — the package manager runs ONLY via `podman run`, never
  *     in the host shell. There is no code path here that runs the Target_Repo's
@@ -55,8 +55,7 @@
  *  4. `--ignore-scripts` is preserved — the invariant defended all the way back
  *     in the skeleton runner is kept here, now backed by the full topology.
  *
- * macOS MOUNT DISCIPLINE (hard constraints, carried over verbatim from
- * {@link ./podman-runner.ts}):
+ * macOS MOUNT DISCIPLINE (hard constraints, shared with {@link ./test-phase.ts}):
  *  - The target directory is bound with a PLAIN bind mount. No `:Z` SELinux
  *    relabel — macOS is not an SELinux host and relabeling a broad shared path
  *    is wrong there.
@@ -144,7 +143,7 @@ interface ProcResult {
  * containers/network are reaped separately by the caller's teardown so nothing
  * stray survives.
  *
- * This mirrors the helper in {@link ./podman-runner.ts} deliberately: the two
+ * This mirrors the helper in {@link ./test-phase.ts} deliberately: the two
  * modules share the same spawn/timeout/no-host-execution discipline, and
  * duplicating the few lines keeps each runner module self-contained around the
  * one external binary it shells out to.

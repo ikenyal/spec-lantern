@@ -42,7 +42,7 @@
 //       — and a boundary-escaping target reference is handled by the gate
 //       (rejected when it declares host execution) rather than being allowed to
 //       reach the host. Confinement enforcement at run time is the runner's job
-//       (podman-runner mounts ONLY `targetRepoPath`); here we assert the request
+//       (the two-phase runner mounts ONLY `targetRepoPath`); here we assert the request
 //       shape cannot even EXPRESS a second mount or a host target the gate would
 //       accept.
 //
@@ -453,7 +453,7 @@ describe("task 8.4 — R12.5: runner unavailability aborts with RUNNER_UNAVAILAB
 describe("task 8.4 — R12.6: the runner request can express only ONE mountable target", () => {
   // Confinement is ENFORCED at run time by the concrete runner, which mounts
   // ONLY `request.targetRepoPath` (a single `-v ${repoAbs}:/work` bind; see
-  // podman-runner.ts). Launching a container is not hermetic, so we assert the
+  // test-phase.ts / install-phase.ts). Launching a container is not hermetic, so we assert the
   // CONTRACT-level guarantee the confinement rests on: the request shape carries
   // exactly ONE mountable target and offers no field through which a caller
   // could request a second mount, a host path escape, or a broad mount like
@@ -493,7 +493,7 @@ describe("task 8.4 — R12.6: the runner request can express only ONE mountable 
 
   it("confines the test file to the mount: a boundary-escaping target reference cannot be gate-accepted", () => {
     // The runner stages an external property test file INTO the mount rather
-    // than running it from the host (podman-runner's resolveTestFileInMount), so
+    // than running it from the host (test-phase's resolveTestFileInMount), so
     // the file is only ever reachable from inside the boundary. At the gate
     // level — the pre-execution decision — a target reference that DECLARES host
     // execution (the only way to point outside a runner-mounted boundary) is

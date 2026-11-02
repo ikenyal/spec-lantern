@@ -1,10 +1,10 @@
 /**
  * The Isolated_Runner contract (task 8.2).
  *
- * This module GENERALIZES the concrete walking-skeleton runner
- * ({@link ./podman-runner.ts}) into an explicit, reusable INTERFACE so the rest
- * of the MCP_Server programs against the *contract* rather than a single
- * concrete function. The Safety Gate (task 8.1), the two-phase network topology
+ * This module GENERALIZES the concrete two-phase runner
+ * ({@link ./test-phase.ts}) into an explicit, reusable INTERFACE so the rest of
+ * the MCP_Server programs against the *contract* rather than a single concrete
+ * function. The Safety Gate (task 8.1), the two-phase network topology
  * (task 9), and the execution orchestrator / `execute_properties` tool
  * (task 10) all dispatch through an {@link IsolatedRunner}; swapping the
  * concrete implementation (local rootless Podman today; the AWS Fargate runner
@@ -34,18 +34,15 @@
  * stand up the isolation boundary.
  */
 import type { ActualResult } from "@spec-lantern/types";
-import {
-  runPropertyInContainer,
-  type PodmanRunnerRequest,
-} from "./podman-runner.js";
+import { runTwoPhase, type TestPhaseRequest } from "./test-phase.js";
 
 /**
  * A request to run exactly one Correctness_Property inside the Isolated_Runner.
  *
  * This is the generalized, implementation-agnostic shape callers build. It is
- * intentionally identical to the concrete {@link PodmanRunnerRequest} so the
- * local Podman runner satisfies it without adaptation; the alias keeps a single
- * source of truth for the field documentation (see podman-runner.ts) while
+ * intentionally identical to the concrete {@link TestPhaseRequest} so the local
+ * two-phase Podman runner satisfies it without adaptation; the alias keeps a
+ * single source of truth for the field documentation (see test-phase.ts) while
  * giving callers a name that does not bind them to Podman.
  *
  * The two fields that carry the boundary-confinement invariant (R12.6):
@@ -56,7 +53,7 @@ import {
  *    when already under `targetRepoPath`, otherwise staged into the mount) so it
  *    is reachable only from within the boundary and never executes on the host.
  */
-export type IsolatedRunnerRequest = PodmanRunnerRequest;
+export type IsolatedRunnerRequest = TestPhaseRequest;
 
 /**
  * The Isolated_Runner contract — the single execution target for Target_Repo
@@ -64,9 +61,9 @@ export type IsolatedRunnerRequest = PodmanRunnerRequest;
  *
  * An implementation runs exactly one Correctness_Property test file against the
  * Target_Repo (or Target_Repo_Copy) INSIDE an isolation boundary and resolves
- * with a closed {@link ActualResult}. The MVP-scope implementation is a local
- * rootless Podman container ({@link podmanIsolatedRunner}); an AWS Fargate
- * implementation is Future Work and would implement this same interface.
+ * with a closed {@link ActualResult}. The MVP-scope implementation is the local
+ * rootless Podman two-phase runner ({@link podmanIsolatedRunner}); an AWS
+ * Fargate implementation is Future Work and would implement this same interface.
  *
  * Invariants every implementation MUST honor:
  *  - **Container-not-host execution (R5.2).** Install, build, and test of the
@@ -102,22 +99,25 @@ export interface IsolatedRunner {
 }
 
 /**
- * The MVP-scope {@link IsolatedRunner}: a local rootless Podman container.
+ * The MVP-scope {@link IsolatedRunner}: the local rootless Podman TWO-PHASE
+ * runner.
  *
- * This is the thin adapter that makes the concrete task-4.2 skeleton runner
- * ({@link runPropertyInContainer}) conform to the generalized contract. It adds
- * no behavior of its own — `runProperty` IS `runPropertyInContainer` — so every
- * host-safety invariant the skeleton already proves (Podman-unavailability →
- * `RUNNER_UNAVAILABLE` with no host fallback; mount ONLY the target working
- * directory with a plain macOS-safe bind mount; confine file access to that
- * mount) is exactly the behavior exposed through the interface. Callers (Safety
- * Gate, network topology, orchestrator) depend on {@link IsolatedRunner}, not on
- * this concrete object, so the Podman implementation can later sit beside an AWS
- * Fargate one without changing them.
+ * This is the thin adapter that makes the concrete task-9 two-phase runner
+ * ({@link runTwoPhase}) conform to the generalized contract. It adds no behavior
+ * of its own — `runProperty` IS `runTwoPhase` — so every host-safety invariant
+ * the two-phase runner proves is exactly the behavior exposed through the
+ * interface: dependencies install behind the internal-only network + Verdaccio
+ * proxy (`--ignore-scripts`, registry only), the property then executes with
+ * `--network none` (no inbound/outbound access at all), Podman-unavailability
+ * surfaces as `RUNNER_UNAVAILABLE` with no host fallback, and ONLY the target
+ * working directory is mounted (plain macOS-safe bind mount). Callers (Safety
+ * Gate, orchestrator) depend on {@link IsolatedRunner}, not on this concrete
+ * object, so the Podman implementation can later sit beside an AWS Fargate one
+ * without changing them.
  */
 export const podmanIsolatedRunner: IsolatedRunner = {
   runProperty(request: IsolatedRunnerRequest): Promise<ActualResult> {
-    return runPropertyInContainer(request);
+    return runTwoPhase(request);
   },
 };
 

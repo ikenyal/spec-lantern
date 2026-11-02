@@ -115,7 +115,7 @@ describe("walking skeleton — single-property FAIL (task 4.4)", () => {
       /* ---- R5.1 / R12.1: executed inside the runner, never on the host ---- */
 
       // A real VERDICT is reachable ONLY through the Podman container path
-      // inside `runPropertyInContainer`; the runner returns RUNNER_UNAVAILABLE
+      // inside `runTwoPhase`; the runner returns RUNNER_UNAVAILABLE
       // (never a host-run verdict) when Podman is absent. Observing a VERDICT
       // therefore proves the property executed in the runner, not the host.
       expect(outcome.actual.outcome).toBe("VERDICT");

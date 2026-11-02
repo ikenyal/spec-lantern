@@ -33,8 +33,8 @@
  * holds for the whole phase because the flag is set at `podman run` time and the
  * namespace lives for the container's entire lifetime.
  *
- * HOST-SAFETY INVARIANTS (identical discipline to {@link ./podman-runner.ts} and
- * {@link ./install-phase.ts}, see steering 00-pipeline-and-safety.md):
+ * HOST-SAFETY INVARIANTS (identical discipline to {@link ./install-phase.ts},
+ * see steering 00-pipeline-and-safety.md):
  *  1. No host execution — Vitest runs ONLY via `podman run`, never in the host
  *     shell. There is no code path here that runs the Target_Repo's tests on the
  *     host.

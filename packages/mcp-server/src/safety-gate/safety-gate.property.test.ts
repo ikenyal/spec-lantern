@@ -52,6 +52,47 @@ import type {
 import { podmanIsolatedRunner } from "../runner/isolated-runner.js";
 
 /* -------------------------------------------------------------------------- */
+/* Podman reachability (gates the REAL-runner slice of Property 30)           */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Probe whether rootless Podman is reachable within a bounded window, matching
+ * the runner's own lightweight `podman info` check. Returns false when the
+ * binary is absent, errors, or does not respond in time.
+ *
+ * Why this gate exists: the MVP Isolated_Runner is the TWO-PHASE runner, whose
+ * first phase stands up a real internal network + Verdaccio proxy BEFORE any
+ * mount can fail. So driving the real runner against a doomed target is only
+ * cheap/hermetic when Podman is UNREACHABLE (the unavailability guard returns
+ * immediately). When Podman IS reachable, exercising the real runner would spin
+ * up real containers — exactly what this test must not do — so the real-runner
+ * slice is skipped and the no-host-fallback contract is proven exhaustively by
+ * the contract-honoring test-double instead.
+ */
+async function podmanReachable(): Promise<boolean> {
+  const { spawn } = await import("node:child_process");
+  return new Promise((resolvePromise) => {
+    const child = spawn("podman", ["info", "--format", "{{.Version.Version}}"], {
+      stdio: ["ignore", "ignore", "ignore"],
+    });
+    const timer = setTimeout(() => {
+      child.kill("SIGKILL");
+      resolvePromise(false);
+    }, 15_000);
+    child.on("error", () => {
+      clearTimeout(timer);
+      resolvePromise(false);
+    });
+    child.on("close", (code) => {
+      clearTimeout(timer);
+      resolvePromise(code === 0);
+    });
+  });
+}
+
+const PODMAN_REACHABLE = await podmanReachable();
+
+/* -------------------------------------------------------------------------- */
 /* Shared knowledge of what the gate treats as host-bound                     */
 /* -------------------------------------------------------------------------- */
 
@@ -377,18 +418,19 @@ describe("Safety Gate — host-safety decision properties (task 8.3)", () => {
   /* Property 30                                                              */
   /* ------------------------------------------------------------------------ */
 
-  it("Feature: spec-lantern, Property 30: Runner unavailability aborts without host fallback", async () => {
+  it(
+    "Feature: spec-lantern, Property 30: Runner unavailability aborts without host fallback",
+    async () => {
     // We MUST NOT spin up Podman here (slow, non-hermetic). Instead we model the
     // no-fallback contract two complementary ways over MANY generated requests:
     //
-    //  1. The REAL MVP runner (podmanIsolatedRunner) is driven in an environment
-    //     where the runner cannot be created. On the host running these tests
-    //     Podman is typically absent/unreachable, in which case the runner MUST
-    //     resolve to RUNNER_UNAVAILABLE — never a VERDICT and never a host-run
-    //     result. If Podman *is* reachable in this environment the real runner
-    //     would actually execute a container (out of scope / slow here), so we
-    //     only assert the real runner when it reports unavailability; the
-    //     no-fallback contract itself is proven exhaustively by (2).
+    //  1. The REAL MVP runner (podmanIsolatedRunner, the TWO-PHASE runner) is
+    //     driven ONLY when Podman is UNREACHABLE on this host, in which case the
+    //     runner MUST resolve to RUNNER_UNAVAILABLE — never a VERDICT and never
+    //     a host-run result. When Podman IS reachable the two-phase runner would
+    //     stand up a real network + Verdaccio proxy before any mount could fail,
+    //     which is slow/non-hermetic and out of scope here, so that slice is
+    //     SKIPPED; the no-fallback contract itself is proven exhaustively by (2).
     //
     //  2. A contract-honoring TEST-DOUBLE IsolatedRunner that models "runner
     //     unavailable" for every request. The invariant under test is: the
@@ -447,9 +489,12 @@ describe("Safety Gate — host-safety decision properties (task 8.3)", () => {
       }),
     );
 
-    // (1) The REAL MVP runner, driven once per a handful of generated requests.
-    // We only assert the no-fallback contract when it reports unavailability;
-    // when Podman is reachable we skip the assertion rather than run a container.
+    // (1) The REAL MVP runner, driven once per a handful of generated requests —
+    // but ONLY when Podman is unreachable, so this never stands up a container.
+    // When Podman is reachable the two-phase runner would create real
+    // infrastructure before failing, so we skip this slice (the test-double
+    // above already proves the contract exhaustively across 100+ runs).
+    if (!PODMAN_REACHABLE) {
     await fc.assert(
       fc.asyncProperty(runnerRequest, async (request) => {
         let result: ActualResult;
@@ -484,10 +529,13 @@ describe("Safety Gate — host-safety decision properties (task 8.3)", () => {
         // a verdict from an unavailable/unmountable runner.
         expect(result.outcome).not.toBe("VERDICT");
       }),
-      // The real runner may probe Podman (a subprocess) per run; keep the count
+      // The real runner probes Podman (a subprocess) per run; keep the count
       // modest while the TEST-DOUBLE assertion above carries the 100+ iterations
       // that prove the contract exhaustively.
       { numRuns: 5 },
     );
-  });
+    }
+    },
+    25_000,
+  );
 });

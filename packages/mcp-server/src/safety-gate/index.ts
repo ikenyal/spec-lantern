@@ -29,7 +29,7 @@
  *    state unchanged: there is no host state to change here.
  *  - It is the layer that DECIDES whether a request is even allowed to reach
  *    the runner. Enforcing container-not-host AT execution time is the runner's
- *    job (`../runner/podman-runner.ts`); this gate is the separate, earlier
+ *    job (`../runner/test-phase.ts`); this gate is the separate, earlier
  *    decision about admissibility. The two are complementary, not redundant.
  *  - It reuses the closed `ActualResult` union from `@spec-lantern/types`: a
  *    rejection is surfaced as the existing `SAFETY_VIOLATION` outcome shape

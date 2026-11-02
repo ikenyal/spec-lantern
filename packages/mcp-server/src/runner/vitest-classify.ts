@@ -2,13 +2,12 @@
  * Shared Vitest-report classification for the rootless Podman runners.
  *
  * This module is the SINGLE SOURCE OF TRUTH for turning Vitest's
- * `--reporter=json` output into the closed `ActualResult` union. It was
- * extracted verbatim from the walking-skeleton runner
- * ({@link ./podman-runner.ts}, task 4.2) so BOTH the single-container skeleton
- * runner AND the two-phase test runner ({@link ./test-phase.ts}, task 9.2)
- * classify identically — the pinned fast-check 3.x / vitest 2.x failure-message
- * shapes the classifier keys off of are load-bearing, and duplicating the logic
- * across two runners would risk the two drifting apart.
+ * `--reporter=json` output into the closed `ActualResult` union. It originated
+ * in the task-4.2 walking-skeleton runner and now lives here as the shared
+ * classifier for the two-phase test runner ({@link ./test-phase.ts}, task 9.2)
+ * — the pinned fast-check 3.x / vitest 2.x failure-message shapes the
+ * classifier keys off of are load-bearing, so keeping one source of truth
+ * prevents any drift.
  *
  * CLASSIFICATION CONTRACT (unchanged from task 4.2):
  *  - VERDICT FAIL     — a test ran and failed because an ASSERTION failed
