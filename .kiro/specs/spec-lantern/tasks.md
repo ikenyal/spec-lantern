@@ -170,8 +170,8 @@ Property-based tests use fast-check + Vitest, each implementing exactly one Corr
     - **Property 12: Replay with the recorded Execution_Context reproduces the result** — Feature: spec-lantern, Property 12
     - **Validates: Requirements 6.3**
 
-- [ ] 12. Implement jsdom component rendering under a Controllable_Clock
-  - [-] 12.1 Render props-driven embedded component logic
+- [x] 12. Implement jsdom component rendering under a Controllable_Clock
+  - [x] 12.1 Render props-driven embedded component logic
     - Render a props-driven React component in jsdom with mocked data injected via props and supply a Controllable_Clock (fake timers pinned to Fixed_Current_Time plus fixed `TZ`)
     - Evaluate the `component_rendered` Correctness_Property authored by Kiro against the rendered output; for internally-fetching components (recorded unverifiable by the Kiro_Power) render nothing
     - _Requirements: 4.2, 4.3_
@@ -184,7 +184,7 @@ Property-based tests use fast-check + Vitest, each implementing exactly one Corr
     - Render a representative props-driven component with mocked data via props and assert the render used the injected data; add a negative case asserting an internally-fetching component is recorded unverifiable
     - _Requirements: 4.2, 3.6_
 
-- [ ] 13. Checkpoint - Ensure all tests pass
+- [x] 13. Checkpoint - Ensure all tests pass
   - Ensure all tests pass, ask the user if questions arise.
 
 - [ ] 14. Implement the Comparison Engine
