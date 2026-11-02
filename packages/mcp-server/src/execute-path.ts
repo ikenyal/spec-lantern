@@ -63,6 +63,7 @@
  * and the surfaced mismatch in structured form.
  */
 import { cp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { randomBytes } from "node:crypto";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
@@ -114,11 +115,34 @@ const DEFAULT_SPEC_ROOT = resolve(
 const DEFAULT_TARGET_SOURCE = resolve(REPO_ROOT, "sandbox", "writing-tracker");
 
 /**
- * Default home for the repo-relative working copy (gitignored). It MUST live
- * under the repo (under `/Users` on macOS) so it is visible inside the Podman
- * machine, which shares `/Users` but NOT `/tmp`.
+ * Directory that HOLDS the per-run working copies (gitignored). Each run gets
+ * its OWN uniquely-named subdir under `skeleton/` (see
+ * {@link makeUniqueWorktreeDir}); this is just the parent location. It MUST live
+ * under the repo (under `/Users` on macOS) so the working copy is visible
+ * inside the Podman machine, which shares `/Users` but NOT `/tmp`.
  */
-const DEFAULT_WORKTREE_DIR = resolve(here, "..", "skeleton", ".worktree");
+const WORKTREE_PARENT_DIR = resolve(here, "..", "skeleton");
+
+/** Base name every per-run working copy starts with (gitignored via `.worktree*`). */
+const WORKTREE_BASENAME = ".worktree";
+
+/**
+ * Build a UNIQUE per-run working-copy directory path. Fixed directory names let
+ * two concurrent runs (e.g. two smoke test files, or a watch re-run overlapping
+ * the previous) clobber each other's files mid-copy — the `cp`/`rm` race that
+ * surfaces as `ENOTEMPTY`. A per-run random token makes every run's copy
+ * disjoint, so concurrent runs cannot collide. The name keeps the `.worktree`
+ * prefix so the `.worktree*` gitignore pattern still covers it, and stays under
+ * the repo (under `/Users`) so it is visible inside the Podman machine.
+ *
+ * @param label optional short tag embedded in the name (e.g. a test id) purely
+ *   to make a stray directory easy to attribute while debugging.
+ */
+function makeUniqueWorktreeDir(label?: string): string {
+  const token = randomBytes(6).toString("hex");
+  const suffix = label ? `-${label}` : "";
+  return resolve(WORKTREE_PARENT_DIR, `${WORKTREE_BASENAME}${suffix}-${token}`);
+}
 
 /**
  * Where the property test file lands inside the working copy. Under `src/` so
@@ -453,7 +477,7 @@ export async function prepareWalkingSkeletonWorkingCopy(
 ): Promise<PreparedWalkingSkeletonWorkingCopy> {
   const specRoot = options.specRoot ?? DEFAULT_SPEC_ROOT;
   const targetSource = options.targetSource ?? DEFAULT_TARGET_SOURCE;
-  const worktreeDir = options.worktreeDir ?? DEFAULT_WORKTREE_DIR;
+  const worktreeDir = options.worktreeDir ?? makeUniqueWorktreeDir();
   const { propertyTestFile } = await prepareWorkingCopy(
     specRoot,
     targetSource,
@@ -488,7 +512,7 @@ export async function executeWalkingSkeleton(
 ): Promise<WalkingSkeletonOutcome> {
   const specRoot = options.specRoot ?? DEFAULT_SPEC_ROOT;
   const targetSource = options.targetSource ?? DEFAULT_TARGET_SOURCE;
-  const worktreeDir = options.worktreeDir ?? DEFAULT_WORKTREE_DIR;
+  const worktreeDir = options.worktreeDir ?? makeUniqueWorktreeDir();
   const timeoutSeconds = options.timeoutSeconds ?? 600;
   const log = options.log ?? (() => undefined);
 

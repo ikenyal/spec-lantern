@@ -104,6 +104,26 @@ const CONTAINER_WORKDIR = "/work";
 const PROXY_PORT = 4873;
 
 /**
+ * Verdaccio's storage directory INSIDE the proxy container (its documented
+ * default). The package cache + the registry's metadata live here; persisting
+ * it across runs is what turns every install after the first into a warm,
+ * mostly-offline fetch instead of re-downloading the whole tree each time.
+ */
+const PROXY_STORAGE_DIR = "/verdaccio/storage";
+
+/**
+ * Name of the NAMED Podman volume that persists Verdaccio's storage across runs
+ * (the package cache). A named volume (not a bind mount) keeps the cache inside
+ * the Podman machine — so it works identically on macOS where host /tmp is not
+ * shared — and is reused by every run's freshly-named proxy container. It is
+ * intentionally NOT torn down with the per-run topology: its whole purpose is to
+ * outlive a run so the next install is warm. `podman volume create` is
+ * idempotent (a second create is a no-op), so first run creates it and every
+ * later run reuses it.
+ */
+const VERDACCIO_CACHE_VOLUME = "spec-lantern-verdaccio-cache";
+
+/**
  * Default overall install-phase timeout in seconds. Installing a full
  * dependency tree through a cold proxy is slow on first run, so the default is
  * generous; callers pin a tighter value when appropriate.
@@ -345,10 +365,23 @@ export async function createInstallTopology(
     };
   }
 
+  // 2b. Ensure the PERSISTENT Verdaccio cache volume exists. Idempotent: the
+  //     first run creates it, every later run reuses the warm cache. Mounted
+  //     into the proxy below so packages fetched once are not re-downloaded.
+  //     A failure here is non-fatal — we fall back to a cold (but correct)
+  //     proxy rather than failing the run, so the cache is a pure speed-up.
+  await runProcess("podman", ["volume", "create", VERDACCIO_CACHE_VOLUME], {
+    timeoutMs: CONTROL_TIMEOUT_MS,
+  }).catch(() => undefined);
+
   // 3. Start the registry proxy, detached (`-d`) and DUAL-ATTACHED: the internal
   //    network (so the install container reaches it at its container name) AND
   //    the outbound network (so it — and only it — can reach the real registry
   //    to upstream packages). Two `--network` flags attach both at run time.
+  //    The persistent cache volume is mounted at Verdaccio's storage dir so the
+  //    package cache survives across runs (the first install is cold; later ones
+  //    are warm). The volume is deliberately NOT removed by teardown — it must
+  //    outlive the per-run topology to be a cache.
   const proxyRun = await runProcess(
     "podman",
     [
@@ -361,6 +394,8 @@ export async function createInstallTopology(
       networkName,
       "--network",
       outboundNetworkName,
+      "-v",
+      `${VERDACCIO_CACHE_VOLUME}:${PROXY_STORAGE_DIR}`,
       proxyImage,
     ],
     { timeoutMs: CONTROL_TIMEOUT_MS },

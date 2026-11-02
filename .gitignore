@@ -16,16 +16,16 @@ __pycache__/
 # Scratch: cloned target repos for local experiments (not part of the submission)
 /sandbox/
 
-# Podman runner working copy of the writing-tracker Target_Repo (repo-relative
-# so it is visible inside the macOS Podman machine, which shares /Users but not
-# /tmp). Not part of the submission — the execute path copies sandbox/writing-
-# tracker here at verify time (excluding node_modules) and mounts it into the
-# container. The legacy minimal fixture dir is kept ignored for older checkouts.
-/packages/mcp-server/skeleton/.worktree/
+# Podman runner working copies of the writing-tracker Target_Repo (repo-relative
+# so they are visible inside the macOS Podman machine, which shares /Users but
+# not /tmp). Not part of the submission — the execute path copies sandbox/
+# writing-tracker here at verify time (excluding node_modules) and mounts it
+# into the container. Each run uses a UNIQUE per-run directory name (a
+# `.worktree-<token>` / `.worktree-smoke-10-5-<token>` suffix) so concurrent
+# runs never delete each other's files, hence the trailing-glob patterns. The
+# legacy minimal fixture dir is kept ignored for older checkouts.
+/packages/mcp-server/skeleton/.worktree*
 /packages/mcp-server/skeleton/.fixture/
-# The task 10.5 runner-dispatch smoke test uses its own working copy so it never
-# races the skeleton execute path's .worktree.
-/packages/mcp-server/skeleton/.worktree-smoke-10-5/
 
 # OS / editor
 .DS_Store

@@ -54,8 +54,7 @@
 
 import { spawn } from "node:child_process";
 import { access, stat } from "node:fs/promises";
-import { dirname, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+import { resolve } from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
 import {
   prepareWalkingSkeletonWorkingCopy,
@@ -69,22 +68,19 @@ import {
   type InstallTopology,
 } from "./install-phase.js";
 
-const here = dirname(fileURLToPath(import.meta.url));
 // The READ-ONLY host source Target_Repo the dispatch half copies OUT of
 // (the same `sandbox/writing-tracker` the walking-skeleton execute path uses).
 const HOST_TARGET_SOURCE = WALKING_SKELETON_TARGET_SOURCE;
 const HOST_TARGET_NODE_MODULES = resolve(HOST_TARGET_SOURCE, "node_modules");
 
-// A dedicated working copy for THIS smoke test so it never races the skeleton
-// execute path's own `.worktree` dir. Lives under the repo (under `/Users`) so
-// it is visible inside the macOS Podman machine, which shares `/Users` not /tmp.
-const SMOKE_WORKTREE_DIR = resolve(
-  here,
-  "..",
-  "..",
-  "skeleton",
-  ".worktree-smoke-10-5",
-);
+// This smoke test gets its OWN working copy so it never races the skeleton
+// execute path (run concurrently in the same `test:smoke` invocation). We let
+// the production seam (`prepareWalkingSkeletonWorkingCopy`) choose a UNIQUE
+// per-run directory name (a `.worktree-<token>` suffix) rather than a fixed
+// name — fixed names let two concurrent runs delete each other's files mid-copy
+// (ENOTEMPTY). The chosen path comes back on `prepared.worktreeDir`; we clean it
+// up in `finally`. It lives under the repo (under `/Users`) so it is visible
+// inside the macOS Podman machine, which shares `/Users` not /tmp.
 
 // The install image the topology probe shells into. Must match the install
 // phase's own default so `node` resolves identically. Kept in sync with
@@ -201,9 +197,8 @@ describe("runner dispatch — property executes IN THE RUNNER, not the host (tas
     async () => {
       // Prepare the writing-tracker working copy via the SAME production seam
       // the skeleton execute path uses (no duplicated setup logic here).
-      const prepared = await prepareWalkingSkeletonWorkingCopy({
-        worktreeDir: SMOKE_WORKTREE_DIR,
-      });
+      // No fixed worktreeDir — the seam picks a unique per-run directory.
+      const prepared = await prepareWalkingSkeletonWorkingCopy();
       expect(prepared.propertyId).toBe(WALKING_SKELETON_PROPERTY_ID);
 
       try {
@@ -245,9 +240,9 @@ describe("runner dispatch — property executes IN THE RUNNER, not the host (tas
         const hostSourceMtimeAfter = (await stat(HOST_TARGET_SOURCE)).mtimeMs;
         expect(hostSourceMtimeAfter).toBe(hostSourceMtimeBefore);
       } finally {
-        // Clean the smoke working copy so nothing leaks between runs.
+        // Clean this run's unique working copy so nothing leaks between runs.
         const { rm } = await import("node:fs/promises");
-        await rm(SMOKE_WORKTREE_DIR, { recursive: true, force: true }).catch(
+        await rm(prepared.worktreeDir, { recursive: true, force: true }).catch(
           () => undefined,
         );
       }
