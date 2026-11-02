@@ -177,3 +177,138 @@ describe("execute_properties MCP tool (task 10.1)", () => {
     }
   });
 });
+
+// Feature: spec-lantern — MCP transport + replay_counterexample tool wiring (task 11.1)
+//
+// Round-trips the `replay_counterexample` tool over the same in-memory MCP
+// transport pair to prove the tool is exposed and that a call flows request →
+// Safety Gate → runner with the recorded Execution_Context FORCED through to the
+// runner (R6.3). A FAKE IsolatedRunner is injected (via createMcpServer's
+// `replay` options) so the handler is exercised deterministically without
+// Podman.
+
+/** Connect an SDK Client to a server whose REPLAY path uses the fake runner. */
+async function connectReplayClient(
+  runner: IsolatedRunner,
+): Promise<{ client: Client; close: () => Promise<void> }> {
+  const server = createMcpServer({ replay: { runner } });
+  const [clientTransport, serverTransport] =
+    InMemoryTransport.createLinkedPair();
+  const client = new Client({ name: "test-client", version: "0.0.0" });
+  await Promise.all([
+    client.connect(clientTransport),
+    server.connect(serverTransport),
+  ]);
+  return {
+    client,
+    close: async () => {
+      await client.close();
+      await server.close();
+    },
+  };
+}
+
+describe("replay_counterexample MCP tool (task 11.1)", () => {
+  const recordedContext = {
+    randomSeed: 123456789,
+    timezone: "Asia/Tokyo",
+    fixedCurrentTime: "2020-01-15T00:00:00.000Z",
+  };
+
+  it("is listed as an available tool", async () => {
+    const runner = fakeRunner();
+    const { client, close } = await connectReplayClient(runner);
+    try {
+      const { tools } = await client.listTools();
+      expect(tools.map((t) => t.name)).toContain("replay_counterexample");
+    } finally {
+      await close();
+    }
+  });
+
+  it("replays through the runner with the recorded Execution_Context forced and returns the ActualResult", async () => {
+    const counterexample = {
+      propertyId: "property-1.claim-monthly-order",
+      input: { now: "Jan 2020" },
+      observedOutput: "Aug 2019",
+      executionContext: recordedContext,
+    };
+    const runner = fakeRunner({
+      "property-1.claim-monthly-order": {
+        propertyId: "property-1.claim-monthly-order",
+        outcome: "VERDICT",
+        verdict: "FAIL",
+        counterexample,
+      },
+    });
+    const { client, close } = await connectReplayClient(runner);
+    try {
+      const res = await client.callTool({
+        name: "replay_counterexample",
+        arguments: {
+          targetRepoRef: "target-repo-copy-abc",
+          property: {
+            id: "property-1.claim-monthly-order",
+            claimId: "claim-monthly-order",
+            title: "p",
+            statement: "for all x, holds",
+            kind: "function",
+            validatesRequirements: ["6.3"],
+          },
+          executionContext: recordedContext,
+        },
+      });
+
+      const structured = res.structuredContent as ActualResult;
+      expect(structured).toEqual({
+        propertyId: "property-1.claim-monthly-order",
+        outcome: "VERDICT",
+        verdict: "FAIL",
+        counterexample,
+      });
+
+      // The runner was dispatched to with the recorded context FORCED (R6.3).
+      expect(runner.calls).toHaveLength(1);
+      expect(runner.calls[0]?.targetRepoPath).toBe("target-repo-copy-abc");
+      expect(runner.calls[0]?.executionContext).toEqual(recordedContext);
+
+      // Also surfaced as a JSON text block.
+      const textBlock = (res.content as { type: string; text: string }[]).find(
+        (c) => c.type === "text",
+      );
+      expect(textBlock).toBeDefined();
+      const parsed = JSON.parse(textBlock!.text) as ActualResult;
+      expect(parsed.outcome).toBe("VERDICT");
+    } finally {
+      await close();
+    }
+  });
+
+  it("rejects a host-bound replay as SAFETY_VIOLATION without using the runner", async () => {
+    const runner = fakeRunner();
+    const { client, close } = await connectReplayClient(runner);
+    try {
+      const res = await client.callTool({
+        name: "replay_counterexample",
+        arguments: {
+          targetRepoRef: "host:/Users/me/project",
+          property: {
+            id: "property-1.claim-monthly-order",
+            claimId: "claim-monthly-order",
+            title: "p",
+            statement: "for all x, holds",
+            kind: "function",
+            validatesRequirements: ["6.3"],
+          },
+          executionContext: recordedContext,
+        },
+      });
+
+      const structured = res.structuredContent as ActualResult;
+      expect(structured.outcome).toBe("SAFETY_VIOLATION");
+      expect(runner.calls).toHaveLength(0);
+    } finally {
+      await close();
+    }
+  });
+});

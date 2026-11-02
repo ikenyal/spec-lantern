@@ -161,8 +161,8 @@ Property-based tests use fast-check + Vitest, each implementing exactly one Corr
     - Assert a request is dispatched into the rootless Podman runner (not the host); bring up the install-phase internal-only network + proxy and assert the install container reaches the proxy but has no direct outbound internet route
     - _Requirements: 5.1, 5.3, 12.2_
 
-- [ ] 11. Implement Counterexample replay (`replay_counterexample` tool)
-  - [ ] 11.1 Implement replay from a recorded Execution_Context
+- [x] 11. Implement Counterexample replay (`replay_counterexample` tool)
+  - [x] 11.1 Implement replay from a recorded Execution_Context
     - Re-run a property with its recorded Random_Seed, timezone, and Fixed_Current_Time and produce an Actual_Result equal to the original
     - _Requirements: 6.3_
 

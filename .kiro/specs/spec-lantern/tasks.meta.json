@@ -375,6 +375,25 @@
         "chatSessionId": "sess_6bfe8bc0-8f16-4e5d-b03e-bff69c681f6a",
         "timestamp": 1793598135401
       }
+    ],
+    "11.1 Implement replay from a recorded Execution_Context": [
+      {
+        "executionId": "7168e00c-af78-44fd-b2c3-0959deffbfec",
+        "chatSessionId": "sess_ad47657a-3b09-4d38-8743-9347af83d423",
+        "timestamp": 1793613847287
+      },
+      {
+        "executionId": "7168e00c-af78-44fd-b2c3-0959deffbfec",
+        "chatSessionId": "sess_ad47657a-3b09-4d38-8743-9347af83d423",
+        "timestamp": 1793617402111
+      }
+    ],
+    "11. Implement Counterexample replay (`replay_counterexample` tool)": [
+      {
+        "executionId": "7168e00c-af78-44fd-b2c3-0959deffbfec",
+        "chatSessionId": "sess_ad47657a-3b09-4d38-8743-9347af83d423",
+        "timestamp": 1793617402210
+      }
     ]
   }
 }

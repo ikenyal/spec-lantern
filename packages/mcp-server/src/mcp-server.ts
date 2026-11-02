@@ -25,12 +25,11 @@
  * stdin/stdout. {@link createMcpServer} builds and configures the server
  * (testable without a transport); {@link startStdioServer} connects it to stdio.
  *
- * SCOPE (task 10.1). Only `execute_properties`, its transport wiring, and the
- * normal VERDICT path are wired here. The `apply_fixes_and_reexecute` (task 15)
- * and `replay_counterexample` (task 11) tools, plus the richer
- * Counterexample/timeout/execution-error surfacing (task 10.2) and
- * Execution_Context recording (task 10.3), are follow-on tasks that register
- * additional tools / enrich the orchestrator behind this same seam.
+ * SCOPE. `execute_properties` (task 10.1) and `replay_counterexample`
+ * (task 11.1) are wired here, each delegating to its pure orchestrator behind
+ * this same transport seam. The `apply_fixes_and_reexecute` tool (task 15) is a
+ * follow-on that registers additional tools / enriches the orchestrator behind
+ * this same seam.
  */
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
@@ -40,6 +39,11 @@ import {
   executeProperties,
   type ExecutePropertiesOptions,
 } from "./orchestrator/index.js";
+import {
+  replayCounterexample,
+  type ReplayCounterexampleOptions,
+  type ReplayCounterexampleRequest,
+} from "./orchestrator/replay.js";
 
 /* -------------------------------------------------------------------------- */
 /* Input schema — mirrors PropertyExecutionRequest                            */
@@ -81,14 +85,42 @@ const executePropertiesInputShape = {
   phase: z.enum(["initial", "post_fix"]),
 } as const;
 
+/**
+ * Zod schema for an {@link ExecutionContext} — the recorded reproduction values
+ * (Random_Seed, timezone, Fixed_Current_Time). Mirrors the serializable type
+ * (task 2.1). `randomSeed` is an integer (fast-check's seed).
+ */
+const executionContextSchema = z.object({
+  randomSeed: z.number().int(),
+  timezone: z.string(),
+  fixedCurrentTime: z.string(),
+});
+
+/**
+ * Zod shape for the `replay_counterexample` tool input (design tool table:
+ * `{ property, executionContext }`, plus the `targetRepoRef` the runner mounts).
+ * Declared as a raw shape so each field is a named tool argument, matching the
+ * `execute_properties` convention.
+ */
+const replayCounterexampleInputShape = {
+  /** Path / copy reference the runner mounts (never executed on the host). */
+  targetRepoRef: z.string(),
+  /** The single Correctness_Property to replay. */
+  property: correctnessPropertySchema,
+  /** The Execution_Context recorded with the original Counterexample (R6.2). */
+  executionContext: executionContextSchema,
+} as const;
+
 /* -------------------------------------------------------------------------- */
 /* Server construction                                                        */
 /* -------------------------------------------------------------------------- */
 
-/** Options for {@link createMcpServer}, forwarded to the orchestrator. */
+/** Options for {@link createMcpServer}, forwarded to the orchestrators. */
 export interface CreateMcpServerOptions {
   /** Orchestration overrides (runner, timeout, log) for `execute_properties`. */
   execute?: ExecutePropertiesOptions;
+  /** Orchestration overrides (runner, timeout, log) for `replay_counterexample`. */
+  replay?: ReplayCounterexampleOptions;
 }
 
 /**
@@ -138,6 +170,47 @@ export function createMcpServer(
       return {
         // PropertyExecutionResult is a plain serializable JSON object; the SDK
         // types structuredContent as an open record, so expose it as one.
+        structuredContent: result as unknown as Record<string, unknown>,
+        content: [
+          {
+            type: "text" as const,
+            text: JSON.stringify(result),
+          },
+        ],
+      };
+    },
+  );
+
+  server.registerTool(
+    "replay_counterexample",
+    {
+      title: "Replay a Counterexample under its recorded Execution_Context",
+      description:
+        "Re-run a single Correctness_Property inside the Isolated_Runner with " +
+        "the Execution_Context recorded for the original execution (its " +
+        "Random_Seed, timezone, and Fixed_Current_Time) forced back through " +
+        "the runner, so a deterministic property reproduces the Actual_Result " +
+        "that was recorded originally. The replay is classified by the Safety " +
+        "Gate first (host-bound replays are rejected with a safety violation " +
+        "and never reach a runner) and runs through the same two-phase " +
+        "lifecycle as execution. Returns the single Actual_Result the replay " +
+        "produced; timeouts, execution errors, runner-unavailability, and " +
+        "safety violations are returned as their own distinct outcomes, never " +
+        "encoded as PASS/FAIL.",
+      inputSchema: replayCounterexampleInputShape,
+    },
+    async (args) => {
+      const request: ReplayCounterexampleRequest = {
+        targetRepoRef: args.targetRepoRef,
+        property: args.property,
+        executionContext: args.executionContext,
+      };
+
+      const result = await replayCounterexample(request, options.replay);
+
+      return {
+        // ActualResult is a plain serializable JSON object; the SDK types
+        // structuredContent as an open record, so expose it as one.
         structuredContent: result as unknown as Record<string, unknown>,
         content: [
           {

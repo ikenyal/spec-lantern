@@ -197,9 +197,25 @@ export {
 } from "./orchestrator/index.js";
 
 /**
- * The MCP transport + `execute_properties` tool wiring (task 10.1). Exposes the
- * MCP_Server over the MCP TypeScript SDK and registers the `execute_properties`
- * tool, whose handler delegates to {@link executeProperties}.
+ * Counterexample replay (task 11.1). {@link replayCounterexample} re-runs ONE
+ * Correctness_Property through the SAME Safety Gate → Isolated_Runner seam as
+ * {@link executeProperties}, but FORCES the recorded Execution_Context
+ * (Random_Seed, timezone, Fixed_Current_Time) back through the runner so a
+ * deterministic property reproduces the `Actual_Result` that was recorded for
+ * the original execution (R6.3). It reuses the runner's verbatim-context path
+ * rather than duplicating any execution logic.
+ */
+export {
+  replayCounterexample,
+  type ReplayCounterexampleRequest,
+  type ReplayCounterexampleOptions,
+} from "./orchestrator/replay.js";
+
+/**
+ * The MCP transport + tool wiring (tasks 10.1, 11.1). Exposes the MCP_Server
+ * over the MCP TypeScript SDK and registers the `execute_properties` and
+ * `replay_counterexample` tools, whose handlers delegate to
+ * {@link executeProperties} and {@link replayCounterexample} respectively.
  * {@link createMcpServer} builds the configured server (transport-agnostic, for
  * tests); {@link startStdioServer} connects it to the stdio transport so a local
  * Kiro_Power can launch it as a subprocess.
