@@ -227,7 +227,7 @@ Property-based tests use fast-check + Vitest, each implementing exactly one Corr
     - Set explicit no-Confirmed_Bug and no-Observed_Deviation indications when empty; produce within the configured report-generation limit (default 10s)
     - _Requirements: 9.1, 9.2, 9.3, 9.4, 9.5, 9.6, 9.7_
 
-  - [ ]* 16.2 Write property tests for report assembly
+  - [x] 16.2 Write property tests for report assembly
     - **Property 22: The report lists every evaluated property with predicted and actual** — Feature: spec-lantern, Property 22
     - **Property 23: The report includes counterexamples, deviations, and transitions it was given** — Feature: spec-lantern, Property 23
     - **Property 24: Empty collections produce explicit indications** — Feature: spec-lantern, Property 24
