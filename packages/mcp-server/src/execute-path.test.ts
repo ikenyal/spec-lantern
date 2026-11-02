@@ -9,10 +9,11 @@
 //
 // What it proves, mapped to requirements:
 //   - R5.1 / R12.1 — the property EXECUTES INSIDE THE RUNNER, NEVER ON THE HOST.
-//       `executeWalkingSkeleton` has exactly one execution path:
-//       `runPropertyInContainer`, which runs the target's install + Vitest
-//       inside a rootless Podman container and NEVER falls back to host
-//       execution (it returns RUNNER_UNAVAILABLE instead). So a real VERDICT
+//       `executeWalkingSkeleton` has exactly one execution path: `runTwoPhase`,
+//       which installs the target's deps + pinned toolchain through the
+//       internal-only network + Verdaccio proxy and then runs Vitest in a
+//       rootless Podman container with `--network none`, NEVER falling back to
+//       host execution (it returns RUNNER_UNAVAILABLE instead). So a real VERDICT
 //       outcome is only reachable via the container. We additionally assert the
 //       READ-ONLY host source `sandbox/writing-tracker` was never mutated by the
 //       run — in particular that the run did not install a `node_modules` into

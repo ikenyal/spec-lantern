@@ -117,13 +117,13 @@ Property-based tests use fast-check + Vitest, each implementing exactly one Corr
     - Attempt to escape the runner boundary and assert the host filesystem and process state remain unchanged
     - _Requirements: 12.4, 12.5, 12.6_
 
-- [ ] 9. Harden the two-phase network topology and runner lifecycle (local rootless Podman)
-  - [ ] 9.1 Construct the install-phase network topology
+- [x] 9. Harden the two-phase network topology and runner lifecycle (local rootless Podman)
+  - [x] 9.1 Construct the install-phase network topology
     - Build the internal-only Podman network, the install container (package manager with `--ignore-scripts`, no direct outbound route), and the single outbound-capable registry-proxy (Verdaccio) container; point the install container's registry at the proxy
     - Tear down the install network and proxy before the test phase begins
     - _Requirements: 5.3, 5.4, 12.2_
 
-  - [ ] 9.2 Construct the test-phase execution with no network
+  - [x] 9.2 Construct the test-phase execution with no network
     - Run the Test_Execution_Phase with all inbound and outbound network disabled for the entire phase; ensure the install phase completes first
     - _Requirements: 5.4, 12.3_
 

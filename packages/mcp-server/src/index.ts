@@ -125,3 +125,43 @@ export {
   type SafetyViolationCode,
   type ExecutionTarget,
 } from "./safety-gate/index.js";
+
+/**
+ * The install-phase network topology (task 9.1). Builds the internal-only
+ * Podman network + the single outbound-capable Verdaccio registry proxy, runs
+ * `npm install --ignore-scripts --registry <proxy>` in an install container so
+ * only the package registry is reachable with lifecycle scripts disabled
+ * (R12.2), and ALWAYS tears the topology down before the test phase begins
+ * (R5.4, R12.3). `runInstallPhase` is the orchestration seam the two-phase test
+ * runner (task 9.2) sequences AFTER; the lower-level
+ * `createInstallTopology`/`runInstallInContainer`/`teardownInstallTopology`
+ * expose the lifecycle for finer-grained composition.
+ */
+export {
+  runInstallPhase,
+  createInstallTopology,
+  runInstallInContainer,
+  teardownInstallTopology,
+  type InstallTopology,
+  type InstallPhaseOutcome,
+  type RunInstallPhaseOptions,
+} from "./runner/install-phase.js";
+
+/**
+ * The no-network Test_Execution_Phase + two-phase composition (task 9.2).
+ * `runTestPhase` runs the Correctness_Property test file inside a rootless
+ * Podman container with `--network none` — no network namespace access at all,
+ * inbound or outbound, for the entire phase (R12.3) — against the dependencies
+ * the install phase already populated, classifying via the shared Vitest
+ * classifier so the outcome matches the skeleton runner exactly.
+ * `runTwoPhase` is the clean entry point the orchestrator (task 10) calls: it
+ * runs `runInstallPhase` FIRST and only starts the no-network test container on
+ * install success, surfacing the install's closed non-VERDICT result unchanged
+ * otherwise (R5.4).
+ */
+export {
+  runTestPhase,
+  runTwoPhase,
+  type TestPhaseRequest,
+  type TwoPhaseRequest,
+} from "./runner/test-phase.js";

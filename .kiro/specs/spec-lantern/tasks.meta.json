@@ -289,6 +289,37 @@
         "chatSessionId": "sess_0df53efc-f0b6-406d-be51-a1436bd3d5af",
         "timestamp": 1793571602303
       }
+    ],
+    "9.1 Construct the install-phase network topology": [
+      {
+        "executionId": "e1e43ada-87b5-4b41-aa85-4ae1ea4a85f6",
+        "chatSessionId": "sess_8bd9e7f5-c87d-4b3a-afd5-685d17a7b442",
+        "timestamp": 1793580267992
+      },
+      {
+        "executionId": "e1e43ada-87b5-4b41-aa85-4ae1ea4a85f6",
+        "chatSessionId": "sess_8bd9e7f5-c87d-4b3a-afd5-685d17a7b442",
+        "timestamp": 1793580836299
+      }
+    ],
+    "9.2 Construct the test-phase execution with no network": [
+      {
+        "executionId": "e1e43ada-87b5-4b41-aa85-4ae1ea4a85f6",
+        "chatSessionId": "sess_8bd9e7f5-c87d-4b3a-afd5-685d17a7b442",
+        "timestamp": 1793580840176
+      },
+      {
+        "executionId": "e1e43ada-87b5-4b41-aa85-4ae1ea4a85f6",
+        "chatSessionId": "sess_8bd9e7f5-c87d-4b3a-afd5-685d17a7b442",
+        "timestamp": 1793584046181
+      }
+    ],
+    "9. Harden the two-phase network topology and runner lifecycle (local rootless Podman)": [
+      {
+        "executionId": "e1e43ada-87b5-4b41-aa85-4ae1ea4a85f6",
+        "chatSessionId": "sess_8bd9e7f5-c87d-4b3a-afd5-685d17a7b442",
+        "timestamp": 1793584046279
+      }
     ]
   }
 }

@@ -33,10 +33,12 @@
  *     `src/__spec_lantern__/` (covered by the `@` alias + the include glob) and
  *     writes a `vitest.config.ts` INSIDE the working copy that defines the `@` →
  *     `src` alias, sets the jsdom environment, and includes the property file.
- *  4. Dispatches the ONE property into `runPropertyInContainer` — the task-4.2
- *     rootless-Podman runner — mounting ONLY the working copy and executing the
- *     property against the REAL component INSIDE the container, never on the
- *     host.
+ *  4. Dispatches the ONE property through `runTwoPhase` — the task-9
+ *     two-phase rootless-Podman runner — mounting ONLY the working copy and
+ *     executing the property against the REAL component INSIDE a container,
+ *     never on the host. Phase one installs the target's deps + the pinned
+ *     test toolchain through the internal-only network + Verdaccio proxy; phase
+ *     two runs Vitest with `--network none` against what was installed.
  *  5. Compares the executed `ActualResult` (expected VERDICT FAIL, oldest-month
  *     first, with its Counterexample) against the PASS prediction and SURFACES
  *     the contradiction.
@@ -52,9 +54,10 @@
  * its ordering logic.
  *
  * Scope: this is the THIN skeleton wiring, not the full pipeline. Prediction
- * locking (task 7), the Safety Gate (task 8), the two-phase network topology
- * (task 9), the Comparison Engine (task 14), the Revive loop (task 15), report
- * assembly (task 16) and the UI (task 18) are deliberately NOT here. The one
+ * locking (task 7), the Safety Gate (task 8), the Comparison Engine (task 14),
+ * the Revive loop (task 15), report assembly (task 16) and the UI (task 18) are
+ * deliberately NOT here. The two-phase network topology (task 9) IS now wired
+ * in: the dispatch goes through `runTwoPhase`. The one
  * exported entry point — {@link executeWalkingSkeleton} — is the seam those
  * later tasks build on: it already returns the prediction, the actual result,
  * and the surfaced mismatch in structured form.
@@ -68,7 +71,7 @@ import {
   type PredictedResult,
   type Verdict,
 } from "@spec-lantern/types";
-import { runPropertyInContainer } from "./runner/podman-runner.js";
+import { runTwoPhase } from "./runner/test-phase.js";
 
 /* -------------------------------------------------------------------------- */
 /* Skeleton artifact coordinates (task 4.1)                                   */
@@ -420,8 +423,9 @@ async function prepareWorkingCopy(
  * executed `ActualResult` against the prediction and reports the mismatch.
  *
  * This never runs target code on the host: all execution happens via
- * `runPropertyInContainer`, which returns `RUNNER_UNAVAILABLE` rather than
- * falling back to the host when Podman is absent.
+ * `runTwoPhase` (install phase + no-network test phase), which returns
+ * `RUNNER_UNAVAILABLE` rather than falling back to the host when Podman is
+ * absent.
  */
 export async function executeWalkingSkeleton(
   options: ExecuteWalkingSkeletonOptions = {},
@@ -450,15 +454,28 @@ export async function executeWalkingSkeleton(
       worktreeDir,
     );
 
-    // 3. Dispatch the ONE property into the task-4.2 runner. ONLY the working
-    //    copy is mounted; install + render of the REAL component happen INSIDE
-    //    the rootless Podman container, never on the host.
-    log("Dispatching the property into the rootless Podman runner…");
-    const actual = await runPropertyInContainer({
+    // 3. Dispatch the ONE property through the task-9 two-phase runner. ONLY
+    //    the working copy is mounted; the install happens in the internal-
+    //    network+Verdaccio phase and the REAL component renders in the
+    //    `--network none` test phase — both inside rootless Podman, never on
+    //    the host.
+    log(
+      "Dispatching the property through the two-phase runner " +
+        "(install via the internal network + Verdaccio proxy, then test with " +
+        "--network none)…",
+    );
+    const actual = await runTwoPhase({
       propertyId: SKELETON_PROPERTY_ID,
       targetRepoPath: worktreeDir,
       propertyTestFile,
+      // The no-network Test_Execution_Phase per-run timeout. The install phase
+      // has its own (generous) timeout; see `install` below.
       timeoutSeconds,
+      // Phase one installs the target's deps AND the pinned test toolchain
+      // through the Verdaccio proxy. Installing React + Radix + testing-library
+      // through a cold proxy is the slow part, so give it the generous ceiling
+      // the single-container path used to spend on its combined install+test.
+      install: { timeoutSeconds },
     });
     log(`Runner returned outcome: ${actual.outcome}`);
 
