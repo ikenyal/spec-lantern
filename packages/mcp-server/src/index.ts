@@ -268,6 +268,56 @@ export {
 } from "./comparison/index.js";
 
 /**
+ * The Revive loop copy-and-apply mechanism (task 15.1, R8.1, R8.2). Makes a
+ * fresh COPY of the Target_Repo into a Target_Repo_Copy and applies each
+ * Kiro-authored Fix_Task ONLY to that copy, leaving the original Target_Repo
+ * byte-for-byte unchanged ("the original is sacred"). {@link applyFixesToCopy}
+ * is the entry point: it guards every Fix_Task's `appliesTo` === "Target_Repo_Copy"
+ * BEFORE any filesystem work, copies the original (read-only), and writes each
+ * {@link FixApplication}'s concrete {@link FileEdit}s confined under the copy
+ * root so no write can reach the original (R8.2 / R12.6). It performs NO
+ * install/build/test and spawns NO process — re-execution against the copy and
+ * Property_Transition classification are the next subtask (15.2,
+ * `apply_fixes_and_reexecute`). {@link copyTargetRepo} exposes just the copy
+ * step; {@link cleanupTargetRepoCopy} removes a copy when done.
+ */
+export {
+  applyFixesToCopy,
+  copyTargetRepo,
+  cleanupTargetRepoCopy,
+  assertAppliesToCopy,
+  type FileEdit,
+  type FixApplication,
+  type ApplyFixesResult,
+  type ApplyFixesOptions,
+} from "./revive/apply-fixes.js";
+
+/**
+ * The Revive loop re-execute-after-fix + Property_Transition (task 15.2, R8.3–
+ * R8.7). {@link applyFixesAndReexecute} copies the Target_Repo, applies each
+ * Fix_Task to the copy (reusing {@link applyFixesToCopy}), re-executes the SAME
+ * Correctness_Properties against the fixed copy via {@link executeProperties}
+ * (targetRepoRef = copy, phase = "post_fix", R8.3), and pairs each property's
+ * caller-supplied Pre_Fix_Result with its just-produced Post_Fix_Result (R8.4).
+ * {@link classifyTransition} is the PURE decision table mapping the (pre, post)
+ * verdict pair to a {@link PropertyTransition}: FAIL→PASS = FIXED, FAIL→FAIL =
+ * NOT_RESOLVED (R8.6), PASS→FAIL = REGRESSION (R8.7), PASS→PASS = STILL_PASSING.
+ * A property whose pre- or post-fix result is a non-verdict outcome gets no
+ * fabricated transition and is reported in `skippedPropertyIds`. The execution
+ * runs through the SAME Safety Gate → Isolated_Runner seam (a fake runner is
+ * injectable via `options.execute`), so no host execution/fallback is
+ * introduced.
+ */
+export {
+  applyFixesAndReexecute,
+  classifyTransition,
+  type ApplyFixesAndReexecuteRequest,
+  type ApplyFixesAndReexecuteOptions,
+  type ApplyFixesAndReexecuteResult,
+  type PropertyFixOutcome,
+} from "./revive/apply-fixes-reexecute.js";
+
+/**
  * The MCP transport + tool wiring (tasks 10.1, 11.1). Exposes the MCP_Server
  * over the MCP TypeScript SDK and registers the `execute_properties` and
  * `replay_counterexample` tools, whose handlers delegate to

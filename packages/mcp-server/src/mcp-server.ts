@@ -25,16 +25,22 @@
  * stdin/stdout. {@link createMcpServer} builds and configures the server
  * (testable without a transport); {@link startStdioServer} connects it to stdio.
  *
- * SCOPE. `execute_properties` (task 10.1) and `replay_counterexample`
- * (task 11.1) are wired here, each delegating to its pure orchestrator behind
- * this same transport seam. The `apply_fixes_and_reexecute` tool (task 15) is a
- * follow-on that registers additional tools / enriches the orchestrator behind
- * this same seam.
+ * SCOPE. `execute_properties` (task 10.1), `replay_counterexample`
+ * (task 11.1), and `apply_fixes_and_reexecute` (task 15.2) are wired here, each
+ * delegating to its pure orchestrator behind this same transport seam. The
+ * `apply_fixes_and_reexecute` handler delegates to
+ * {@link applyFixesAndReexecute}, which copies the Target_Repo, applies fixes to
+ * the copy (task 15.1), and re-executes the properties against the copy via
+ * {@link executeProperties}.
  */
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
-import { SPEC_LANTERN, type PropertyExecutionRequest } from "@spec-lantern/types";
+import {
+  SPEC_LANTERN,
+  type ActualResult,
+  type PropertyExecutionRequest,
+} from "@spec-lantern/types";
 import {
   executeProperties,
   type ExecutePropertiesOptions,
@@ -44,6 +50,11 @@ import {
   type ReplayCounterexampleOptions,
   type ReplayCounterexampleRequest,
 } from "./orchestrator/replay.js";
+import {
+  applyFixesAndReexecute,
+  type ApplyFixesAndReexecuteOptions,
+  type ApplyFixesAndReexecuteRequest,
+} from "./revive/apply-fixes-reexecute.js";
 
 /* -------------------------------------------------------------------------- */
 /* Input schema — mirrors PropertyExecutionRequest                            */
@@ -97,6 +108,111 @@ const executionContextSchema = z.object({
 });
 
 /**
+ * Zod schema for a {@link Counterexample} — mirrors the serializable type
+ * (task 2.1). `input`/`observedOutput` are `unknown` by design (arbitrary
+ * triggering values), so they are modeled as unconstrained.
+ */
+const counterexampleSchema = z.object({
+  propertyId: z.string(),
+  input: z.unknown(),
+  observedOutput: z.unknown(),
+  executionContext: executionContextSchema,
+});
+
+/**
+ * Zod schema for the closed {@link ActualResult} union — one shape per outcome.
+ * Mirrors the discriminated union in `@spec-lantern/types`; `outcome` is the
+ * discriminant. Used to carry the Pre_Fix_Results into
+ * `apply_fixes_and_reexecute` (R8.4) without re-executing the original.
+ */
+const actualResultSchema = z.discriminatedUnion("outcome", [
+  z.object({
+    propertyId: z.string(),
+    outcome: z.literal("VERDICT"),
+    verdict: z.enum(["PASS", "FAIL"]),
+    counterexample: counterexampleSchema.optional(),
+  }),
+  z.object({
+    propertyId: z.string(),
+    outcome: z.literal("TIMEOUT"),
+    limitSeconds: z.number(),
+  }),
+  z.object({
+    propertyId: z.string(),
+    outcome: z.literal("EXECUTION_ERROR"),
+    reason: z.string(),
+  }),
+  z.object({
+    propertyId: z.string(),
+    outcome: z.literal("RUNNER_UNAVAILABLE"),
+    reason: z.string(),
+  }),
+  z.object({
+    propertyId: z.string(),
+    outcome: z.literal("SAFETY_VIOLATION"),
+    reason: z.string(),
+  }),
+]);
+
+/**
+ * Zod schema for a {@link FixTask}. `appliesTo` is pinned to the
+ * `"Target_Repo_Copy"` literal — the apply step re-checks this at runtime
+ * (R8.2) so the original is never a write target.
+ */
+const fixTaskSchema = z.object({
+  id: z.string(),
+  confirmedBugPropertyId: z.string(),
+  description: z.string(),
+  appliesTo: z.literal("Target_Repo_Copy"),
+});
+
+/**
+ * Zod schema for a {@link FileEdit} — the deterministic, serializable
+ * realization of (part of) a fix on the copy: write-full-contents or delete, by
+ * repo-relative path (task 15.1).
+ */
+const fileEditSchema = z.discriminatedUnion("kind", [
+  z.object({
+    kind: z.literal("write"),
+    path: z.string(),
+    contents: z.string(),
+  }),
+  z.object({ kind: z.literal("delete"), path: z.string() }),
+]);
+
+/**
+ * Zod schema for a {@link FixApplication} — a Fix_Task paired with the concrete
+ * {@link FileEdit}s that realize it on the Target_Repo_Copy (task 15.1).
+ */
+const fixApplicationSchema = z.object({
+  fixTask: fixTaskSchema,
+  edits: z.array(fileEditSchema),
+});
+
+/**
+ * Zod shape for the `apply_fixes_and_reexecute` tool input. The design tool
+ * table names it `{ targetRepoCopyRef, fixTasks[], properties[] }`; in this
+ * codebase the concrete realization of a fix is a {@link FixApplication}
+ * (Fix_Task + {@link FileEdit}s, since a Fix_Task's description is natural
+ * language), and the copy is PRODUCED here from the original rather than
+ * supplied — so the input carries `targetRepoRef` (the original to copy),
+ * `applications` (the realizable fixes), `properties` (the SAME set to re-run),
+ * and `preFixResults` (the Pre_Fix_Result per propertyId the caller already has,
+ * keyed as a serializable object, R8.4). Declared as a raw shape so each field
+ * is a named tool argument, matching the `execute_properties` convention.
+ */
+const applyFixesAndReexecuteInputShape = {
+  /** Path to the ORIGINAL Target_Repo to copy from (never executed on host). */
+  targetRepoRef: z.string(),
+  /** The Fix_Tasks + their concrete edits to realize on the copy (15.1). */
+  applications: z.array(fixApplicationSchema),
+  /** The SAME Correctness_Properties to re-execute against the fixed copy. */
+  properties: z.array(correctnessPropertySchema),
+  /** Pre_Fix_Result per propertyId — the original execution outcome (R8.4). */
+  preFixResults: z.record(z.string(), actualResultSchema),
+} as const;
+
+/**
  * Zod shape for the `replay_counterexample` tool input (design tool table:
  * `{ property, executionContext }`, plus the `targetRepoRef` the runner mounts).
  * Declared as a raw shape so each field is a named tool argument, matching the
@@ -121,6 +237,8 @@ export interface CreateMcpServerOptions {
   execute?: ExecutePropertiesOptions;
   /** Orchestration overrides (runner, timeout, log) for `replay_counterexample`. */
   replay?: ReplayCounterexampleOptions;
+  /** Orchestration overrides (runner, apply, copy retention) for `apply_fixes_and_reexecute`. */
+  applyFixesAndReexecute?: ApplyFixesAndReexecuteOptions;
 }
 
 /**
@@ -210,6 +328,54 @@ export function createMcpServer(
 
       return {
         // ActualResult is a plain serializable JSON object; the SDK types
+        // structuredContent as an open record, so expose it as one.
+        structuredContent: result as unknown as Record<string, unknown>,
+        content: [
+          {
+            type: "text" as const,
+            text: JSON.stringify(result),
+          },
+        ],
+      };
+    },
+  );
+
+  server.registerTool(
+    "apply_fixes_and_reexecute",
+    {
+      title: "Apply Fix_Tasks to a copy and re-execute the properties",
+      description:
+        "Copy the Target_Repo into a fresh Target_Repo_Copy, apply each " +
+        "Kiro-authored Fix_Task's edits ONLY to that copy (the original stays " +
+        "byte-for-byte unchanged), then re-execute the SAME " +
+        "Correctness_Properties against the fixed copy inside the " +
+        "Isolated_Runner (phase post_fix). Pairs each property's " +
+        "Pre_Fix_Result (the original execution outcome supplied by the " +
+        "caller) with its Post_Fix_Result and classifies the Property_Transition: " +
+        "FIXED (FAIL→PASS), NOT_RESOLVED (FAIL→FAIL), REGRESSION (PASS→FAIL), or " +
+        "STILL_PASSING (PASS→PASS). A property whose pre- or post-fix result is " +
+        "a non-verdict outcome (timeout, execution error, runner-unavailable, " +
+        "safety violation) gets no fabricated transition and is reported as " +
+        "skipped.",
+      inputSchema: applyFixesAndReexecuteInputShape,
+    },
+    async (args) => {
+      const request: ApplyFixesAndReexecuteRequest = {
+        targetRepoRef: args.targetRepoRef,
+        applications: args.applications,
+        properties: args.properties,
+        // The zod record validates each value as a closed ActualResult; narrow
+        // back to the typed record for the orchestrator.
+        preFixResults: args.preFixResults as Record<string, ActualResult>,
+      };
+
+      const result = await applyFixesAndReexecute(
+        request,
+        options.applyFixesAndReexecute,
+      );
+
+      return {
+        // The result is a plain serializable JSON object; the SDK types
         // structuredContent as an open record, so expose it as one.
         structuredContent: result as unknown as Record<string, unknown>,
         content: [

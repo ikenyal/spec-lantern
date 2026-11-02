@@ -12,13 +12,17 @@
 // A FAKE IsolatedRunner is injected through createMcpServer so the tool handler
 // is exercised deterministically without Podman.
 
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
-import { describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type {
   ActualResult,
   PropertyExecutionResult,
 } from "@spec-lantern/types";
+import type { ApplyFixesAndReexecuteResult } from "./revive/apply-fixes-reexecute.js";
 import type {
   IsolatedRunner,
   IsolatedRunnerRequest,
@@ -307,6 +311,159 @@ describe("replay_counterexample MCP tool (task 11.1)", () => {
       const structured = res.structuredContent as ActualResult;
       expect(structured.outcome).toBe("SAFETY_VIOLATION");
       expect(runner.calls).toHaveLength(0);
+    } finally {
+      await close();
+    }
+  });
+});
+
+// Feature: spec-lantern — MCP transport + apply_fixes_and_reexecute tool wiring (task 15.2)
+//
+// Round-trips the `apply_fixes_and_reexecute` tool over the same in-memory MCP
+// transport pair to prove the tool is exposed and that a call flows request →
+// copy+apply (15.1) → post-fix execution through the runner → Property_Transition.
+// A FAKE IsolatedRunner is injected (via createMcpServer's
+// `applyFixesAndReexecute` options) so the post-fix run is deterministic without
+// Podman; a real throwaway on-disk Target_Repo backs the copy step.
+
+/** Connect an SDK Client to a server whose REVIVE path uses the fake runner. */
+async function connectReviveClient(
+  runner: IsolatedRunner,
+  copyParentDir: string,
+): Promise<{ client: Client; close: () => Promise<void> }> {
+  const server = createMcpServer({
+    applyFixesAndReexecute: { execute: { runner }, apply: { copyParentDir } },
+  });
+  const [clientTransport, serverTransport] =
+    InMemoryTransport.createLinkedPair();
+  const client = new Client({ name: "test-client", version: "0.0.0" });
+  await Promise.all([
+    client.connect(clientTransport),
+    server.connect(serverTransport),
+  ]);
+  return {
+    client,
+    close: async () => {
+      await client.close();
+      await server.close();
+    },
+  };
+}
+
+describe("apply_fixes_and_reexecute MCP tool (task 15.2)", () => {
+  let originalRepo: string;
+  let copyParent: string;
+
+  beforeEach(async () => {
+    originalRepo = await mkdtemp(join(tmpdir(), "spec-lantern-orig-"));
+    copyParent = await mkdtemp(join(tmpdir(), "spec-lantern-copyparent-"));
+    await writeFile(
+      join(originalRepo, "package.json"),
+      JSON.stringify({ name: "target", version: "1.0.0" }, null, 2),
+    );
+    await mkdir(join(originalRepo, "src"), { recursive: true });
+    await writeFile(
+      join(originalRepo, "src", "order.ts"),
+      "export const reverse = true; // Reverse to have most recent month first\n",
+    );
+  });
+
+  afterEach(async () => {
+    await rm(originalRepo, { recursive: true, force: true });
+    await rm(copyParent, { recursive: true, force: true });
+  });
+
+  it("is listed as an available tool", async () => {
+    const runner = fakeRunner();
+    const { client, close } = await connectReviveClient(runner, copyParent);
+    try {
+      const { tools } = await client.listTools();
+      expect(tools.map((t) => t.name)).toContain("apply_fixes_and_reexecute");
+    } finally {
+      await close();
+    }
+  });
+
+  it("applies fixes to the copy, re-executes against it, and returns a FIXED transition", async () => {
+    // Post-fix: the fake runner reports PASS against the fixed copy.
+    const runner = fakeRunner({
+      "property-1.claim-a": {
+        propertyId: "property-1.claim-a",
+        outcome: "VERDICT",
+        verdict: "PASS",
+      },
+    });
+    const { client, close } = await connectReviveClient(runner, copyParent);
+    try {
+      const res = await client.callTool({
+        name: "apply_fixes_and_reexecute",
+        arguments: {
+          targetRepoRef: originalRepo,
+          applications: [
+            {
+              fixTask: {
+                id: "fix-1",
+                confirmedBugPropertyId: "property-1.claim-a",
+                description: "stop reversing",
+                appliesTo: "Target_Repo_Copy",
+              },
+              edits: [
+                {
+                  kind: "write",
+                  path: "src/order.ts",
+                  contents: "export const reverse = false;\n",
+                },
+              ],
+            },
+          ],
+          properties: [
+            {
+              id: "property-1.claim-a",
+              claimId: "claim-a",
+              title: "p",
+              statement: "for all x, holds",
+              kind: "function",
+              validatesRequirements: ["8.3"],
+            },
+          ],
+          // Pre_Fix_Result: the original FAILed (R8.4).
+          preFixResults: {
+            "property-1.claim-a": {
+              propertyId: "property-1.claim-a",
+              outcome: "VERDICT",
+              verdict: "FAIL",
+            },
+          },
+        },
+      });
+
+      const structured = res.structuredContent as ApplyFixesAndReexecuteResult;
+      expect(structured.transitions).toEqual([
+        {
+          propertyId: "property-1.claim-a",
+          preFixResult: "FAIL",
+          postFixResult: "PASS",
+          classification: "FIXED",
+        },
+      ]);
+      expect(structured.appliedFixTaskIds).toEqual(["fix-1"]);
+
+      // The runner was dispatched against the COPY (not the original).
+      expect(runner.calls).toHaveLength(1);
+      expect(runner.calls[0]?.targetRepoPath).toBe(structured.targetRepoCopyPath);
+      expect(structured.targetRepoCopyPath).not.toBe(originalRepo);
+
+      // The original survives untouched (lightly re-asserted; fully covered by 15.1).
+      const original = await readFile(join(originalRepo, "src", "order.ts"), "utf8");
+      expect(original).toContain("reverse = true");
+
+      // Also surfaced as a JSON text block.
+      const textBlock = (res.content as { type: string; text: string }[]).find(
+        (c) => c.type === "text",
+      );
+      expect(textBlock).toBeDefined();
+      const parsed = JSON.parse(textBlock!.text) as ApplyFixesAndReexecuteResult;
+      expect(parsed.transitions[0]?.classification).toBe("FIXED");
     } finally {
       await close();
     }

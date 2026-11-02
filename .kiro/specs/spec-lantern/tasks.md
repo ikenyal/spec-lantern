@@ -200,12 +200,12 @@ Property-based tests use fast-check + Vitest, each implementing exactly one Corr
     - **Property 17: Predicted-only properties are marked not executed** — Feature: spec-lantern, Property 17
     - **Validates: Requirements 7.1, 7.2, 7.3, 7.4, 7.5**
 
-- [ ] 15. Implement the Revive loop (Fix_Tasks, Target_Repo_Copy, Property_Transition)
-  - [ ] 15.1 Apply fixes to the Target_Repo_Copy only
+- [x] 15. Implement the Revive loop (Fix_Tasks, Target_Repo_Copy, Property_Transition)
+  - [x] 15.1 Apply fixes to the Target_Repo_Copy only
     - Apply each Kiro-authored Fix_Task only to the Target_Repo_Copy, leaving the original Target_Repo byte-for-byte unchanged
     - _Requirements: 8.1, 8.2_
 
-  - [ ] 15.2 Implement `apply_fixes_and_reexecute` and record Property_Transition
+  - [x] 15.2 Implement `apply_fixes_and_reexecute` and record Property_Transition
     - Re-execute the same Correctness_Properties against the Target_Repo_Copy in the runner; record Pre_Fix_Result and Post_Fix_Result
     - Build the Property_Transition classification: FIXED (FAIL→PASS), NOT_RESOLVED (FAIL→FAIL), REGRESSION (PASS→FAIL), STILL_PASSING (PASS→PASS)
     - _Requirements: 8.3, 8.4, 8.5, 8.6, 8.7_
