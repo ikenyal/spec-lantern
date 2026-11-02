@@ -237,7 +237,7 @@ Property-based tests use fast-check + Vitest, each implementing exactly one Corr
     - Assert the report is produced within the configured report-generation limit (default 10s) of comparison completion
     - _Requirements: 9.1_
 
-- [ ] 17. Checkpoint - Ensure all tests pass
+- [x] 17. Checkpoint - Ensure all tests pass
   - Ensure all tests pass, ask the user if questions arise.
 
 - [ ] 18. Implement the Lantern_Report_UI
