@@ -73,6 +73,10 @@ import {
   type Verdict,
 } from "@spec-lantern/types";
 import { runTwoPhase } from "./runner/test-phase.js";
+import {
+  buildBackendClientStubModule,
+  buildDomInteractionShimModule,
+} from "./runner/component-render.js";
 
 /* -------------------------------------------------------------------------- */
 /* Skeleton artifact coordinates (task 4.1)                                   */
@@ -320,7 +324,7 @@ export default defineConfig({
 /**
  * Setup file written INSIDE the working copy, wired via `setupFiles`. It patches
  * two interaction-PLUMBING gaps that only appear when rendering the REAL
- * component in jsdom. It never touches any property's assertion:
+ * component in jsdom, and never touches any property's assertion:
  *
  *  1. `waitFor` + fake timers. @testing-library's `waitFor` polls on real timers
  *     unless it detects a jest-style fake-timer global; the authored property
@@ -333,47 +337,29 @@ export default defineConfig({
  *     select the "Monthly" tab; without the pointer events the tab never
  *     switches in jsdom. The shim makes `fireEvent.click` first dispatch the
  *     pointerdown/mousedown Radix listens for, exactly as a real pointer click
- *     (or `@testing-library/user-event`) would.
+ *     would.
+ *
+ * REUSE (task 12.1). These two shims are the exact reusable render PLUMBING the
+ * generic component-render harness provides, so the skeleton consumes the SAME
+ * builder ({@link buildDomInteractionShimModule}) rather than keeping a
+ * divergent copy. NOTE the skeleton does NOT wire the harness's opt-in
+ * Controllable_Clock setup module — this property manages its OWN clock per
+ * fast-check iteration (`vi.useFakeTimers()` + `vi.setSystemTime(now)`), and a
+ * pinned global clock would fight it. So only the DOM shim is reused here.
  */
-const WORKTREE_SETUP = `import { vi } from "vitest";
-import { fireEvent } from "@testing-library/react";
-
-// (1) Make waitFor cooperate with Vitest fake timers.
-(globalThis as unknown as { jest: unknown }).jest = {
-  advanceTimersByTime: (ms: number) => vi.advanceTimersByTime(ms),
-};
-
-// (2) Radix Tabs activate on pointerdown/mousedown, not a bare click.
-const originalClick = fireEvent.click.bind(fireEvent);
-fireEvent.click = ((element: Element | Node | Document | Window, init?: object) => {
-  if (element instanceof Element) {
-    fireEvent.pointerDown(element, init as never);
-    fireEvent.mouseDown(element, init as never);
-  }
-  return originalClick(element as never, init as never);
-}) as typeof fireEvent.click;
-`;
+const WORKTREE_SETUP = buildDomInteractionShimModule();
 
 /**
  * The inert Supabase client stub. Only has to satisfy the module graph if the
  * `Book` import ever becomes a value import; it never talks to a backend.
+ *
+ * REUSE (task 12.1): the generic backend-client stub builder
+ * ({@link buildBackendClientStubModule}) — which exports both `client` and
+ * `supabase` — is exactly the inert stub the skeleton needs for
+ * `@/integrations/supabase/client`, so the skeleton reuses it instead of a
+ * divergent copy.
  */
-const WORKTREE_SUPABASE_STUB = `// Inert Supabase client stub injected by the spec-lantern execute path
-// (task 4.3). The real component only uses the backend's \`Book\` TYPE, so this
-// is never actually called at runtime — it exists so the module graph resolves
-// without a live backend. It does NOT alter the component's ordering logic.
-export const supabase = new Proxy(
-  {},
-  {
-    get() {
-      throw new Error(
-        "spec-lantern stub: the Supabase backend is not available inside the " +
-          "Isolated_Runner (the monthly-ordering property does not need it).",
-      );
-    },
-  },
-);
-`;
+const WORKTREE_SUPABASE_STUB = buildBackendClientStubModule();
 
 /**
  * Copy the READ-ONLY writing-tracker source into a gitignored working copy under

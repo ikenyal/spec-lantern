@@ -182,6 +182,39 @@ export {
 } from "./runner/execution-context.js";
 
 /**
+ * jsdom component rendering under a Controllable_Clock (task 12.1). The GENERIC
+ * render harness for a props-driven `component_rendered` Correctness_Property
+ * (R4.2, R4.3), factored out of the walking skeleton so there is one harness,
+ * not two. {@link planComponentRender} decides whether a property is a
+ * props-driven render or — for an internally-fetching component recorded
+ * unverifiable (R3.6, R4.1) — renders NOTHING. The pure string builders
+ * ({@link buildComponentRenderVitestConfig}, {@link buildControllableClockSetupModule},
+ * {@link buildDomInteractionShimModule}, {@link buildBackendClientStubModule})
+ * emit the jsdom config (the `@` → `src` alias + jsdom env), the OPT-IN
+ * Controllable_Clock pinned to the recorded Fixed_Current_Time + fixed `TZ`, the
+ * reusable DOM-interaction shims, and the inert backend stub;
+ * {@link stageComponentRenderHarness} writes them into the single mounted
+ * working directory. The Controllable_Clock is opt-in (wired only by the render
+ * config, never globally) so the walking skeleton's self-managed clock is never
+ * fought.
+ */
+export {
+  planComponentRender,
+  buildComponentRenderVitestConfig,
+  buildControllableClockSetupModule,
+  buildDomInteractionShimModule,
+  buildBackendClientStubModule,
+  stageComponentRenderHarness,
+  COMPONENT_RENDER_CONFIG_FILE,
+  COMPONENT_RENDER_SETUP_FILE,
+  COMPONENT_RENDER_SHIM_FILE,
+  COMPONENT_RENDER_BACKEND_STUB_FILE,
+  type ComponentRenderPlan,
+  type ComponentRenderVitestConfigOptions,
+  type StageComponentRenderHarnessOptions,
+} from "./runner/component-render.js";
+
+/**
  * The execution orchestrator (task 10.1). {@link executeProperties} turns a
  * `PropertyExecutionRequest` into a `PropertyExecutionResult` by routing it
  * through the Safety Gate (task 8) and then the two-phase Isolated_Runner

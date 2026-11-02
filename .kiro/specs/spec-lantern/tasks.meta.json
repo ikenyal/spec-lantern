@@ -394,6 +394,13 @@
         "chatSessionId": "sess_ad47657a-3b09-4d38-8743-9347af83d423",
         "timestamp": 1793617402210
       }
+    ],
+    "12.1 Render props-driven embedded component logic": [
+      {
+        "executionId": "f17df8f9-1471-42c0-944c-5fbd1f1702c9",
+        "chatSessionId": "sess_ad47657a-3b09-4d38-8743-9347af83d423",
+        "timestamp": 1793618565263
+      }
     ]
   }
 }
