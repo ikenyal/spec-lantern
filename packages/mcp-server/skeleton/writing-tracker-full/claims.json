@@ -1,0 +1,31 @@
+{
+  "claims": [
+    {
+      "id": "claim-monthly-order",
+      "description": "The monthly Progress Summary shows the most recent month first (the first row is the current month).",
+      "sourceFile": "sandbox/writing-tracker/src/components/statistics/PeriodProgressSummary.tsx",
+      "commentRef": "L54 // Reverse to have most recent month first"
+    },
+    {
+      "id": "claim-active-tasks-recent",
+      "description": "The Recently Active Tasks table lists the most recently updated tasks first (the first row is the task with the newest updated_at).",
+      "sourceFile": "sandbox/writing-tracker/src/components/statistics/MostActiveItemsList.tsx",
+      "commentRef": "L36 // Top 5 most recently updated tasks"
+    },
+    {
+      "id": "claim-active-stages-top5",
+      "description": "The Most Active Stages table lists the stages with the highest activity score first, capped at five rows.",
+      "sourceFile": "sandbox/writing-tracker/src/components/statistics/MostActiveItemsList.tsx",
+      "commentRef": "L24 // Top 5 most active stages"
+    },
+    {
+      "id": "claim-top5-stages-for-tasks",
+      "description": "Statistics loads tasks for the top 5 stages (or fewer if there are less than 5).",
+      "sourceFile": "sandbox/writing-tracker/src/hooks/useStatisticsData.ts",
+      "commentRef": "L65 // Get the top 5 stages (or fewer if there are less than 5)",
+      "unverifiable": {
+        "reason": "The claim lives in the useStatisticsData hook, which fetches its own data via the stage/task services backed by the Supabase client (supabase.from(...).select(...)); there is no props-injected data path to render it deterministically, so it cannot be expressed as an executable Correctness_Property (R3.6)."
+      }
+    }
+  ]
+}

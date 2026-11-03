@@ -1,0 +1,17 @@
+{
+  "deviations": [
+    {
+      "id": "dev-monthly-order",
+      "claimId": "claim-monthly-order",
+      "claimedBehavior": "The monthly summary shows the most recent month first; the first row is the current month.",
+      "currentBehavior": "getPeriods() builds the six months as currentMonth - i for i = 0..5 (already most-recent-first), then calls periods.reverse(), which yields OLDEST month first; the first row is the oldest of the six months, not the current month."
+    },
+    {
+      "id": "dev-top5-stages-for-tasks",
+      "claimId": "claim-top5-stages-for-tasks",
+      "claimedBehavior": "Statistics loads tasks for the top 5 stages (the five most active stages).",
+      "currentBehavior": null,
+      "undeterminable": true
+    }
+  ]
+}
