@@ -1,0 +1,145 @@
+{
+  "tool": "apply_fixes_and_reexecute",
+  "capturedAt": "2026-11-03T07:04:03.235Z",
+  "note": "All three properties re-executed against the fixed Target_Repo_Copy. Pre_Fix_Results read from results/stage-c/*.json. Confirms property-1 FIXED and properties 2 & 3 STILL_PASSING (no regression from the fix).",
+  "preFixResultSource": "results/stage-c/*.json",
+  "fixTask": {
+    "id": "fix-1.claim-monthly-order",
+    "confirmedBugPropertyId": "property-1.claim-monthly-order",
+    "description": "Remove the erroneous periods.reverse() in PeriodProgressSummary.getPeriods(): the monthly loop already builds months current-first (i=0..5 = current..5-months-ago), so reversing makes the OLDEST month first, contradicting the claim/comment. Deleting the reverse (and its misleading comment) makes the first row the current month.",
+    "appliesTo": "Target_Repo_Copy"
+  },
+  "fileEdit": {
+    "kind": "write",
+    "path": "src/components/statistics/PeriodProgressSummary.tsx"
+  },
+  "appliedFixTaskIds": [
+    "fix-1.claim-monthly-order"
+  ],
+  "transitions": [
+    {
+      "propertyId": "property-1.claim-monthly-order",
+      "preFixResult": "FAIL",
+      "postFixResult": "PASS",
+      "classification": "FIXED"
+    },
+    {
+      "propertyId": "property-2.claim-active-tasks-recent",
+      "preFixResult": "PASS",
+      "postFixResult": "PASS",
+      "classification": "STILL_PASSING"
+    },
+    {
+      "propertyId": "property-3.claim-active-stages-top5",
+      "preFixResult": "PASS",
+      "postFixResult": "PASS",
+      "classification": "STILL_PASSING"
+    }
+  ],
+  "outcomes": [
+    {
+      "propertyId": "property-1.claim-monthly-order",
+      "preFixResult": {
+        "propertyId": "property-1.claim-monthly-order",
+        "outcome": "VERDICT",
+        "verdict": "FAIL",
+        "counterexample": {
+          "propertyId": "property-1.claim-monthly-order",
+          "input": "[{\"year\":2000,\"month\":0,\"day\":1},[]]",
+          "observedOutput": "expected first row: Jan 2000, actual first row: Aug 1999: expected 'Aug 1999' to be 'Jan 2000' // Object.is equality\n---\nError: Property failed after 1 tests",
+          "executionContext": {
+            "randomSeed": 1664763492,
+            "timezone": "UTC",
+            "fixedCurrentTime": "2025-01-01T00:00:00.000Z"
+          }
+        }
+      },
+      "postFixResult": {
+        "propertyId": "property-1.claim-monthly-order",
+        "outcome": "VERDICT",
+        "verdict": "PASS"
+      },
+      "transition": {
+        "propertyId": "property-1.claim-monthly-order",
+        "preFixResult": "FAIL",
+        "postFixResult": "PASS",
+        "classification": "FIXED"
+      }
+    },
+    {
+      "propertyId": "property-2.claim-active-tasks-recent",
+      "preFixResult": {
+        "propertyId": "property-2.claim-active-tasks-recent",
+        "outcome": "VERDICT",
+        "verdict": "PASS"
+      },
+      "postFixResult": {
+        "propertyId": "property-2.claim-active-tasks-recent",
+        "outcome": "VERDICT",
+        "verdict": "PASS"
+      },
+      "transition": {
+        "propertyId": "property-2.claim-active-tasks-recent",
+        "preFixResult": "PASS",
+        "postFixResult": "PASS",
+        "classification": "STILL_PASSING"
+      }
+    },
+    {
+      "propertyId": "property-3.claim-active-stages-top5",
+      "preFixResult": {
+        "propertyId": "property-3.claim-active-stages-top5",
+        "outcome": "VERDICT",
+        "verdict": "PASS"
+      },
+      "postFixResult": {
+        "propertyId": "property-3.claim-active-stages-top5",
+        "outcome": "VERDICT",
+        "verdict": "PASS"
+      },
+      "transition": {
+        "propertyId": "property-3.claim-active-stages-top5",
+        "preFixResult": "PASS",
+        "postFixResult": "PASS",
+        "classification": "STILL_PASSING"
+      }
+    }
+  ],
+  "postFixExecution": {
+    "results": [
+      {
+        "propertyId": "property-1.claim-monthly-order",
+        "outcome": "VERDICT",
+        "verdict": "PASS"
+      },
+      {
+        "propertyId": "property-2.claim-active-tasks-recent",
+        "outcome": "VERDICT",
+        "verdict": "PASS"
+      },
+      {
+        "propertyId": "property-3.claim-active-stages-top5",
+        "outcome": "VERDICT",
+        "verdict": "PASS"
+      }
+    ],
+    "executionContexts": {
+      "property-1.claim-monthly-order": {
+        "randomSeed": 3947694727,
+        "timezone": "UTC",
+        "fixedCurrentTime": "2025-01-01T00:00:00.000Z"
+      },
+      "property-2.claim-active-tasks-recent": {
+        "randomSeed": 1825443430,
+        "timezone": "UTC",
+        "fixedCurrentTime": "2025-01-01T00:00:00.000Z"
+      },
+      "property-3.claim-active-stages-top5": {
+        "randomSeed": 872643232,
+        "timezone": "UTC",
+        "fixedCurrentTime": "2025-01-01T00:00:00.000Z"
+      }
+    }
+  },
+  "skippedPropertyIds": []
+}

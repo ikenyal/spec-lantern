@@ -6,9 +6,9 @@
  * PRE-GENERATED report asset client-side (task 19.1) from `/reports` — the JSON
  * written by `scripts/export-sample-report.ts` into `public/reports/` and copied
  * verbatim into the built static site — and mounts <LanternReportView> with it.
- * The `sampleData` flag comes from the fetched asset (currently the verified
- * hand-authored sample), so the "Sample data" badge stays until task 20 feeds in
- * real pipeline output. This file is demo-only wiring; it is excluded from the
+ * The `sampleData` flag comes from the fetched asset. It is now REAL pipeline
+ * output (src/real-report.ts), so `sampleData` is false and the "Sample data"
+ * badge no longer shows. This file is demo-only wiring; it is excluded from the
  * library build and from the test glob.
  */
 import { StrictMode, useEffect, useState, type ReactElement } from "react";

@@ -37,6 +37,23 @@ export default [
     },
   },
   {
+    // Browser / jsdom globals for the spec-lantern property test files staged
+    // into the Isolated_Runner (writing-tracker-full/properties/*.test.ts). These
+    // render real React components in jsdom (@testing-library/react), so they
+    // reference DOM types like HTMLElement/Element — valid in the container's
+    // jsdom environment, declared here so the host lint recognizes them. This is
+    // a lint-env declaration only; it never edits the (locked) property sources.
+    files: ["packages/mcp-server/skeleton/**/properties/*.test.ts"],
+    languageOptions: {
+      globals: {
+        HTMLElement: "readonly",
+        Element: "readonly",
+        document: "readonly",
+        window: "readonly",
+      },
+    },
+  },
+  {
     // Browser globals for the runnable UI demo entry (mounts React into #root
     // and fetches the pre-generated report asset client-side).
     files: ["packages/ui/src/main.tsx"],

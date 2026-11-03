@@ -10,13 +10,12 @@
  * static site, so the demo (task 19.2) serves them with no runner and no
  * Target_Repo execution — it only fetches static JSON.
  *
- * Data fidelity: this script re-serializes EXISTING, verified report data
- * (currently the hand-authored {@link WRITING_TRACKER_REPORT}, held to the
- * report-data-fidelity bar in sample-report.ts). It invents nothing: the
- * `sampleData` flag comes straight from `IS_SAMPLE_DATA`, and the row content
- * is the report object unchanged. When task 20 feeds real pipeline output in,
- * only the imported source and the flag change — the export mechanism is the
- * same.
+ * Data fidelity: this script re-serializes EXISTING, verified report data —
+ * now the REAL pipeline output in {@link WRITING_TRACKER_REPORT}
+ * (src/real-report.ts), assembled from the writing-tracker-full execution
+ * artifacts. It invents nothing: the `sampleData` flag comes straight from
+ * `IS_SAMPLE_DATA` (now false, so the UI badge is gone), and the row content
+ * is the report object unchanged.
  */
 import { mkdir, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
@@ -27,7 +26,7 @@ import type {
   ReportManifestEntry,
 } from "../src/report-asset.js";
 import { reportAssetPath } from "../src/report-asset.js";
-import { WRITING_TRACKER_REPORT, IS_SAMPLE_DATA } from "../src/sample-report.js";
+import { WRITING_TRACKER_REPORT, IS_SAMPLE_DATA } from "../src/real-report.js";
 
 /** A report to export: its slug id, title, and the data + sample flag. */
 interface ExportableReport {
@@ -37,14 +36,13 @@ interface ExportableReport {
 }
 
 /**
- * The reports to export. Currently the single verified writing-tracker sample;
- * the manifest shape already supports "one or more" so task 20 can append the
- * real pipeline output without changing the export code.
+ * The reports to export. The single real writing-tracker report assembled by
+ * the pipeline (Stage B-D); the manifest shape already supports "one or more".
  */
 const REPORTS: readonly ExportableReport[] = [
   {
     id: "writing-tracker",
-    title: "writing-tracker (abandoned Lovable app)",
+    title: "writing-tracker (revived Lovable app)",
     asset: { sampleData: IS_SAMPLE_DATA, report: WRITING_TRACKER_REPORT },
   },
 ];

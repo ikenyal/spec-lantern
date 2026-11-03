@@ -7,14 +7,14 @@
  * pre-generated sample Lantern_Reports as static JSON/assets that the same
  * Lantern_Report_UI loads client-side"). This module defines WHERE those assets
  * live and WHAT shape they carry, with NO sample data imported here — so it is
- * safe to include in the library build. The actual (hand-authored) sample
- * report is serialized by `scripts/export-sample-report.ts`, which is the only
- * place that imports `sample-report.ts`.
+ * safe to include in the library build. The real pipeline report is serialized
+ * by `scripts/export-sample-report.ts`, which is the only place that imports
+ * the report data module (`src/real-report.ts`).
  *
  * Data fidelity: this module never authors report rows. It only transports a
- * {@link LanternReport} that was produced elsewhere (currently the verified
- * sample in `sample-report.ts`; the real pipeline output in task 20) together
- * with the `sampleData` flag that drives the UI's "Sample data" badge.
+ * {@link LanternReport} produced by the pipeline (src/real-report.ts, assembled
+ * from the writing-tracker-full execution artifacts) together with the
+ * `sampleData` flag that drives the UI's "Sample data" badge (now false).
  */
 import type { LanternReport } from "@spec-lantern/types";
 
