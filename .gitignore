@@ -27,6 +27,11 @@ __pycache__/
 /packages/mcp-server/skeleton/.worktree*
 /packages/mcp-server/skeleton/.fixture/
 
+# Generated static report assets exported from the verified sample report
+# (packages/ui/scripts/export-sample-report.ts). Derived, not source — the
+# Hosted_Demo build (`npm run export:sample` / `build:demo`) regenerates them.
+/packages/ui/public/reports/
+
 # OS / editor
 .DS_Store
 *.log

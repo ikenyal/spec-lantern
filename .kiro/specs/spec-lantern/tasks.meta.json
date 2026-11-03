@@ -566,6 +566,37 @@
         "chatSessionId": "sess_043afc3c-d117-41e7-a341-161f84d23230",
         "timestamp": 1793659183489
       }
+    ],
+    "19.1 Export pre-generated sample Lantern_Reports as static assets": [
+      {
+        "executionId": "389ba587-f2ae-4785-983b-3697f887c454",
+        "chatSessionId": "sess_26d2b1cc-8d7f-49b8-a4c6-a323af4d8d83",
+        "timestamp": 1793669169749
+      },
+      {
+        "executionId": "389ba587-f2ae-4785-983b-3697f887c454",
+        "chatSessionId": "sess_26d2b1cc-8d7f-49b8-a4c6-a323af4d8d83",
+        "timestamp": 1793669731350
+      }
+    ],
+    "19.2 Build the static site hosting and infrastructure": [
+      {
+        "executionId": "389ba587-f2ae-4785-983b-3697f887c454",
+        "chatSessionId": "sess_26d2b1cc-8d7f-49b8-a4c6-a323af4d8d83",
+        "timestamp": 1793669736947
+      },
+      {
+        "executionId": "389ba587-f2ae-4785-983b-3697f887c454",
+        "chatSessionId": "sess_26d2b1cc-8d7f-49b8-a4c6-a323af4d8d83",
+        "timestamp": 1793670387182
+      }
+    ],
+    "19. Implement the static Hosted_Demo (S3 + CloudFront)": [
+      {
+        "executionId": "389ba587-f2ae-4785-983b-3697f887c454",
+        "chatSessionId": "sess_26d2b1cc-8d7f-49b8-a4c6-a323af4d8d83",
+        "timestamp": 1793670387278
+      }
     ]
   }
 }

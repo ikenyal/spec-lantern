@@ -13,6 +13,7 @@ export default [
       "sandbox/**",
       "packages/mcp-server/skeleton/.worktree/**",
       "packages/mcp-server/skeleton/.fixture/**",
+      "packages/infra/cdk.out/**",
     ],
   },
   js.configs.recommended,
@@ -36,21 +37,39 @@ export default [
     },
   },
   {
-    // Browser globals for the runnable UI demo entry (mounts React into #root).
+    // Browser globals for the runnable UI demo entry (mounts React into #root
+    // and fetches the pre-generated report asset client-side).
     files: ["packages/ui/src/main.tsx"],
     languageOptions: {
       globals: {
         document: "readonly",
         window: "readonly",
+        fetch: "readonly",
       },
     },
   },
   {
-    // Node globals for the UI package's Vite config (build-time only).
-    files: ["packages/ui/vite.config.ts"],
+    // Node globals for the UI package's Vite config and Node-run build scripts
+    // (e.g. the static-report export step, task 19.1).
+    files: ["packages/ui/vite.config.ts", "packages/ui/scripts/**/*.ts"],
     languageOptions: {
       globals: {
         __dirname: "readonly",
+        process: "readonly",
+        console: "readonly",
+      },
+    },
+  },
+  {
+    // Node globals for the AWS CDK infrastructure app (packages/infra). The
+    // CDK app entry and stack run under Node (CommonJS via ts-node) and use
+    // __dirname / process / console.
+    files: ["packages/infra/**/*.ts"],
+    languageOptions: {
+      globals: {
+        __dirname: "readonly",
+        process: "readonly",
+        console: "readonly",
       },
     },
   },

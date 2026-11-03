@@ -9,7 +9,9 @@
     "build": "tsc --build",
     "clean": "rm -rf dist tsconfig.tsbuildinfo",
     "dev": "vite",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "export:sample": "vite-node scripts/export-sample-report.ts",
+    "build:demo": "npm run export:sample && vite build"
   },
   "dependencies": {
     "@spec-lantern/types": "*",

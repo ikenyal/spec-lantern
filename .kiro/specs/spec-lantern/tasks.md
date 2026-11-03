@@ -261,12 +261,12 @@ Property-based tests use fast-check + Vitest, each implementing exactly one Corr
     - Assert the Counterexample-unavailable indication, the no-report message, and that all entries render within the configured UI render limit (default 3s)
     - _Requirements: 10.2, 10.6, 10.7_
 
-- [ ] 19. Implement the static Hosted_Demo (S3 + CloudFront)
-  - [ ] 19.1 Export pre-generated sample Lantern_Reports as static assets
+- [x] 19. Implement the static Hosted_Demo (S3 + CloudFront)
+  - [x] 19.1 Export pre-generated sample Lantern_Reports as static assets
     - Add an export step that serializes one or more pre-generated sample Lantern_Reports (produced by the local pipeline) to static JSON/assets the UI loads client-side; the demo contains no runner and executes no Target_Repo code
     - _Requirements: 11.2_
 
-  - [ ] 19.2 Build the static site hosting and infrastructure
+  - [x] 19.2 Build the static site hosting and infrastructure
     - Configure the S3 + CloudFront static hosting (infrastructure-as-code) so the UI and sample assets are reachable over the public internet with no local install, reusing the same Lantern_Report_UI views
     - _Requirements: 11.1, 11.3_
 

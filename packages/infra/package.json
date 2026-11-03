@@ -1,0 +1,26 @@
+{
+  "name": "@spec-lantern/infra",
+  "version": "0.0.0",
+  "private": true,
+  "type": "commonjs",
+  "description": "AWS CDK (TypeScript) infrastructure for the static Hosted_Demo (S3 + CloudFront). CommonJS so the ts-node-run CDK app resolves extensionless imports.",
+  "bin": {
+    "spec-lantern-infra": "./bin/spec-lantern-infra.ts"
+  },
+  "scripts": {
+    "build": "tsc --build",
+    "clean": "rm -rf dist tsconfig.tsbuildinfo cdk.out",
+    "synth": "cdk synth",
+    "diff": "cdk diff --profile brightflow-sandbox-ikeda",
+    "deploy": "cdk deploy --profile brightflow-sandbox-ikeda --require-approval any-change",
+    "destroy": "cdk destroy --profile brightflow-sandbox-ikeda --force"
+  },
+  "dependencies": {
+    "aws-cdk-lib": "2.160.0",
+    "constructs": "^10.3.0"
+  },
+  "devDependencies": {
+    "aws-cdk": "2.160.0",
+    "ts-node": "^10.9.2"
+  }
+}

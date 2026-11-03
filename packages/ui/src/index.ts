@@ -50,3 +50,25 @@ export {
   type CounterexampleDetailProps,
   type TransitionDetailProps,
 } from "./components.js";
+
+/**
+ * Static report-asset contract and client-side loader (task 19.1). The
+ * Hosted_Demo serves pre-generated Lantern_Reports as JSON under
+ * {@link REPORTS_BASE_PATH} and the UI fetches them at runtime via
+ * {@link loadFirstReportAsset}; nothing is imported at build time and no
+ * Target_Repo code runs. See ./report-asset.ts and ./load-report.ts.
+ */
+export {
+  REPORTS_BASE_PATH,
+  REPORTS_MANIFEST_PATH,
+  reportAssetPath,
+  type ReportAsset,
+  type ReportManifest,
+  type ReportManifestEntry,
+} from "./report-asset.js";
+export {
+  loadManifest,
+  loadReportAsset,
+  loadFirstReportAsset,
+  type FetchLike,
+} from "./load-report.js";
