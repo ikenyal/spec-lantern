@@ -7,11 +7,17 @@
   "types": "./dist/index.d.ts",
   "scripts": {
     "build": "tsc --build",
-    "clean": "rm -rf dist tsconfig.tsbuildinfo"
+    "clean": "rm -rf dist tsconfig.tsbuildinfo",
+    "dev": "vite",
+    "preview": "vite preview"
   },
   "dependencies": {
     "@spec-lantern/types": "*",
     "react": "^18.3.1",
     "react-dom": "^18.3.1"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^4.3.4",
+    "vite": "^5.4.21"
   }
 }

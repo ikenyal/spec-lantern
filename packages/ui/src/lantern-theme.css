@@ -1,0 +1,332 @@
+/*
+ * Lantern theme for the Lantern_Report_UI.
+ *
+ * Direction:
+ *   - Dark charcoal background; lantern-amber is the ONLY strong accent.
+ *   - Predicted_Result ("Kiro believed") is a translucent ghost; Actual_Result
+ *     ("Execution proved") is crisp. Only mismatch rows glow amber.
+ *   - Counterexample is a large "evidence" card. Transition reads tombstone ->
+ *     lit lantern, labeled "Revived".
+ *   - No cursor-following flashlight effect.
+ *
+ * Accessibility:
+ *   - WCAG AA contrast: body text and the "ghost" predicted text both clear the
+ *     4.5:1 ratio on the charcoal background (ghost uses opacity but stays >=
+ *     #9aa0a6-equivalent luminance, verified against --charcoal).
+ *   - The mismatch is conveyed with an icon + the text "Mismatch", never colour
+ *     alone.
+ *   - prefers-reduced-motion disables the amber glow animation.
+ */
+
+:root {
+  --charcoal: #15171a;
+  --charcoal-raised: #1e2125;
+  --charcoal-line: #2c3036;
+  /* Lantern amber — the single strong accent. */
+  --amber: #ffb347;
+  --amber-strong: #ffc46b;
+  --amber-dim: rgba(255, 179, 71, 0.16);
+  /* Text: AA-compliant on --charcoal. */
+  --ink: #e8eaed;        /* ~13.5:1 on charcoal */
+  --ink-muted: #b6bbc2;  /* ~8:1 on charcoal   */
+  /* Ghost (predicted) text: translucent but still >= 4.5:1 on charcoal. */
+  --ghost: #c9cdd3;
+  --ghost-opacity: 0.6;
+  --crisp: #ffffff;
+  --fail: #ff8f8f;       /* readable red on charcoal */
+  --pass: #8fe3b0;       /* readable green on charcoal */
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: var(--charcoal);
+  color: var(--ink);
+  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto,
+    Helvetica, Arial, sans-serif;
+  line-height: 1.5;
+}
+
+.lantern {
+  max-width: 980px;
+  margin: 0 auto;
+  padding: 2.5rem 1.5rem 4rem;
+}
+
+/* ----------------------------------------------------------------- header -- */
+
+.lantern-header {
+  margin-bottom: 2rem;
+  border-bottom: 1px solid var(--charcoal-line);
+  padding-bottom: 1.25rem;
+}
+
+.lantern-header__title {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  margin: 0 0 0.5rem;
+  font-size: 1.9rem;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+}
+
+.lantern-header__flame {
+  filter: drop-shadow(0 0 10px var(--amber));
+}
+
+.lantern-header__summary {
+  margin: 0;
+  color: var(--ink-muted);
+  font-size: 1.05rem;
+}
+
+.lantern-header__disproved {
+  color: var(--amber);
+  font-weight: 600;
+}
+
+/* ------------------------------------------------------------------ empty -- */
+
+.lantern-empty {
+  color: var(--ink-muted);
+  font-size: 1.1rem;
+  text-align: center;
+  padding: 3rem 0;
+}
+
+/* ------------------------------------------------------------------ table -- */
+
+.lantern-table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0 0.75rem;
+}
+
+.lantern-table thead th {
+  text-align: left;
+  font-size: 0.72rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-muted);
+  padding: 0 1rem 0.25rem;
+  font-weight: 600;
+}
+
+.lantern-row {
+  background: var(--charcoal-raised);
+}
+
+.lantern-row > .lantern-cell:first-child {
+  border-top-left-radius: 10px;
+  border-bottom-left-radius: 10px;
+}
+.lantern-row > .lantern-cell:last-child {
+  border-top-right-radius: 10px;
+  border-bottom-right-radius: 10px;
+}
+
+.lantern-cell {
+  padding: 1rem;
+  vertical-align: top;
+  border-top: 1px solid var(--charcoal-line);
+  border-bottom: 1px solid var(--charcoal-line);
+}
+.lantern-cell:first-child {
+  border-left: 1px solid var(--charcoal-line);
+}
+.lantern-cell:last-child {
+  border-right: 1px solid var(--charcoal-line);
+}
+
+.lantern-cell--id {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.85rem;
+  color: var(--ink-muted);
+  max-width: 16rem;
+  word-break: break-word;
+}
+
+.lantern-field-label {
+  display: block;
+  font-size: 0.68rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ink-muted);
+  margin-bottom: 0.3rem;
+}
+
+.lantern-verdict {
+  font-size: 1.05rem;
+  font-weight: 600;
+}
+
+/* Predicted = translucent ghost ("Kiro believed"). Still AA readable. */
+.lantern-verdict--ghost {
+  color: var(--ghost);
+  opacity: var(--ghost-opacity);
+  font-style: italic;
+  font-weight: 500;
+}
+
+/* Actual = crisp ("Execution proved"). */
+.lantern-verdict--crisp {
+  color: var(--crisp);
+}
+
+/* ------------------------------------------------------- mismatch glow -- */
+
+/* Only mismatch rows glow amber. */
+.lantern-row[data-mismatch="true"] .lantern-cell {
+  border-color: var(--amber);
+  background: var(--amber-dim);
+  box-shadow: inset 0 0 0 1px var(--amber-dim);
+  animation: lantern-glow 2.4s ease-in-out infinite;
+}
+
+@keyframes lantern-glow {
+  0%,
+  100% {
+    box-shadow: inset 0 0 12px -4px var(--amber);
+  }
+  50% {
+    box-shadow: inset 0 0 22px -2px var(--amber);
+  }
+}
+
+.lantern-mismatch {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  color: var(--amber-strong);
+  font-weight: 700;
+  font-size: 0.9rem;
+  white-space: nowrap;
+}
+.lantern-mismatch__icon {
+  font-size: 1.1rem;
+}
+
+/* --------------------------------------------------------- evidence card -- */
+
+.lantern-evidence {
+  margin-top: 0.5rem;
+  background: #121417;
+  border: 1px solid var(--amber);
+  border-radius: 10px;
+  padding: 1rem 1.1rem;
+  box-shadow: 0 0 24px -12px var(--amber);
+}
+
+.lantern-evidence__title {
+  font-size: 0.7rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--amber);
+  font-weight: 700;
+  margin-bottom: 0.6rem;
+}
+
+.lantern-evidence__row {
+  display: grid;
+  grid-template-columns: 5.5rem 1fr;
+  gap: 0.6rem;
+  align-items: start;
+  margin-bottom: 0.4rem;
+}
+.lantern-evidence__row:last-child {
+  margin-bottom: 0;
+}
+
+.lantern-evidence__key {
+  font-size: 0.72rem;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--ink-muted);
+  padding-top: 0.2rem;
+}
+
+.lantern-evidence__value {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.85rem;
+  color: var(--ink);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.lantern-evidence--unavailable {
+  color: var(--ink-muted);
+  font-style: italic;
+  box-shadow: none;
+  border-style: dashed;
+}
+
+/* ------------------------------------------------------- revived marker -- */
+
+.lantern-revived {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: 0.75rem;
+  font-size: 0.9rem;
+}
+
+.lantern-revived__label {
+  font-size: 0.68rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--amber);
+  font-weight: 700;
+  margin-right: 0.25rem;
+}
+
+.lantern-revived__state {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  color: var(--ink-muted);
+}
+
+.lantern-revived__state--post {
+  color: var(--pass);
+  font-weight: 600;
+}
+
+.lantern-revived__state--post .lantern-revived__icon {
+  filter: drop-shadow(0 0 8px var(--amber));
+}
+
+.lantern-revived__arrow {
+  color: var(--amber);
+}
+
+/* --------------------------------------------- reduced-motion / responsive -- */
+
+@media (prefers-reduced-motion: reduce) {
+  .lantern-row[data-mismatch="true"] .lantern-cell {
+    animation: none;
+  }
+}
+
+@media (max-width: 720px) {
+  .lantern-table,
+  .lantern-table thead,
+  .lantern-table tbody,
+  .lantern-table tr,
+  .lantern-table td {
+    display: block;
+    width: 100%;
+  }
+  .lantern-table thead {
+    display: none;
+  }
+  .lantern-row {
+    margin-bottom: 1rem;
+    border-radius: 10px;
+    overflow: hidden;
+  }
+}

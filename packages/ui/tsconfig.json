@@ -7,6 +7,13 @@
     "tsBuildInfoFile": "./tsconfig.tsbuildinfo"
   },
   "include": ["src/**/*.ts", "src/**/*.tsx"],
-  "exclude": ["dist", "node_modules", "src/**/*.test.ts", "src/**/*.test.tsx"],
+  "exclude": [
+    "dist",
+    "node_modules",
+    "src/**/*.test.ts",
+    "src/**/*.test.tsx",
+    "src/main.tsx",
+    "src/sample-report.ts"
+  ],
   "references": [{ "path": "../types" }]
 }

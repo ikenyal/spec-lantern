@@ -36,6 +36,25 @@ export default [
     },
   },
   {
+    // Browser globals for the runnable UI demo entry (mounts React into #root).
+    files: ["packages/ui/src/main.tsx"],
+    languageOptions: {
+      globals: {
+        document: "readonly",
+        window: "readonly",
+      },
+    },
+  },
+  {
+    // Node globals for the UI package's Vite config (build-time only).
+    files: ["packages/ui/vite.config.ts"],
+    languageOptions: {
+      globals: {
+        __dirname: "readonly",
+      },
+    },
+  },
+  {
     files: ["**/*.{ts,tsx}"],
     languageOptions: {
       parser: tsparser,

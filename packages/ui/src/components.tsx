@@ -1,11 +1,11 @@
 /**
- * @spec-lantern/ui — Lantern_Report_UI components (task 18.1).
+ * @spec-lantern/ui — Lantern_Report_UI components (tasks 18.1, 18.2).
  *
  * These components render a {@link LanternReport} (or just its
  * {@link PropertyComparison}[] rows) as a table of Correctness_Property rows.
  * They are PURE and PROPS-DRIVEN: every value shown comes from props, nothing
  * is fetched, and nothing touches the host. The same views back both the
- * interactive UI and the static Hosted_Demo (task 19).
+ * interactive UI and the runnable demo (packages/ui/index.html).
  *
  * Task 18.1 scope — three requirements:
  *   - R10.1: each row places its Predicted_Result and Actual_Result ADJACENTLY
@@ -38,9 +38,16 @@
  *     undefined` and branches on nullish to render that message; passing a real
  *     report keeps the 18.1 behavior unchanged.
  *
- * These extend the 18.1 seams: {@link PropertyRow} still renders one `<tr>` and
- * now hangs detail cells (counterexample / unavailable / transition) off that
- * same row, and {@link LanternReportView} still receives the whole report.
+ * Design language (the "lantern" theme in ./lantern-theme.css):
+ *   - Predicted_Result is a translucent "ghost" labeled "Kiro believed";
+ *     Actual_Result is crisp and labeled "Execution proved".
+ *   - Only mismatch rows glow amber, and the mismatch is conveyed with an ICON
+ *     + LABEL (not color alone) so it survives for color-blind readers (WCAG).
+ *   - A Counterexample is a large "evidence" card; a Property_Transition reads
+ *     as tombstone → lit lantern, labeled "Revived".
+ *   - A header tallies "Kiro believed N · Execution disproved N · Revived N".
+ * All colour/motion lives in the stylesheet; `prefers-reduced-motion` is
+ * honoured there. These components only attach semantic class names + testids.
  *
  * `input` and `observedOutput` are `unknown` (R5.6), so they are serialized
  * defensively via {@link safeStringify} — never rendered as a raw object.
@@ -87,6 +94,8 @@ export const TEST_IDS = {
   transitionPreFix: (propertyId: string) => `transition-pre-fix-${propertyId}`,
   transitionPostFix: (propertyId: string) =>
     `transition-post-fix-${propertyId}`,
+  // Design header tally.
+  summary: "lantern-summary",
   // Task 18.2 — the "no report exists" empty state (R10.7). Not keyed by a
   // property because there is no report (and so no properties) to key on.
   noReport: "lantern-no-report",
@@ -164,9 +173,9 @@ export function getCounterexample(
 /**
  * Serialize an `unknown` Counterexample value (`input` / `observedOutput`, which
  * are `unknown` per R5.6) to a stable, human-readable string. Objects/arrays are
- * JSON-stringified; primitives render via `String`. A value that cannot be
- * serialized (e.g. a circular structure) falls back to its `String` form rather
- * than throwing, so a row always renders.
+ * JSON-stringified; primitives render via `String`. A value that cannot
+ * be serialized (e.g. a circular structure) falls back to its `String` form
+ * rather than throwing, so a row always renders.
  */
 export function safeStringify(value: unknown): string {
   if (typeof value === "string") return value;
@@ -175,6 +184,31 @@ export function safeStringify(value: unknown): string {
   } catch {
     return String(value);
   }
+}
+
+/**
+ * The header tally (R-design): how many properties Kiro *believed* would pass,
+ * how many Execution *disproved* (Confirmed_Bugs), and how many were *Revived*
+ * (a Property_Transition that ended PASS). Derived purely from the comparisons.
+ */
+export interface ReportSummary {
+  believed: number;
+  disproved: number;
+  revived: number;
+}
+
+export function summarize(
+  comparisons: readonly PropertyComparison[],
+): ReportSummary {
+  let believed = 0;
+  let disproved = 0;
+  let revived = 0;
+  for (const c of comparisons) {
+    if (c.predicted === "PASS") believed += 1;
+    if (c.confirmedBug) disproved += 1;
+    if (c.transition && c.transition.postFixResult === "PASS") revived += 1;
+  }
+  return { believed, disproved, revived };
 }
 
 /* -------------------------------------------------------------------------- */
@@ -196,39 +230,67 @@ export interface PropertyRowProps {
  * renders no indicator element at all, so tests can assert presence/absence by
  * the indicator's `data-testid`.
  *
- * This is the extension seam for task 18.2 — additional detail cells
- * (Counterexample, Property_Transition) will hang off this same row.
+ * Design: the predicted cell is the translucent "ghost" ("Kiro believed"), the
+ * actual cell is crisp ("Execution proved"), and a mismatched row carries
+ * `data-mismatch` so the stylesheet can make ONLY that row glow amber. The
+ * indicator itself is an icon + text label, never colour alone (WCAG).
  */
 export function PropertyRow({ comparison }: PropertyRowProps): ReactElement {
   const { propertyId } = comparison;
   const mismatch = isMismatch(comparison);
 
   return (
-    <tr data-testid={TEST_IDS.row(propertyId)} data-status={comparison.status}>
-      <td data-testid={`property-id-${propertyId}`}>{propertyId}</td>
+    <tr
+      className="lantern-row"
+      data-testid={TEST_IDS.row(propertyId)}
+      data-status={comparison.status}
+      data-mismatch={mismatch ? "true" : undefined}
+    >
+      <td className="lantern-cell lantern-cell--id" data-testid={`property-id-${propertyId}`}>
+        {propertyId}
+      </td>
       {/* R10.1: predicted and actual are adjacent cells in this one row. */}
-      <td data-testid={TEST_IDS.predicted(propertyId)} data-field="predicted">
-        {formatPredicted(comparison.predicted)}
+      <td
+        className="lantern-cell lantern-cell--predicted"
+        data-testid={TEST_IDS.predicted(propertyId)}
+        data-field="predicted"
+      >
+        <span className="lantern-field-label">Kiro believed</span>
+        <span className="lantern-verdict lantern-verdict--ghost">
+          {formatPredicted(comparison.predicted)}
+        </span>
       </td>
-      <td data-testid={TEST_IDS.actual(propertyId)} data-field="actual">
-        {formatActual(comparison.actual)}
+      <td
+        className="lantern-cell lantern-cell--actual"
+        data-testid={TEST_IDS.actual(propertyId)}
+        data-field="actual"
+      >
+        <span className="lantern-field-label">Execution proved</span>
+        <span className="lantern-verdict lantern-verdict--crisp">
+          {formatActual(comparison.actual)}
+        </span>
       </td>
-      <td data-field="status">
-        {/* R10.3: indicator present EXACTLY on mismatched rows, absent otherwise. */}
+      <td className="lantern-cell lantern-cell--status" data-field="status">
+        {/* R10.3: indicator present EXACTLY on mismatched rows, absent otherwise.
+            Icon + label, not colour alone (WCAG). */}
         {mismatch ? (
           <span
+            className="lantern-mismatch"
             data-testid={TEST_IDS.mismatch(propertyId)}
             role="img"
             aria-label="predicted/actual mismatch"
             title="Predicted differs from actual"
           >
-            ⚠︎ mismatch
+            <span className="lantern-mismatch__icon" aria-hidden="true">
+              ⚠
+            </span>
+            <span className="lantern-mismatch__label">Mismatch</span>
           </span>
         ) : null}
       </td>
       {/* Task 18.2: Counterexample / unavailable (R10.4, R10.6) and
           Property_Transition (R10.5) detail for this same row. */}
-      <td data-field="detail">
+      <td className="lantern-cell lantern-cell--detail" data-field="detail">
         <CounterexampleDetail comparison={comparison} />
         <TransitionDetail comparison={comparison} />
       </td>
@@ -257,8 +319,9 @@ export interface CounterexampleDetailProps {
  *   - Confirmed_Bug + Counterexample -> render input + observed output (R10.4).
  *   - Confirmed_Bug + none           -> render the unavailable indication (R10.6).
  *
- * The triggering `input` and `observedOutput` are `unknown`, so both go through
- * {@link safeStringify} and never render as a raw object.
+ * Design: the counterexample is a large "evidence" card — the literal proof the
+ * execution recorded. The triggering `input` and `observedOutput` are `unknown`,
+ * so both go through {@link safeStringify} and never render as a raw object.
  */
 export function CounterexampleDetail({
   comparison,
@@ -274,6 +337,7 @@ export function CounterexampleDetail({
   if (counterexample === null) {
     return (
       <div
+        className="lantern-evidence lantern-evidence--unavailable"
         data-testid={TEST_IDS.counterexampleUnavailable(propertyId)}
         data-field="counterexample-unavailable"
       >
@@ -285,16 +349,26 @@ export function CounterexampleDetail({
   // R10.4: show the triggering input/state and the observed output.
   return (
     <div
+      className="lantern-evidence"
       data-testid={TEST_IDS.counterexample(propertyId)}
       data-field="counterexample"
     >
-      <div data-testid={TEST_IDS.counterexampleInput(propertyId)}>
-        <span data-label="input">Input: </span>
-        <code>{safeStringify(counterexample.input)}</code>
+      <div className="lantern-evidence__title">Evidence</div>
+      <div className="lantern-evidence__row" data-testid={TEST_IDS.counterexampleInput(propertyId)}>
+        <span className="lantern-evidence__key" data-label="input">
+          Input
+        </span>
+        <code className="lantern-evidence__value">
+          {safeStringify(counterexample.input)}
+        </code>
       </div>
-      <div data-testid={TEST_IDS.counterexampleOutput(propertyId)}>
-        <span data-label="observed-output">Observed: </span>
-        <code>{safeStringify(counterexample.observedOutput)}</code>
+      <div className="lantern-evidence__row" data-testid={TEST_IDS.counterexampleOutput(propertyId)}>
+        <span className="lantern-evidence__key" data-label="observed-output">
+          Observed
+        </span>
+        <code className="lantern-evidence__value">
+          {safeStringify(counterexample.observedOutput)}
+        </code>
       </div>
     </div>
   );
@@ -313,9 +387,13 @@ export interface TransitionDetailProps {
 /**
  * Render the Pre_Fix_Result and Post_Fix_Result for a property that has a
  * recorded Property_Transition (R10.5), or nothing when no transition exists.
- * The transition's classification (FIXED / NOT_RESOLVED / REGRESSION /
- * STILL_PASSING) is surfaced as a `data-classification` attribute for callers
- * that want to style the pre→post pair.
+ *
+ * Design: the pre-fix state reads as a tombstone (the property was dead/failing)
+ * and the post-fix state as a lit lantern, under the label "Revived". The
+ * classification (FIXED / NOT_RESOLVED / REGRESSION / STILL_PASSING) is surfaced
+ * as `data-classification` so the stylesheet can pick the right pairing; the
+ * pre/post VERDICT text is always present so the meaning never relies on an
+ * emoji alone.
  */
 export function TransitionDetail({
   comparison,
@@ -325,15 +403,31 @@ export function TransitionDetail({
 
   return (
     <div
+      className="lantern-revived"
       data-testid={TEST_IDS.transition(propertyId)}
       data-field="transition"
       data-classification={transition.classification}
     >
-      <span data-testid={TEST_IDS.transitionPreFix(propertyId)}>
+      <span className="lantern-revived__label">Revived</span>
+      <span
+        className="lantern-revived__state lantern-revived__state--pre"
+        data-testid={TEST_IDS.transitionPreFix(propertyId)}
+      >
+        <span className="lantern-revived__icon" aria-hidden="true">
+          🪦
+        </span>
         Pre-fix: {transition.preFixResult}
       </span>
-      {" → "}
-      <span data-testid={TEST_IDS.transitionPostFix(propertyId)}>
+      <span className="lantern-revived__arrow" aria-hidden="true">
+        →
+      </span>
+      <span
+        className="lantern-revived__state lantern-revived__state--post"
+        data-testid={TEST_IDS.transitionPostFix(propertyId)}
+      >
+        <span className="lantern-revived__icon" aria-hidden="true">
+          🏮
+        </span>
         Post-fix: {transition.postFixResult}
       </span>
     </div>
@@ -358,12 +452,12 @@ export interface PropertyTableProps {
  */
 export function PropertyTable({ comparisons }: PropertyTableProps): ReactElement {
   return (
-    <table data-testid="property-table">
+    <table className="lantern-table" data-testid="property-table">
       <thead>
         <tr>
           <th scope="col">Property</th>
-          <th scope="col">Predicted</th>
-          <th scope="col">Actual</th>
+          <th scope="col">Kiro believed</th>
+          <th scope="col">Execution proved</th>
           <th scope="col">Status</th>
           <th scope="col">Detail</th>
         </tr>
@@ -401,12 +495,13 @@ export interface LanternReportViewProps {
 /**
  * Top-level view for a {@link LanternReport} (tasks 18.1, 18.2).
  *
- * When a report is available, renders the property table (predicted vs actual,
- * adjacent, with the mismatch indicator on mismatched rows, plus Counterexample
- * and Property_Transition detail per row). When no report is available
- * (`report` is `null`/`undefined`), renders the "no report exists" message
- * (R10.7) and no table. The nullish check is first so no table code ever reads
- * `report.comparisons` on an absent report.
+ * When a report is available, renders a header tally ("Kiro believed N ·
+ * Execution disproved N · Revived N") above the property table (predicted vs
+ * actual, adjacent, with the mismatch indicator on mismatched rows, plus
+ * Counterexample and Property_Transition detail per row). When no report is
+ * available (`report` is `null`/`undefined`), renders the "no report exists"
+ * message (R10.7) and no table. The nullish check is first so no table code ever
+ * reads `report.comparisons` on an absent report.
  */
 export function LanternReportView({
   report,
@@ -414,14 +509,33 @@ export function LanternReportView({
   // R10.7: no Lantern_Report available -> explicit "no report" message.
   if (report === null || report === undefined) {
     return (
-      <section data-testid="lantern-report">
-        <p data-testid={TEST_IDS.noReport}>No report exists.</p>
+      <section className="lantern" data-testid="lantern-report">
+        <p className="lantern-empty" data-testid={TEST_IDS.noReport}>
+          No report exists.
+        </p>
       </section>
     );
   }
 
+  const summary = summarize(report.comparisons);
+
   return (
-    <section data-testid="lantern-report">
+    <section className="lantern" data-testid="lantern-report">
+      <header className="lantern-header">
+        <h1 className="lantern-header__title">
+          <span className="lantern-header__flame" aria-hidden="true">
+            🏮
+          </span>
+          Lantern Report
+        </h1>
+        <p className="lantern-header__summary" data-testid={TEST_IDS.summary}>
+          Kiro believed {summary.believed} ·{" "}
+          <span className="lantern-header__disproved">
+            Execution disproved {summary.disproved}
+          </span>{" "}
+          · Revived {summary.revived}
+        </p>
+      </header>
       <PropertyTable comparisons={report.comparisons} />
     </section>
   );
