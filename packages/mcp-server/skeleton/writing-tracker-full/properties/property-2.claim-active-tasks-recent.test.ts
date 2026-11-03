@@ -128,29 +128,34 @@ test("the first Recently Active Tasks row is the most recently updated task", as
         try {
           render(createElement(MostActiveItemsList, { stages: [] as Stage[], tasks }));
 
-          // The "Recently Active Tasks" card is the second table. Locate it by
-          // its card title, then read the first data row's Last-Updated cell.
-          const heading = screen.getByText("Recently Active Tasks");
-          // Walk up to the enclosing card, then find its table.
-          const card = heading.closest("div")?.parentElement?.parentElement;
-          if (!card) throw new Error("tasks card not found");
-          const rows = within(card as HTMLElement).getAllByRole("row");
-          // rows[0] is the header (Task / Last Updated / Status); rows[1] is the
-          // first data row. Its cells are [title, lastUpdated, status].
-          const firstDataRow = rows[1];
-          if (!firstDataRow) throw new Error("no task rows rendered");
-          const cells = within(firstDataRow).getAllByRole("cell");
+          // HARNESS LOOKUP (revised): locate the "Recently Active Tasks" table
+          // ROBUSTLY by its unique "Last Updated" column header rather than by
+          // walking an assumed card DOM shape. Ascend from that columnheader to
+          // the enclosing <table>, then read the first BODY data row's
+          // Last-Updated cell. This is purely how the test FINDS the row; it
+          // does not change what the property asserts about the claim.
+          const lastUpdatedHeader = screen.getByRole("columnheader", {
+            name: "Last Updated",
+          });
+          const table = lastUpdatedHeader.closest("table");
+          if (!table) throw new Error("tasks table not found");
+          const body = table.querySelector("tbody");
+          if (!body) throw new Error("tasks table body not found");
+          const dataRows = within(body as HTMLElement).getAllByRole("row");
+          if (dataRows.length === 0) throw new Error("no task rows rendered");
+          const cells = within(dataRows[0]).getAllByRole("cell");
+          // Cells are [title, lastUpdated, status]; trim consistently.
           const lastUpdated = cells[1]?.textContent?.trim();
           if (!lastUpdated) throw new Error("last-updated cell not rendered");
 
           // Intended behavior (the comments' promise): the FIRST row is the
           // most recently updated task. A plain expect().toBe() so a genuine
           // ordering violation surfaces as VERDICT FAIL (AssertionError), never
-          // as a thrown Error.
+          // as a thrown Error. Both sides are already trimmed strings.
           expect(
             lastUpdated,
-            `expected first task row last-updated: ${expectedLabel}, actual: ${lastUpdated}`,
-          ).toBe(expectedLabel);
+            `expected first task row last-updated: ${expectedLabel.trim()}, actual: ${lastUpdated}`,
+          ).toBe(expectedLabel.trim());
         } finally {
           cleanup();
         }

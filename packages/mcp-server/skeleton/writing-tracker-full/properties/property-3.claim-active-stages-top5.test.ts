@@ -83,11 +83,13 @@ test("the first Most Active Stages row has the highest activity score and the ta
         ),
       async ({ progresses, titles }) => {
         const iso = new Date(Date.UTC(2020, 0, 1, 12, 0, 0)).toISOString();
-        // Ensure titles are unique so the first-row title match is unambiguous.
+        // Ensure titles are unique AND whitespace-free so the first-row title
+        // match is unambiguous (a raw generated title could be whitespace,
+        // which trims away; trimming it here keeps expected and rendered equal).
         const stages: Stage[] = progresses.map((p, i) => ({
           id: `stage-${i}`,
           book_id: "book-0",
-          title: `${titles[i] || "Stage"}#${i}`,
+          title: `${(titles[i] || "Stage").trim() || "Stage"}#${i}`,
           progress: p,
           is_completed: false,
           order_position: i,
@@ -104,12 +106,18 @@ test("the first Most Active Stages row has the highest activity score and the ta
         try {
           render(createElement(MostActiveItemsList, { stages, tasks: [] as Task[] }));
 
-          const heading = screen.getByText("Most Active Stages");
-          const card = heading.closest("div")?.parentElement?.parentElement;
-          if (!card) throw new Error("stages card not found");
-          const rows = within(card as HTMLElement).getAllByRole("row");
-          // rows[0] = header; data rows are rows[1..].
-          const dataRows = rows.slice(1);
+          // HARNESS LOOKUP (revised): locate the "Most Active Stages" table
+          // ROBUSTLY by its unique "Stage" column header rather than by walking
+          // an assumed card DOM shape. Ascend from that columnheader to the
+          // enclosing <table>, then read the first BODY data row. This is purely
+          // how the test FINDS the row; it does not change what the property
+          // asserts about the claim.
+          const stageHeader = screen.getByRole("columnheader", { name: "Stage" });
+          const table = stageHeader.closest("table");
+          if (!table) throw new Error("stages table not found");
+          const body = table.querySelector("tbody");
+          if (!body) throw new Error("stages table body not found");
+          const dataRows = within(body as HTMLElement).getAllByRole("row");
           if (dataRows.length === 0) throw new Error("no stage rows rendered");
 
           const firstTitle = within(dataRows[0])
@@ -118,11 +126,12 @@ test("the first Most Active Stages row has the highest activity score and the ta
 
           // Intended behavior: first row is the highest-scoring stage AND at
           // most five rows are shown. Both are plain expects so an ordering or
-          // cap violation surfaces as VERDICT FAIL, never a thrown Error.
+          // cap violation surfaces as VERDICT FAIL, never a thrown Error. The
+          // expected title is trimmed too so both sides compare consistently.
           expect(
             firstTitle,
-            `expected first stage row title: ${expectedTitle}, actual: ${firstTitle}`,
-          ).toBe(expectedTitle);
+            `expected first stage row title: ${expectedTitle.trim()}, actual: ${firstTitle}`,
+          ).toBe(expectedTitle.trim());
           expect(
             dataRows.length,
             `expected at most 5 stage rows, actual: ${dataRows.length}`,
