@@ -1,0 +1,11 @@
+--- fix-task-1.before.txt	2026-11-03 14:50:53
++++ fix-task-1.after.txt	2026-11-03 14:50:53
+@@ -51,8 +51,6 @@
+           end: monthEnd
+         });
+       }
+-      // Reverse to have most recent month first
+-      periods.reverse();
+     }
+     
+     return periods;
