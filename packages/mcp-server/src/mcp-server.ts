@@ -55,6 +55,11 @@ import {
   type ApplyFixesAndReexecuteOptions,
   type ApplyFixesAndReexecuteRequest,
 } from "./revive/apply-fixes-reexecute.js";
+import {
+  lockPrediction,
+  type LockPredictionOptions,
+  type LockTarget,
+} from "./prediction-lock/index.js";
 
 /* -------------------------------------------------------------------------- */
 /* Input schema — mirrors PropertyExecutionRequest                            */
@@ -227,6 +232,24 @@ const replayCounterexampleInputShape = {
   executionContext: executionContextSchema,
 } as const;
 
+/**
+ * Zod shape for the `lock_prediction` tool input. The prediction lock (R3.4,
+ * R3.5) is taken over the ON-DISK artifacts: the Predicted_Result file and the
+ * Correctness_Property test file it refers to. Those are located by the canonical
+ * layout from `@spec-lantern/types` under a spec root, keyed by Claim id +
+ * property number. So the tool input mirrors {@link LockTarget}: the spec root
+ * holding the artifacts, the Claim id, and the property number. Declared as a raw
+ * shape so each field is a named tool argument, matching the other tools.
+ */
+const lockPredictionInputShape = {
+  /** Spec root holding claims/properties/predictions/locks. */
+  specRoot: z.string(),
+  /** The Claim id whose property prediction is being locked. */
+  claimId: z.string(),
+  /** The property number (`property-{n}.{claimId}.*`). */
+  propertyNumber: z.number().int().positive(),
+} as const;
+
 /* -------------------------------------------------------------------------- */
 /* Server construction                                                        */
 /* -------------------------------------------------------------------------- */
@@ -239,6 +262,8 @@ export interface CreateMcpServerOptions {
   replay?: ReplayCounterexampleOptions;
   /** Orchestration overrides (runner, apply, copy retention) for `apply_fixes_and_reexecute`. */
   applyFixesAndReexecute?: ApplyFixesAndReexecuteOptions;
+  /** Options (timestamp injection) for `lock_prediction`. */
+  lockPrediction?: LockPredictionOptions;
 }
 
 /**
@@ -376,6 +401,45 @@ export function createMcpServer(
 
       return {
         // The result is a plain serializable JSON object; the SDK types
+        // structuredContent as an open record, so expose it as one.
+        structuredContent: result as unknown as Record<string, unknown>,
+        content: [
+          {
+            type: "text" as const,
+            text: JSON.stringify(result),
+          },
+        ],
+      };
+    },
+  );
+
+  server.registerTool(
+    "lock_prediction",
+    {
+      title: "Lock a Predicted_Result before execution begins",
+      description:
+        "Lock the read-only Predicted_Result for a Correctness_Property BEFORE " +
+        "any execution. Computes a content hash (SHA-256) + timestamp over the " +
+        "Predicted_Result and the Correctness_Property test file it refers to and " +
+        "persists a Prediction_Lock on disk, so the prediction cannot silently " +
+        "change once execution starts (R3.4, R3.5). The Kiro_Power MUST call this " +
+        "for every prediction before execute_properties; later comparison reads " +
+        "the LOCKED verdict, never an edited one. Returns the persisted lock on " +
+        "success, or a structured issue (missing/invalid prediction, missing " +
+        "property file) when no lock could be written.",
+      inputSchema: lockPredictionInputShape,
+    },
+    async (args) => {
+      const target: LockTarget = {
+        specRoot: args.specRoot,
+        claimId: args.claimId,
+        propertyNumber: args.propertyNumber,
+      };
+
+      const result = await lockPrediction(target, options.lockPrediction);
+
+      return {
+        // LockResult is a plain serializable JSON object; the SDK types
         // structuredContent as an open record, so expose it as one.
         structuredContent: result as unknown as Record<string, unknown>,
         content: [

@@ -1,0 +1,20 @@
+{
+  "mcpServers": {
+    "spec-lantern": {
+      "command": "node",
+      "args": [
+        "packages/mcp-server/dist/bin/server.js"
+      ],
+      "env": {
+        "PATH": "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin"
+      },
+      "disabled": false,
+      "autoApprove": [
+        "lock_prediction",
+        "execute_properties",
+        "replay_counterexample",
+        "apply_fixes_and_reexecute"
+      ]
+    }
+  }
+}

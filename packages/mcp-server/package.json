@@ -5,8 +5,12 @@
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
+  "bin": {
+    "spec-lantern-mcp-server": "./dist/bin/server.js"
+  },
   "scripts": {
     "build": "tsc --build",
+    "start": "node ./dist/bin/server.js",
     "clean": "rm -rf dist tsconfig.tsbuildinfo"
   },
   "dependencies": {

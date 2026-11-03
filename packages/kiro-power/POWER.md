@@ -85,6 +85,23 @@ types package (`@spec-lantern/types`, module `artifacts.ts`) and summarized in
 conventions, or directory layouts. Downstream tooling — the Validator and the
 prediction-lock tool — reads these exact formats back from disk.
 
+## The MCP_Server comes with this Power
+
+This Power ships an `mcp.json` beside this `POWER.md`. Installing the Power
+registers the `spec-lantern` MCP server (a Node stdio process,
+`packages/mcp-server/dist/bin/server.js`), which exposes the four tools the
+pipeline drives:
+
+- `lock_prediction` — lock each Predicted_Result before execution (R3.4, R3.5).
+- `execute_properties` — run the Correctness_Properties in the Isolated_Runner.
+- `apply_fixes_and_reexecute` — the Revive loop on the Target_Repo_Copy.
+- `replay_counterexample` — reproduce a Counterexample under its Execution_Context.
+
+Build the server once with `npm run build -w @spec-lantern/mcp-server` so
+`dist/bin/server.js` exists. The workspace also registers the same server in
+`.kiro/settings/mcp.json` for development. After the server is listed, confirm
+Kiro sees all four tools before starting the pipeline.
+
 ## Execution is always delegated
 
 This Power produces artifacts and calls MCP tools. It contains no runner and no

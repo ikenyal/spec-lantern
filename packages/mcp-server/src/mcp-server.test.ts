@@ -469,3 +469,108 @@ describe("apply_fixes_and_reexecute MCP tool (task 15.2)", () => {
     }
   });
 });
+
+// Feature: spec-lantern — MCP transport + lock_prediction tool wiring (task 20, Stage A)
+//
+// Round-trips the `lock_prediction` tool over the same in-memory MCP transport
+// pair to prove the prediction-lock responsibility (R3.4, R3.5) is reachable as
+// an MCP tool — so a Kiro client can lock every Predicted_Result BEFORE calling
+// execute_properties, exactly as 00-pipeline-and-safety.md requires. Backed by a
+// real throwaway on-disk spec layout (claims/properties/predictions) so the lock
+// is taken over genuine artifacts; no runner/Podman involved.
+
+/** Connect an SDK Client to a server exposing lock_prediction. */
+async function connectLockClient(): Promise<{
+  client: Client;
+  close: () => Promise<void>;
+}> {
+  const server = createMcpServer({
+    lockPrediction: { now: () => "2025-01-01T00:00:00.000Z" },
+  });
+  const [clientTransport, serverTransport] =
+    InMemoryTransport.createLinkedPair();
+  const client = new Client({ name: "test-client", version: "0.0.0" });
+  await Promise.all([
+    client.connect(clientTransport),
+    server.connect(serverTransport),
+  ]);
+  return {
+    client,
+    close: async () => {
+      await client.close();
+      await server.close();
+    },
+  };
+}
+
+describe("lock_prediction MCP tool (task 20, Stage A)", () => {
+  let specRoot: string;
+
+  beforeEach(async () => {
+    specRoot = await mkdtemp(join(tmpdir(), "spec-lantern-spec-"));
+    await mkdir(join(specRoot, "properties"), { recursive: true });
+    await mkdir(join(specRoot, "predictions"), { recursive: true });
+    await writeFile(
+      join(specRoot, "properties", "property-1.claim-a.test.ts"),
+      "// Feature: spec-lantern, Property 1\nexport {};\n",
+    );
+    await writeFile(
+      join(specRoot, "predictions", "property-1.claim-a.predicted.json"),
+      JSON.stringify(
+        {
+          propertyId: "property-1.claim-a",
+          verdict: "PASS",
+          recordedAt: "2025-01-01T00:00:00.000Z",
+          immutable: true,
+        },
+        null,
+        2,
+      ),
+    );
+  });
+
+  afterEach(async () => {
+    await rm(specRoot, { recursive: true, force: true });
+  });
+
+  it("is listed as an available tool", async () => {
+    const { client, close } = await connectLockClient();
+    try {
+      const { tools } = await client.listTools();
+      expect(tools.map((t) => t.name)).toContain("lock_prediction");
+    } finally {
+      await close();
+    }
+  });
+
+  it("locks a Predicted_Result and returns the persisted lock", async () => {
+    const { client, close } = await connectLockClient();
+    try {
+      const res = await client.callTool({
+        name: "lock_prediction",
+        arguments: { specRoot, claimId: "claim-a", propertyNumber: 1 },
+      });
+      const textBlock = (res.content as { type: string; text: string }[]).find(
+        (c) => c.type === "text",
+      );
+      expect(textBlock).toBeDefined();
+      const structured = JSON.parse(textBlock!.text) as {
+        lock: { propertyId: string; verdict: string; contentHash: string } | null;
+        issue: unknown;
+      };
+      expect(structured.issue).toBeNull();
+      expect(structured.lock?.propertyId).toBe("property-1.claim-a");
+      expect(structured.lock?.verdict).toBe("PASS");
+      expect(structured.lock?.contentHash).toMatch(/^[0-9a-f]{64}$/);
+
+      // The lock was persisted on disk.
+      const persisted = await readFile(
+        join(specRoot, "locks", "property-1.claim-a.lock.json"),
+        "utf8",
+      );
+      expect(JSON.parse(persisted).verdict).toBe("PASS");
+    } finally {
+      await close();
+    }
+  });
+});

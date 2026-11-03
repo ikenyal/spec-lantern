@@ -597,6 +597,13 @@
         "chatSessionId": "sess_26d2b1cc-8d7f-49b8-a4c6-a323af4d8d83",
         "timestamp": 1793670387278
       }
+    ],
+    "20.1 Connect all components into the full pipeline": [
+      {
+        "executionId": "9fe94392-7a3c-462e-8b10-c234e4dfab72",
+        "chatSessionId": "sess_25a8a084-1a1b-4b48-8f63-ab6e38d5cdfb",
+        "timestamp": 1793681570958
+      }
     ]
   }
 }
