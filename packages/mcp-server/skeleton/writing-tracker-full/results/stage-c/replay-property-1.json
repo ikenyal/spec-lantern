@@ -1,0 +1,40 @@
+{
+  "tool": "replay_counterexample",
+  "capturedAt": "2026-11-03T05:43:38.285Z",
+  "forcedExecutionContext": {
+    "randomSeed": 1664763492,
+    "timezone": "UTC",
+    "fixedCurrentTime": "2025-01-01T00:00:00.000Z"
+  },
+  "originalActualResult": {
+    "propertyId": "property-1.claim-monthly-order",
+    "outcome": "VERDICT",
+    "verdict": "FAIL",
+    "counterexample": {
+      "propertyId": "property-1.claim-monthly-order",
+      "input": "[{\"year\":2000,\"month\":0,\"day\":1},[]]",
+      "observedOutput": "expected first row: Jan 2000, actual first row: Aug 1999: expected 'Aug 1999' to be 'Jan 2000' // Object.is equality\n---\nError: Property failed after 1 tests",
+      "executionContext": {
+        "randomSeed": 1664763492,
+        "timezone": "UTC",
+        "fixedCurrentTime": "2025-01-01T00:00:00.000Z"
+      }
+    }
+  },
+  "replayActualResult": {
+    "propertyId": "property-1.claim-monthly-order",
+    "outcome": "VERDICT",
+    "verdict": "FAIL",
+    "counterexample": {
+      "propertyId": "property-1.claim-monthly-order",
+      "input": "[{\"year\":2000,\"month\":0,\"day\":1},[]]",
+      "observedOutput": "expected first row: Jan 2000, actual first row: Aug 1999: expected 'Aug 1999' to be 'Jan 2000' // Object.is equality\n---\nError: Property failed after 1 tests",
+      "executionContext": {
+        "randomSeed": 1664763492,
+        "timezone": "UTC",
+        "fixedCurrentTime": "2025-01-01T00:00:00.000Z"
+      }
+    }
+  },
+  "reproducesSameFail": true
+}
