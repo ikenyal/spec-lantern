@@ -1,12 +1,31 @@
 /**
  * Sample Lantern_Report for the runnable demo (packages/ui/index.html).
  *
- * This is the real writing-tracker finding, not a toy: the "Monthly history"
- * view claims its first row is the current month, and Kiro *believed* that
- * (Predicted = PASS). Execution with the clock pinned to Jan 2000 disproved it
- * — the first row rendered was Aug 1999 — so the Actual is FAIL and the row is
- * a Confirmed_Bug (PREDICTION_MISMATCH). After the Revive loop the property was
- * Revived: pre-fix FAIL -> post-fix PASS.
+ * TEMPORARY SAMPLE DATA. This file is a hand-authored stand-in until the real
+ * pipeline output (task 20) replaces it; the UI shows a "Sample data" badge
+ * while it is in use. Everything here is held to the same honesty bar as real
+ * report data (see .kiro/steering/report-data-fidelity.md):
+ *   - Every `claimText` is quoted VERBATIM from the real Target_Repo source,
+ *     with the exact line number.
+ *   - Every verdict/counterexample is one that was actually OBSERVED by
+ *     executing the property — never invented.
+ *
+ * The single row below is the verified monthly-ordering bug. In
+ * PeriodProgressSummary.tsx the "Monthly history" branch builds the six months
+ * oldest-first, then does `periods.reverse()` under the comment on line 54:
+ *
+ *     // Reverse to have most recent month first      <- PeriodProgressSummary.tsx:54
+ *     periods.reverse();
+ *
+ * Kiro *believed* that comment (Predicted = PASS). Executing the property with
+ * the clock pinned disproved it — reversing a window that was generated with
+ * `currentMonth - i` puts the OLDEST month first, so the first row rendered was
+ * Aug 1999 when "now" was Jan 2000. Actual = FAIL, a Confirmed_Bug. After the
+ * Revive loop the property was Revived: pre-fix FAIL -> post-fix PASS.
+ *
+ * A previously-included "weekly window" row was REMOVED: its comment was not
+ * present in the source (line 38 is just `}`), so it violated the verbatim rule.
+ * Only properties whose claim and result have been verified belong here.
  *
  * Kept as plain data so the demo stays props-driven and deterministic; the
  * clock, seed, and timezone are the ones the bug was reproduced under
@@ -23,8 +42,14 @@ const reproContext = {
 export const WRITING_TRACKER_REPORT: LanternReport = {
   comparisons: [
     {
-      // The headline bug: "first row is the current month".
+      // The verified bug: "Reverse to have most recent month first".
       propertyId: "monthly-history-first-row-is-current-month",
+      display: {
+        title: "Monthly history lists the current month first",
+        // Verbatim from PeriodProgressSummary.tsx line 54.
+        claimText: "Reverse to have most recent month first",
+        sourceLocation: "PeriodProgressSummary.tsx:54",
+      },
       predicted: "PASS",
       actual: {
         propertyId: "monthly-history-first-row-is-current-month",
@@ -54,21 +79,16 @@ export const WRITING_TRACKER_REPORT: LanternReport = {
         classification: "FIXED",
       },
     },
-    {
-      // A property Kiro believed and execution also confirmed.
-      propertyId: "weekly-window-covers-seven-days",
-      predicted: "PASS",
-      actual: {
-        propertyId: "weekly-window-covers-seven-days",
-        outcome: "VERDICT",
-        verdict: "PASS",
-      },
-      status: "MATCH",
-      confirmedBug: false,
-    },
   ],
   observedDeviations: [],
   noConfirmedBug: false,
   noObservedDeviation: true,
   generatedAt: "2000-01-15T00:00:05.000+09:00",
 };
+
+/**
+ * Marks {@link WRITING_TRACKER_REPORT} as hand-authored sample data so the UI
+ * can surface a "Sample data" badge. Flipped off (removed) when task 20 wires
+ * the real pipeline output into the demo.
+ */
+export const IS_SAMPLE_DATA = true;

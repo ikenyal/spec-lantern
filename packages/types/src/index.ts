@@ -183,9 +183,29 @@ export interface PropertyTransition {
     | "STILL_PASSING";
 }
 
+/**
+ * Presentation metadata for a Correctness_Property, carried alongside its
+ * comparison so the UI can make the lying Claim the hero of a row without
+ * re-deriving it: the human-readable `title`, the original `claimText` (the
+ * verbatim code comment the Claim was reverse-engineered from), and the
+ * `sourceLocation` that comment lives at (e.g. "PeriodProgressSummary.tsx:54").
+ * Optional end-to-end: a comparison with no display metadata still renders
+ * (the UI falls back to the propertyId), so existing producers are unaffected.
+ */
+export interface PropertyDisplay {
+  /** Human-readable property title, shown as the row heading. */
+  title?: string;
+  /** The original (often wrong) code comment, shown as a quoted headline. */
+  claimText?: string;
+  /** Where the comment lives, e.g. "PeriodProgressSummary.tsx:54". */
+  sourceLocation?: string;
+}
+
 /** Per-property comparison record built by the Comparison Engine. (R7) */
 export interface PropertyComparison {
   propertyId: string;
+  /** Optional presentation metadata (title, original claim, source). */
+  display?: PropertyDisplay;
   predicted: Verdict | null;
   actual: ActualResult;
   status:

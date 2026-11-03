@@ -3,24 +3,29 @@
  *
  * Direction:
  *   - Dark charcoal background; lantern-amber is the ONLY strong accent.
- *   - Predicted_Result ("Kiro believed") is a translucent ghost; Actual_Result
- *     ("Execution proved") is crisp. Only mismatch rows glow amber.
- *   - Counterexample is a large "evidence" card. Transition reads tombstone ->
- *     lit lantern, labeled "Revived".
+ *   - The lying Claim is the hero of each row: a quoted code comment + source,
+ *     a human-readable title, and the slug as small secondary text.
+ *   - Predicted ("Kiro believed", column header) is a translucent ghost; Actual
+ *     ("Execution proved", column header) is crisp. Only mismatch rows glow amber.
+ *   - Status shows a muted "✓ Match" on matching rows, an amber "Lie exposed"
+ *     (icon + label) on mismatches.
+ *   - Counterexample is a large "evidence" card: an Expected-vs-Actual contrast
+ *     with the raw JSON tucked into a collapsible "Raw details". Transition reads
+ *     tombstone -> lit lantern, labeled "Revived".
  *   - No cursor-following flashlight effect.
  *
  * Accessibility:
  *   - WCAG AA contrast: body text and the "ghost" predicted text both clear the
- *     4.5:1 ratio on the charcoal background (ghost uses opacity but stays >=
- *     #9aa0a6-equivalent luminance, verified against --charcoal).
- *   - The mismatch is conveyed with an icon + the text "Mismatch", never colour
- *     alone.
+ *     4.5:1 ratio on the charcoal background.
+ *   - Mismatch is conveyed with an icon + the text "Lie exposed", never colour
+ *     alone; match with "✓ Match".
  *   - prefers-reduced-motion disables the amber glow animation.
  */
 
 :root {
   --charcoal: #15171a;
   --charcoal-raised: #1e2125;
+  --charcoal-sunken: #121417;
   --charcoal-line: #2c3036;
   /* Lantern amber — the single strong accent. */
   --amber: #ffb347;
@@ -51,7 +56,7 @@ body {
 }
 
 .lantern {
-  max-width: 980px;
+  max-width: 1040px;
   margin: 0 auto;
   padding: 2.5rem 1.5rem 4rem;
 }
@@ -68,7 +73,7 @@ body {
   display: flex;
   align-items: center;
   gap: 0.6rem;
-  margin: 0 0 0.5rem;
+  margin: 0 0 0.35rem;
   font-size: 1.9rem;
   font-weight: 700;
   letter-spacing: 0.01em;
@@ -78,13 +83,35 @@ body {
   filter: drop-shadow(0 0 10px var(--amber));
 }
 
+/* "Sample data" badge — small, muted, never competes with the amber accent. */
+.lantern-sample-badge {
+  margin-left: 0.6rem;
+  padding: 0.15rem 0.5rem;
+  border: 1px solid var(--charcoal-line);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--ink-muted);
+  font-size: 0.6rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  vertical-align: middle;
+  white-space: nowrap;
+}
+
+.lantern-header__subheader {
+  margin: 0 0 0.5rem;
+  color: var(--ink-muted);
+  font-size: 0.95rem;
+}
+
 .lantern-header__summary {
   margin: 0;
   color: var(--ink-muted);
   font-size: 1.05rem;
 }
 
-.lantern-header__disproved {
+.lantern-header__exposed {
   color: var(--amber);
   font-weight: 600;
 }
@@ -142,25 +169,52 @@ body {
   border-right: 1px solid var(--charcoal-line);
 }
 
-.lantern-cell--id {
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  font-size: 0.85rem;
+/* -------------------------------------------------------------- claim hero -- */
+
+.lantern-cell--claim {
+  max-width: 24rem;
+}
+
+.lantern-claim__quote {
+  margin: 0 0 0.5rem;
+  border-left: 3px solid var(--amber);
+  padding-left: 0.75rem;
+}
+
+.lantern-claim__comment {
+  color: var(--amber-strong);
+  font-style: italic;
+  font-size: 1.05rem;
+  font-weight: 600;
+}
+
+.lantern-claim__source {
+  display: inline-block;
   color: var(--ink-muted);
-  max-width: 16rem;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.8rem;
+  font-style: normal;
+}
+
+.lantern-claim__title {
+  margin: 0 0 0.25rem;
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.lantern-claim__slug {
+  margin: 0;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.72rem;
+  color: var(--ink-muted);
   word-break: break-word;
 }
 
-.lantern-field-label {
-  display: block;
-  font-size: 0.68rem;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: var(--ink-muted);
-  margin-bottom: 0.3rem;
-}
+/* --------------------------------------------------------------- verdicts -- */
 
 .lantern-verdict {
-  font-size: 1.05rem;
+  font-size: 1.1rem;
   font-weight: 600;
 }
 
@@ -177,13 +231,12 @@ body {
   color: var(--crisp);
 }
 
-/* ------------------------------------------------------- mismatch glow -- */
+/* ------------------------------------------------------- status indicators -- */
 
 /* Only mismatch rows glow amber. */
 .lantern-row[data-mismatch="true"] .lantern-cell {
   border-color: var(--amber);
   background: var(--amber-dim);
-  box-shadow: inset 0 0 0 1px var(--amber-dim);
   animation: lantern-glow 2.4s ease-in-out infinite;
 }
 
@@ -210,15 +263,28 @@ body {
   font-size: 1.1rem;
 }
 
+.lantern-match {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  color: var(--ink-muted);
+  font-size: 0.85rem;
+  white-space: nowrap;
+}
+.lantern-match__icon {
+  color: var(--pass);
+}
+
 /* --------------------------------------------------------- evidence card -- */
 
 .lantern-evidence {
-  margin-top: 0.5rem;
-  background: #121417;
+  margin-top: 0.25rem;
+  background: var(--charcoal-sunken);
   border: 1px solid var(--amber);
   border-radius: 10px;
   padding: 1rem 1.1rem;
   box-shadow: 0 0 24px -12px var(--amber);
+  min-width: 18rem;
 }
 
 .lantern-evidence__title {
@@ -227,34 +293,7 @@ body {
   text-transform: uppercase;
   color: var(--amber);
   font-weight: 700;
-  margin-bottom: 0.6rem;
-}
-
-.lantern-evidence__row {
-  display: grid;
-  grid-template-columns: 5.5rem 1fr;
-  gap: 0.6rem;
-  align-items: start;
-  margin-bottom: 0.4rem;
-}
-.lantern-evidence__row:last-child {
-  margin-bottom: 0;
-}
-
-.lantern-evidence__key {
-  font-size: 0.72rem;
-  letter-spacing: 0.05em;
-  text-transform: uppercase;
-  color: var(--ink-muted);
-  padding-top: 0.2rem;
-}
-
-.lantern-evidence__value {
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  font-size: 0.85rem;
-  color: var(--ink);
-  white-space: pre-wrap;
-  word-break: break-word;
+  margin-bottom: 0.75rem;
 }
 
 .lantern-evidence--unavailable {
@@ -262,6 +301,93 @@ body {
   font-style: italic;
   box-shadow: none;
   border-style: dashed;
+}
+
+/* Expected-vs-Actual contrast (the headline of the card). */
+.lantern-contrast {
+  display: flex;
+  align-items: stretch;
+  gap: 0.75rem;
+  margin-bottom: 0.75rem;
+}
+
+.lantern-contrast__side {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  padding: 0.65rem 0.75rem;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid var(--charcoal-line);
+}
+
+.lantern-contrast__side--actual {
+  border-color: var(--amber);
+}
+
+.lantern-contrast__label {
+  font-size: 0.65rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-muted);
+}
+
+.lantern-contrast__value {
+  font-size: 1.35rem;
+  font-weight: 700;
+  color: var(--ink);
+}
+
+.lantern-contrast__side--actual .lantern-contrast__value {
+  color: var(--amber-strong);
+}
+
+.lantern-contrast__vs {
+  align-self: center;
+  color: var(--ink-muted);
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+/* Collapsible raw details. */
+.lantern-raw {
+  border-top: 1px solid var(--charcoal-line);
+  padding-top: 0.6rem;
+}
+
+.lantern-raw__summary {
+  cursor: pointer;
+  font-size: 0.72rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ink-muted);
+  user-select: none;
+}
+
+.lantern-raw__row {
+  display: grid;
+  grid-template-columns: 5.5rem 1fr;
+  gap: 0.6rem;
+  align-items: start;
+  margin-top: 0.5rem;
+}
+
+.lantern-raw__key {
+  font-size: 0.72rem;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--ink-muted);
+  padding-top: 0.2rem;
+}
+
+.lantern-raw__value {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.82rem;
+  color: var(--ink);
+  white-space: pre-wrap;
+  word-break: break-word;
 }
 
 /* ------------------------------------------------------- revived marker -- */
@@ -312,7 +438,7 @@ body {
   }
 }
 
-@media (max-width: 720px) {
+@media (max-width: 760px) {
   .lantern-table,
   .lantern-table thead,
   .lantern-table tbody,
@@ -323,6 +449,10 @@ body {
   }
   .lantern-table thead {
     display: none;
+  }
+  .lantern-cell--claim,
+  .lantern-evidence {
+    max-width: none;
   }
   .lantern-row {
     margin-bottom: 1rem;
