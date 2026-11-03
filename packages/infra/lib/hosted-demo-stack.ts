@@ -79,18 +79,14 @@ export class HostedDemoStack extends Stack {
             override: true,
           },
           xssProtection: { protection: true, modeBlock: true, override: true },
-        },
-        customHeadersBehavior: {
-          customHeaders: [
-            {
-              header: "Content-Security-Policy",
-              // The demo is a self-contained SPA that fetches its own static
-              // report JSON from the same origin; no third-party scripts.
-              value:
-                "default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; connect-src 'self'; object-src 'none'; base-uri 'self'; frame-ancestors 'none'",
-              override: true,
-            },
-          ],
+          // CSP must be set here (CloudFront rejects it as a custom header).
+          // The demo is a self-contained SPA that fetches its own static
+          // report JSON from the same origin; no third-party scripts.
+          contentSecurityPolicy: {
+            contentSecurityPolicy:
+              "default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; connect-src 'self'; object-src 'none'; base-uri 'self'; frame-ancestors 'none'",
+            override: true,
+          },
         },
       },
     );
