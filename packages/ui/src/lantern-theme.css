@@ -430,6 +430,216 @@ body {
   color: var(--amber);
 }
 
+/* ------------------------------------------------- still-passing marker -- */
+
+/* A property that was never dead: a muted reassurance, NOT the tombstone →
+ * lantern revival visual (bug #2). Meaning carried by icon + text, not colour. */
+.lantern-still-passing {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: 0.75rem;
+  font-size: 0.85rem;
+  color: var(--ink-muted);
+}
+
+.lantern-still-passing__icon {
+  color: var(--pass);
+}
+
+.lantern-still-passing__label {
+  font-weight: 600;
+}
+
+.lantern-still-passing__detail {
+  font-size: 0.75rem;
+  color: var(--ink-muted);
+}
+
+/* ----------------------------------------------------------------- story -- */
+
+.lantern-story {
+  margin: 0 0 2.5rem;
+  padding: 1.75rem;
+  background: var(--charcoal-raised);
+  border: 1px solid var(--charcoal-line);
+  border-radius: 12px;
+}
+
+.lantern-story__thesis {
+  margin: 0 0 0.75rem;
+  font-size: 1.3rem;
+  font-weight: 700;
+  line-height: 1.35;
+  color: var(--ink);
+}
+
+.lantern-story__stats {
+  margin: 0 0 1.75rem;
+  padding-bottom: 1.25rem;
+  border-bottom: 1px solid var(--charcoal-line);
+  font-size: 0.95rem;
+  color: var(--amber);
+  font-weight: 600;
+  letter-spacing: 0.01em;
+}
+
+.lantern-story__steps {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  counter-reset: lantern-step;
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+.lantern-story__step {
+  counter-increment: lantern-step;
+  position: relative;
+  padding-left: 2.75rem;
+}
+
+.lantern-story__step::before {
+  content: counter(lantern-step);
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 1.9rem;
+  height: 1.9rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  background: var(--amber-dim);
+  border: 1px solid var(--amber);
+  color: var(--amber-strong);
+  font-weight: 700;
+  font-size: 0.95rem;
+}
+
+.lantern-story__step-kicker {
+  display: block;
+  font-size: 0.7rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ink-muted);
+  font-weight: 700;
+  margin-bottom: 0.35rem;
+}
+
+.lantern-story__step-body {
+  margin: 0;
+  color: var(--ink);
+  font-size: 1rem;
+  line-height: 1.5;
+}
+
+.lantern-story__step-body strong {
+  color: var(--amber-strong);
+}
+
+.lantern-story__comment {
+  color: var(--amber-strong);
+  font-style: italic;
+  font-weight: 600;
+}
+
+.lantern-story__source {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.82rem;
+  color: var(--ink-muted);
+}
+
+.lantern-story__hash {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.82rem;
+  color: var(--ink-muted);
+  background: var(--charcoal-sunken);
+  border: 1px solid var(--charcoal-line);
+  border-radius: 5px;
+  padding: 0.05rem 0.4rem;
+}
+
+/* Monthly mock table. */
+.lantern-story__months {
+  margin: 0.9rem 0;
+  border-collapse: collapse;
+  min-width: 16rem;
+  background: var(--charcoal-sunken);
+  border: 1px solid var(--charcoal-line);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.lantern-story__months-caption {
+  caption-side: top;
+  text-align: left;
+  font-size: 0.72rem;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--ink-muted);
+  padding: 0 0 0.4rem;
+}
+
+.lantern-story__months th,
+.lantern-story__months td {
+  padding: 0.4rem 0.9rem;
+  text-align: left;
+  font-size: 0.9rem;
+  border-bottom: 1px solid var(--charcoal-line);
+}
+
+.lantern-story__months thead th {
+  font-size: 0.68rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ink-muted);
+}
+
+.lantern-story__months tbody tr:last-child td {
+  border-bottom: none;
+}
+
+/* The current month — where it SHOULD be first but renders elsewhere. The
+ * amber highlight is decorative; the "(current month)" label carries the
+ * meaning for assistive tech and in high-contrast. */
+.lantern-story__month-row--current td {
+  background: var(--amber-dim);
+  color: var(--amber-strong);
+  font-weight: 700;
+}
+
+.lantern-story__month-tag {
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--amber);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.lantern-story__impact {
+  margin: 0.6rem 0 0;
+  color: var(--ink-muted);
+  font-size: 0.92rem;
+  font-style: italic;
+}
+
+.lantern-story__diff {
+  margin: 0.9rem 0 0;
+  padding: 0.9rem 1rem;
+  background: var(--charcoal-sunken);
+  border: 1px solid var(--charcoal-line);
+  border-radius: 8px;
+  overflow-x: auto;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.82rem;
+  line-height: 1.5;
+  color: var(--ink);
+  white-space: pre;
+}
+
 /* --------------------------------------------- reduced-motion / responsive -- */
 
 @media (prefers-reduced-motion: reduce) {

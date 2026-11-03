@@ -26,7 +26,11 @@ import type {
   ReportManifestEntry,
 } from "../src/report-asset.js";
 import { reportAssetPath } from "../src/report-asset.js";
-import { WRITING_TRACKER_REPORT, IS_SAMPLE_DATA } from "../src/real-report.js";
+import {
+  WRITING_TRACKER_REPORT,
+  WRITING_TRACKER_STORY,
+  IS_SAMPLE_DATA,
+} from "../src/real-report.js";
 
 /** A report to export: its slug id, title, and the data + sample flag. */
 interface ExportableReport {
@@ -43,7 +47,11 @@ const REPORTS: readonly ExportableReport[] = [
   {
     id: "writing-tracker",
     title: "writing-tracker (revived Lovable app)",
-    asset: { sampleData: IS_SAMPLE_DATA, report: WRITING_TRACKER_REPORT },
+    asset: {
+      sampleData: IS_SAMPLE_DATA,
+      report: WRITING_TRACKER_REPORT,
+      story: WRITING_TRACKER_STORY,
+    },
   },
 ];
 

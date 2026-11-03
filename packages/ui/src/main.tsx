@@ -56,6 +56,7 @@ function DemoApp(): ReactElement {
       <LanternReportView
         report={state.asset.report}
         sampleData={state.asset.sampleData}
+        story={state.asset.story}
       />
     );
   }

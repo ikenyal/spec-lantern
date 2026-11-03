@@ -24,6 +24,7 @@
  * "Sample data" badge no longer shows.
  */
 import type { LanternReport } from "@spec-lantern/types";
+import type { LanternStory } from "./report-asset.js";
 
 export const WRITING_TRACKER_REPORT: LanternReport = {
   "comparisons": [
@@ -122,6 +123,87 @@ export const WRITING_TRACKER_REPORT: LanternReport = {
   "noConfirmedBug": false,
   "noObservedDeviation": false,
   "generatedAt": "2026-11-03T07:04:03.235Z"
+} as const;
+
+/**
+ * The headline story for the writing-tracker report (the narrative above the
+ * table). Like {@link WRITING_TRACKER_REPORT}, EVERY value here is a verbatim
+ * copy of a persisted pipeline artifact — nothing is derived loosely or
+ * invented (report-data-fidelity):
+ *
+ *   - `comment.claimText` / `sourceLocation`: the monthly-ordering row's
+ *     `display` (claims.json L54; PeriodProgressSummary.tsx:54).
+ *   - `prediction.verdict` + `lockedAt` + `shortHash`: the LOCKED prediction,
+ *     locks/property-1.claim-monthly-order.lock.json (verdict "PASS",
+ *     lockedAt "2026-11-03T05:21:22.398Z", contentHash
+ *     "0fcb9d687dd657a4ac515de481d2030753505cb99245ab3810463aee935a1a9a" —
+ *     shortHash is its first 8 hex chars).
+ *   - `execution.clock` / `timezone`: the fast-check input date and the pinned
+ *     timezone from the counterexample's executionContext in
+ *     results/stage-c/property-1.claim-monthly-order.json (input
+ *     {"year":2000,"month":0,"day":1} = Jan 2000; timezone "UTC"). The six
+ *     months below are what that input renders through the buggy getPeriods()
+ *     as documented in observed-deviations.json (built current-first
+ *     Jan 2000..Aug 1999, then reversed -> Aug 1999..Jan 2000 as shown).
+ *   - `execution.expectedFirstRow` / `actualFirstRow`: verbatim from the
+ *     counterexample observedOutput ("expected first row: Jan 2000, actual
+ *     first row: Aug 1999").
+ *   - `revive.diff`: results/stage-d/fix-task-1.diff, verbatim.
+ *   - `revive.preFixResult` / `postFixResult`: the property-1 transition in
+ *     results/stage-d/apply-fixes-reexecute-all.json (FAIL -> PASS, FIXED).
+ *   - `revive.reproducesSameFail`: results/stage-c/replay-property-1.json
+ *     (reproducesSameFail: true).
+ */
+export const WRITING_TRACKER_STORY: LanternStory = {
+  propertyId: "property-1.claim-monthly-order",
+  thesis:
+    "AI-built apps are full of comments that lie — and AI reviewers believe them. spec-lantern makes Kiro predict, then executes, then proves.",
+  stats: "3 comments checked · 1 lie · Kiro fooled 1/3 · fixed in 2 lines",
+  comment: {
+    claimText: "// Reverse to have most recent month first",
+    sourceLocation: "PeriodProgressSummary.tsx:54",
+  },
+  prediction: {
+    verdict: "PASS",
+    lockedAt: "2026-11-03T05:21:22.398Z",
+    shortHash: "0fcb9d68",
+  },
+  execution: {
+    clock: "2000-01-01T00:00:00.000Z",
+    timezone: "UTC",
+    expectedFirstRow: "Jan 2000",
+    actualFirstRow: "Aug 1999",
+    monthsAsRendered: [
+      "Aug 1999",
+      "Sep 1999",
+      "Oct 1999",
+      "Nov 1999",
+      "Dec 1999",
+      "Jan 2000",
+    ],
+    userImpact:
+      "Users opening monthly progress see a month from half a year ago at the top; the current month is at the bottom.",
+  },
+  revive: {
+    diff: [
+      "--- fix-task-1.before.txt\t2026-11-03 14:50:53",
+      "+++ fix-task-1.after.txt\t2026-11-03 14:50:53",
+      "@@ -51,8 +51,6 @@",
+      "           end: monthEnd",
+      "         });",
+      "       }",
+      "-      // Reverse to have most recent month first",
+      "-      periods.reverse();",
+      "     }",
+      "     ",
+      "     return periods;",
+    ].join("\n"),
+    preFixResult: "FAIL",
+    postFixResult: "PASS",
+    otherClaimsStatus:
+      "The other two checked claims (Recently Active Tasks, Most Active Stages) still pass after the fix — no regression.",
+    reproducesSameFail: true,
+  },
 } as const;
 
 /**

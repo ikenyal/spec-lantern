@@ -32,6 +32,7 @@ export {
   ClaimHero,
   CounterexampleDetail,
   TransitionDetail,
+  StorySection,
   TEST_IDS,
   getUiRenderLimitSeconds,
   formatPredicted,
@@ -49,6 +50,7 @@ export {
   type ClaimHeroProps,
   type CounterexampleDetailProps,
   type TransitionDetailProps,
+  type StorySectionProps,
 } from "./components.js";
 
 /**
@@ -65,6 +67,7 @@ export {
   type ReportAsset,
   type ReportManifest,
   type ReportManifestEntry,
+  type LanternStory,
 } from "./report-asset.js";
 export {
   loadManifest,

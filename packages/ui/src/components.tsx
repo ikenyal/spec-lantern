@@ -70,6 +70,7 @@ import {
   type PropertyComparison,
   type Verdict,
 } from "@spec-lantern/types";
+import type { LanternStory } from "./report-asset.js";
 
 /* -------------------------------------------------------------------------- */
 /* data-testid conventions                                                    */
@@ -106,6 +107,13 @@ export const TEST_IDS = {
   summary: "lantern-summary",
   subheader: "lantern-subheader",
   sampleBadge: "lantern-sample-badge",
+  // Headline story section (above the table).
+  story: "lantern-story",
+  storyThesis: "lantern-story-thesis",
+  storyStats: "lantern-story-stats",
+  storyStep: (n: number) => `lantern-story-step-${n}`,
+  storyMonths: "lantern-story-months",
+  storyDiff: "lantern-story-diff",
   // Task 18.2 — the "no report exists" empty state (R10.7). Not keyed by a
   // property because there is no report (and so no properties) to key on.
   noReport: "lantern-no-report",
@@ -203,14 +211,51 @@ export interface ExpectedActual {
 }
 
 /**
+ * Patterns that extract an Expected-vs-Actual pair from a STRING
+ * `observedOutput` — the shape fast-check records when a property's assertion
+ * message is the counterexample. Ordered most-specific first. Each pattern
+ * captures the expected value in group 1 and the actual value in group 2.
+ *
+ * The real writing-tracker counterexample is exactly this shape:
+ *   "expected first row: Jan 2000, actual first row: Aug 1999: expected
+ *    'Aug 1999' to be 'Jan 2000' // Object.is equality\n---\nError: ..."
+ * so the `expected … first row: X, actual … first row: Y` pattern is what makes
+ * the evidence card show "Expected Jan 2000 vs Actual Aug 1999" again.
+ */
+const STRING_CONTRAST_PATTERNS: readonly RegExp[] = [
+  // "expected first row: <X>, actual first row: <Y>" (the real counterexample).
+  /expected[^:]*\bfirst row:\s*(.+?),\s*actual[^:]*\bfirst row:\s*(.+?)(?::|$)/i,
+  // Generic "expected <X> to be <Y>" (fast-check / chai default message).
+  /expected\s+'?(.+?)'?\s+to be\s+'?(.+?)'?(?:\s*\/\/|$)/i,
+];
+
+/**
  * Best-effort extraction of a short Expected-vs-Actual contrast from a
  * Counterexample's `observedOutput` (which is `unknown`, R5.6), for the large
- * side-by-side headline in the evidence card. Recognises the common shapes a
- * reverse-engineered property records — `{ expectedFirstRow, actualFirstRow }`
- * and the generic `{ expected, actual }` — and returns `null` otherwise so the
- * card falls back to showing only the raw details. Never throws.
+ * side-by-side headline in the evidence card.
+ *
+ * Handles both shapes a reverse-engineered property records:
+ *   - an OBJECT exposing `{ expectedFirstRow, actualFirstRow }` or the generic
+ *     `{ expected, actual }`, and
+ *   - a STRING assertion message such as the real writing-tracker output
+ *     "expected first row: Jan 2000, actual first row: Aug 1999: …", parsed via
+ *     {@link STRING_CONTRAST_PATTERNS}.
+ * Returns `null` when neither shape matches so the card falls back to showing
+ * only the raw details. Never throws.
  */
 export function extractExpectedActual(output: unknown): ExpectedActual | null {
+  // STRING shape: the real fast-check counterexample message (bug #1).
+  if (typeof output === "string") {
+    for (const pattern of STRING_CONTRAST_PATTERNS) {
+      const m = pattern.exec(output);
+      if (m) {
+        return { expected: m[1].trim(), actual: m[2].trim() };
+      }
+    }
+    return null;
+  }
+
+  // OBJECT shape: a property that records the pair as structured fields.
   if (output === null || typeof output !== "object") return null;
   const o = output as Record<string, unknown>;
   const pairs: ReadonlyArray<readonly [string, string]> = [
@@ -228,8 +273,14 @@ export function extractExpectedActual(output: unknown): ExpectedActual | null {
 /**
  * The header tally: how many claims were checked, how many "lies" were exposed
  * (Confirmed_Bugs — a prediction the execution disproved), and how many were
- * Revived (a Property_Transition that ended PASS). Derived purely from the
- * comparisons.
+ * Revived. Derived purely from the comparisons.
+ *
+ * Bug #2: "revived" counts ONLY properties whose Property_Transition is
+ * classified `FIXED` (a FAIL→PASS revival). A property that was already passing
+ * stays `STILL_PASSING` — it was never dead, so it was never revived and must
+ * not inflate the tally. (The old code counted every transition that ended
+ * PASS, which wrongly reported all three writing-tracker properties as
+ * "revived" when only one was actually fixed.)
  */
 export interface ReportSummary {
   checked: number;
@@ -244,7 +295,8 @@ export function summarize(
   let revived = 0;
   for (const c of comparisons) {
     if (c.confirmedBug) exposed += 1;
-    if (c.transition && c.transition.postFixResult === "PASS") revived += 1;
+    // Count ONLY a true revival (FAIL -> PASS), never a STILL_PASSING row.
+    if (c.transition && c.transition.classification === "FIXED") revived += 1;
   }
   return { checked: comparisons.length, exposed, revived };
 }
@@ -507,18 +559,58 @@ export interface TransitionDetailProps {
  * Render the Pre_Fix_Result and Post_Fix_Result for a property that has a
  * recorded Property_Transition (R10.5), or nothing when no transition exists.
  *
- * Design: the pre-fix state reads as a tombstone (the property was dead/failing)
- * and the post-fix state as a lit lantern, under the label "Revived". The
- * classification (FIXED / NOT_RESOLVED / REGRESSION / STILL_PASSING) is surfaced
- * as a `data-classification` attribute for callers that want to style the
- * pre→post pair; the pre/post VERDICT text is always present so the meaning
- * never relies on an emoji alone.
+ * Design, keyed off the classification:
+ *   - A true revival (`FIXED`, and likewise `NOT_RESOLVED` / `REGRESSION`,
+ *     which also involve a dead or newly-broken property) reads tombstone → lit
+ *     lantern under the label "Revived".
+ *   - A `STILL_PASSING` property was never dead, so the tombstone→lantern visual
+ *     would overstate what happened (bug #2). Instead it shows a muted
+ *     "✓ Still passing after fix", making clear the fix did not regress it.
+ *
+ * The pre/post VERDICT text is always present (surfaced via the same
+ * `transition-pre-fix` / `transition-post-fix` testids) so the meaning never
+ * relies on an emoji or colour alone (WCAG). The classification is exposed as
+ * `data-classification` for styling.
  */
 export function TransitionDetail({
   comparison,
 }: TransitionDetailProps): ReactElement | null {
   const { propertyId, transition } = comparison;
   if (!transition) return null;
+
+  // Bug #2: a property that was already passing is NOT "revived". Show a muted
+  // reassurance that the fix left it passing, not the tombstone→lantern visual.
+  if (transition.classification === "STILL_PASSING") {
+    return (
+      <div
+        className="lantern-still-passing"
+        data-testid={TEST_IDS.transition(propertyId)}
+        data-field="transition"
+        data-classification={transition.classification}
+      >
+        <span className="lantern-still-passing__icon" aria-hidden="true">
+          ✓
+        </span>
+        <span className="lantern-still-passing__label">
+          Still passing after fix
+        </span>
+        {/* Keep the pre/post verdicts present (and testable) without the
+            revival framing. */}
+        <span
+          className="lantern-still-passing__detail"
+          data-testid={TEST_IDS.transitionPreFix(propertyId)}
+        >
+          Pre-fix: {transition.preFixResult}
+        </span>
+        <span
+          className="lantern-still-passing__detail"
+          data-testid={TEST_IDS.transitionPostFix(propertyId)}
+        >
+          Post-fix: {transition.postFixResult}
+        </span>
+      </div>
+    );
+  }
 
   return (
     <div
@@ -591,6 +683,168 @@ export function PropertyTable({ comparisons }: PropertyTableProps): ReactElement
 }
 
 /* -------------------------------------------------------------------------- */
+/* StorySection                                                               */
+/* -------------------------------------------------------------------------- */
+
+/** Props for {@link StorySection}. */
+export interface StorySectionProps {
+  /** The headline story to render above the table. */
+  story: LanternStory;
+}
+
+/**
+ * The headline story: a four-step narrative of the single lead finding
+ * (predict → lock → execute → revive), shown above the property table.
+ *
+ * It renders ONLY values carried on the {@link LanternStory} — each of which is
+ * a verbatim copy of a persisted pipeline artifact (report-data-fidelity). The
+ * component derives nothing: the months, the clock, the lock hash, and the diff
+ * all come straight from the story payload.
+ *
+ * Accessibility: the monthly mock is a real `<table>` with a caption and scoped
+ * headers; the current-month highlight is conveyed by a visible "(current
+ * month)" label and an `aria-label`, never colour alone. Each step is a labeled
+ * region; the diff is a `<pre>`.
+ */
+export function StorySection({ story }: StorySectionProps): ReactElement {
+  const { comment, prediction, execution, revive } = story;
+  // The month the claim PROMISED at the top — highlighted in the mock so a
+  // viewer sees exactly where the current month ended up instead.
+  const currentMonth = execution.expectedFirstRow;
+
+  return (
+    <section
+      className="lantern-story"
+      data-testid={TEST_IDS.story}
+      aria-label="Lead finding"
+    >
+      <p className="lantern-story__thesis" data-testid={TEST_IDS.storyThesis}>
+        {story.thesis}
+      </p>
+      <p className="lantern-story__stats" data-testid={TEST_IDS.storyStats}>
+        {story.stats}
+      </p>
+
+      <ol className="lantern-story__steps">
+        {/* Step 1 — the comment claimed … */}
+        <li
+          className="lantern-story__step"
+          data-testid={TEST_IDS.storyStep(1)}
+        >
+          <span className="lantern-story__step-kicker">The comment said</span>
+          <p className="lantern-story__step-body">
+            <span className="lantern-story__comment">“{comment.claimText}”</span>{" "}
+            <span className="lantern-story__source">
+              — {comment.sourceLocation}
+            </span>
+          </p>
+        </li>
+
+        {/* Step 2 — Kiro read it and believed it. */}
+        <li
+          className="lantern-story__step"
+          data-testid={TEST_IDS.storyStep(2)}
+        >
+          <span className="lantern-story__step-kicker">
+            Kiro read the code and believed it
+          </span>
+          <p className="lantern-story__step-body">
+            Predicted <strong>{prediction.verdict}</strong>, locked at{" "}
+            <time dateTime={prediction.lockedAt}>{prediction.lockedAt}</time>{" "}
+            before any execution{" "}
+            <code className="lantern-story__hash">
+              #{prediction.shortHash}
+            </code>
+            .
+          </p>
+        </li>
+
+        {/* Step 3 — we ran it. */}
+        <li
+          className="lantern-story__step"
+          data-testid={TEST_IDS.storyStep(3)}
+        >
+          <span className="lantern-story__step-kicker">We ran it</span>
+          <p className="lantern-story__step-body">
+            The real component rendered in an isolated, network-less container
+            with the clock at{" "}
+            <time dateTime={execution.clock}>{execution.clock}</time> (
+            {execution.timezone}); the first row was{" "}
+            <strong>{execution.actualFirstRow}</strong>, not{" "}
+            <strong>{execution.expectedFirstRow}</strong>.
+          </p>
+          <table
+            className="lantern-story__months"
+            data-testid={TEST_IDS.storyMonths}
+          >
+            <caption className="lantern-story__months-caption">
+              Monthly progress, as the current code renders it (top row first)
+            </caption>
+            <thead>
+              <tr>
+                <th scope="col">#</th>
+                <th scope="col">Month</th>
+              </tr>
+            </thead>
+            <tbody>
+              {execution.monthsAsRendered.map((month, i) => {
+                const isCurrent = month === currentMonth;
+                return (
+                  <tr
+                    key={month}
+                    className={
+                      isCurrent
+                        ? "lantern-story__month-row lantern-story__month-row--current"
+                        : "lantern-story__month-row"
+                    }
+                    aria-label={
+                      isCurrent
+                        ? `${month} (current month — should be first, but renders last)`
+                        : undefined
+                    }
+                  >
+                    <td>{i + 1}</td>
+                    <td>
+                      {month}
+                      {isCurrent ? (
+                        <span className="lantern-story__month-tag">
+                          {" "}
+                          (current month)
+                        </span>
+                      ) : null}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+          <p className="lantern-story__impact">{execution.userImpact}</p>
+        </li>
+
+        {/* Step 4 — revived. */}
+        <li
+          className="lantern-story__step"
+          data-testid={TEST_IDS.storyStep(4)}
+        >
+          <span className="lantern-story__step-kicker">Revived</span>
+          <p className="lantern-story__step-body">
+            <strong>{revive.preFixResult}</strong> →{" "}
+            <strong>{revive.postFixResult}</strong> with a two-line fix.{" "}
+            {revive.otherClaimsStatus}
+            {revive.reproducesSameFail
+              ? " Reproducible via replay (reproducesSameFail: true)."
+              : null}
+          </p>
+          <pre className="lantern-story__diff" data-testid={TEST_IDS.storyDiff}>
+            <code>{revive.diff}</code>
+          </pre>
+        </li>
+      </ol>
+    </section>
+  );
+}
+
+/* -------------------------------------------------------------------------- */
 /* LanternReportView                                                          */
 /* -------------------------------------------------------------------------- */
 
@@ -616,6 +870,12 @@ export interface LanternReportViewProps {
    * feeds the real Lantern_Report in. Defaults to false.
    */
   sampleData?: boolean;
+  /**
+   * Optional headline {@link LanternStory} rendered ABOVE the table. Omitted
+   * (the default) renders the table alone, so reports with no single lead
+   * finding — and the existing tests — are unaffected.
+   */
+  story?: LanternStory;
 }
 
 /**
@@ -630,6 +890,7 @@ export interface LanternReportViewProps {
 export function LanternReportView({
   report,
   sampleData = false,
+  story,
 }: LanternReportViewProps): ReactElement {
   // R10.7: no Lantern_Report available -> explicit "no report" message.
   if (report === null || report === undefined) {
@@ -675,6 +936,7 @@ export function LanternReportView({
           · {summary.revived} revived
         </p>
       </header>
+      {story ? <StorySection story={story} /> : null}
       <PropertyTable comparisons={report.comparisons} />
     </section>
   );
