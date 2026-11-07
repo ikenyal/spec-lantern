@@ -53,16 +53,29 @@ export interface LanternStory {
   };
   /** Step 3 — what the isolated execution actually produced. */
   readonly execution: {
-    /** The fixed clock the rendered component ran under (from the run). */
+    /** The fixed clock the component/function ran under (from the run). */
     readonly clock: string;
     /** Timezone the run pinned. */
     readonly timezone: string;
-    /** The expected first row the claim promised (e.g. "Jan 2000"). */
-    readonly expectedFirstRow: string;
-    /** The first row execution actually produced (e.g. "Aug 1999"). */
-    readonly actualFirstRow: string;
-    /** The six month labels, in the ORDER the buggy code rendered them. */
-    readonly monthsAsRendered: readonly string[];
+    /**
+     * The expected first row the claim promised (e.g. "Jan 2000"). Optional —
+     * only the writing-tracker monthly story uses the first-row framing.
+     */
+    readonly expectedFirstRow?: string;
+    /** The first row execution actually produced (e.g. "Aug 1999"). Optional. */
+    readonly actualFirstRow?: string;
+    /**
+     * The month labels, in the ORDER the buggy code rendered them. Optional —
+     * only the writing-tracker monthly story renders a month-table mock.
+     */
+    readonly monthsAsRendered?: readonly string[];
+    /**
+     * Generic evidence lines for a story with no month-table mock (e.g. the
+     * MoodPlays counterexamples). Each is a short, verbatim-sourced line such as
+     * `"\"00:00-13:24\" → closing time 13:24 dropped (treated as open 24h)"`.
+     * Optional; rendered as a small list when present.
+     */
+    readonly evidenceLines?: readonly string[];
     /** One-line user impact. */
     readonly userImpact: string;
   };
@@ -76,6 +89,20 @@ export interface LanternStory {
     readonly otherClaimsStatus: string;
     /** From replay_counterexample: the same failure reproduces. */
     readonly reproducesSameFail: boolean;
+  };
+  /**
+   * Optional attribution for the target repo (e.g. "MoodPlays by Gargi Sahu
+   * (MIT)"). Rendered as a small credit line under the story.
+   */
+  readonly credit?: string;
+  /**
+   * Optional "how this target was chosen" note with a link to the selection
+   * doc. Rendered as a small note under the story.
+   */
+  readonly selection?: {
+    readonly note: string;
+    /** Repo-relative path to the selection doc (shown as a link/label). */
+    readonly docPath: string;
   };
 }
 
@@ -115,6 +142,10 @@ export interface ReportManifestEntry {
   readonly id: string;
   /** Human-readable label for a report picker. */
   readonly title: string;
+  /** Short label for the target switcher tab (e.g. "writing-tracker"). */
+  readonly switchLabel?: string;
+  /** Human label for the report header ("Target: <targetLabel>"). */
+  readonly targetLabel?: string;
   /** Site-root-relative URL of the report asset JSON. */
   readonly path: string;
   /** Whether the report is hand-authored sample data. */

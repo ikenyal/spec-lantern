@@ -199,6 +199,16 @@ export interface PropertyDisplay {
   claimText?: string;
   /** Where the comment lives, e.g. "PeriodProgressSummary.tsx:54". */
   sourceLocation?: string;
+  /**
+   * When a Confirmed_Bug row is a SYMPTOM of another row's root-cause lie —
+   * i.e. its own comment is not itself the lie, it only failed because another
+   * comment's defect fired first — this names the headline finding it belongs
+   * to. The UI then labels the row "Symptom of <symptomOf>" instead of "Lie
+   * exposed", so a single root-cause bug is not counted/shown as multiple lies.
+   * Purely presentational; it does not change `status`, `actual`, `confirmedBug`
+   * or `transition`, which stay faithful to execution.
+   */
+  symptomOf?: string;
 }
 
 /** Per-property comparison record built by the Comparison Engine. (R7) */

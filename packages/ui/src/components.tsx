@@ -87,6 +87,7 @@ export const TEST_IDS = {
   predicted: (propertyId: string) => `predicted-${propertyId}`,
   actual: (propertyId: string) => `actual-${propertyId}`,
   mismatch: (propertyId: string) => `mismatch-indicator-${propertyId}`,
+  symptom: (propertyId: string) => `symptom-indicator-${propertyId}`,
   match: (propertyId: string) => `match-indicator-${propertyId}`,
   claim: (propertyId: string) => `claim-${propertyId}`,
   // Task 18.2 — Counterexample (R10.4) and its parts.
@@ -113,7 +114,10 @@ export const TEST_IDS = {
   storyStats: "lantern-story-stats",
   storyStep: (n: number) => `lantern-story-step-${n}`,
   storyMonths: "lantern-story-months",
+  storyEvidence: "lantern-story-evidence",
   storyDiff: "lantern-story-diff",
+  storySelection: "lantern-story-selection",
+  storyCredit: "lantern-story-credit",
   // Task 18.2 — the "no report exists" empty state (R10.7). Not keyed by a
   // property because there is no report (and so no properties) to key on.
   noReport: "lantern-no-report",
@@ -371,6 +375,11 @@ export interface PropertyRowProps {
 export function PropertyRow({ comparison }: PropertyRowProps): ReactElement {
   const { propertyId } = comparison;
   const mismatch = isMismatch(comparison);
+  // A mismatch row whose own comment is NOT the lie — it is a SYMPTOM of another
+  // row's root-cause defect. Keep the row's factual data (mismatch styling,
+  // counterexample, transition), but label it "Symptom of <…>" instead of
+  // "Lie exposed" so one root-cause bug is not shown as multiple lies.
+  const symptomOf = mismatch ? comparison.display?.symptomOf : undefined;
 
   return (
     <tr
@@ -403,20 +412,39 @@ export function PropertyRow({ comparison }: PropertyRowProps): ReactElement {
       </td>
       <td className="lantern-cell lantern-cell--status" data-field="status">
         {/* R10.3: mismatch indicator present EXACTLY on mismatched rows; a muted
-            "✓ Match" otherwise. Icon + label, not colour alone (WCAG). */}
+            "✓ Match" otherwise. Icon + label, not colour alone (WCAG). A
+            mismatch that is a SYMPTOM of another row's root-cause lie shows a
+            "Symptom of <…>" label instead of "Lie exposed". */}
         {mismatch ? (
-          <span
-            className="lantern-mismatch"
-            data-testid={TEST_IDS.mismatch(propertyId)}
-            role="img"
-            aria-label="predicted/actual mismatch — lie exposed"
-            title="Predicted differs from actual"
-          >
-            <span className="lantern-mismatch__icon" aria-hidden="true">
-              ⚠
+          symptomOf ? (
+            <span
+              className="lantern-symptom"
+              data-testid={TEST_IDS.symptom(propertyId)}
+              role="img"
+              aria-label={`predicted/actual mismatch — symptom of the ${symptomOf}; this comment itself holds`}
+              title={`Symptom of the ${symptomOf}`}
+            >
+              <span className="lantern-symptom__icon" aria-hidden="true">
+                ⤷
+              </span>
+              <span className="lantern-symptom__label">
+                Symptom of the {symptomOf} — this comment itself holds
+              </span>
             </span>
-            <span className="lantern-mismatch__label">Lie exposed</span>
-          </span>
+          ) : (
+            <span
+              className="lantern-mismatch"
+              data-testid={TEST_IDS.mismatch(propertyId)}
+              role="img"
+              aria-label="predicted/actual mismatch — lie exposed"
+              title="Predicted differs from actual"
+            >
+              <span className="lantern-mismatch__icon" aria-hidden="true">
+                ⚠
+              </span>
+              <span className="lantern-mismatch__label">Lie exposed</span>
+            </span>
+          )
         ) : (
           <span
             className="lantern-match"
@@ -754,66 +782,95 @@ export function StorySection({ story }: StorySectionProps): ReactElement {
         >
           <span className="lantern-story__step-kicker">We ran it</span>
           <p className="lantern-story__step-body">
-            The real component rendered in an isolated, network-less container
-            with the clock at{" "}
+            The real code ran in an isolated, network-less container with the
+            clock at{" "}
             <time dateTime={execution.clock}>{execution.clock}</time> (
-            {execution.timezone}); the first row was{" "}
-            <strong>{execution.actualFirstRow}</strong>, not{" "}
-            <strong>{execution.expectedFirstRow}</strong>.
+            {execution.timezone}).
+            {execution.actualFirstRow && execution.expectedFirstRow ? (
+              <>
+                {" "}
+                The first row was{" "}
+                <strong>{execution.actualFirstRow}</strong>, not{" "}
+                <strong>{execution.expectedFirstRow}</strong>.
+              </>
+            ) : null}
           </p>
-          <table
-            className="lantern-story__months"
-            data-testid={TEST_IDS.storyMonths}
-          >
-            <caption className="lantern-story__months-caption">
-              Monthly progress, as the current code renders it (top row first)
-            </caption>
-            <thead>
-              <tr>
-                <th scope="col">#</th>
-                <th scope="col">Month</th>
-              </tr>
-            </thead>
-            <tbody>
-              {execution.monthsAsRendered.map((month, i) => {
-                const isCurrent = month === currentMonth;
-                return (
-                  <tr
-                    key={month}
-                    className={
-                      isCurrent
-                        ? "lantern-story__month-row lantern-story__month-row--current"
-                        : "lantern-story__month-row"
-                    }
-                    aria-label={
-                      isCurrent
-                        ? `${month} (current month — should be first, but renders last)`
-                        : undefined
-                    }
-                  >
-                    <td>{i + 1}</td>
-                    <td>
-                      {month}
-                      {isCurrent ? (
-                        <span className="lantern-story__month-tag">
-                          {" "}
-                          (current month)
-                        </span>
-                      ) : null}
-                    </td>
+
+          {/* Month-table mock — writing-tracker only (rendered when present). */}
+          {execution.monthsAsRendered ? (
+            <>
+              <table
+                className="lantern-story__months"
+                data-testid={TEST_IDS.storyMonths}
+              >
+                <caption className="lantern-story__months-caption">
+                  Monthly progress, as the current code renders it (top row
+                  first)
+                </caption>
+                <thead>
+                  <tr>
+                    <th scope="col">#</th>
+                    <th scope="col">Month</th>
                   </tr>
-                );
-              })}
-            </tbody>
-          </table>
-          {/* report-data-fidelity: only the first row was directly observed by
-              execution (the counterexample); the rest of the ordering follows
-              deterministically from the same getPeriods() code path, not from a
-              separate observation. */}
-          <p className="lantern-story__provenance">
-            Row 1 observed in execution; the remaining order follows from the
-            same code path.
-          </p>
+                </thead>
+                <tbody>
+                  {execution.monthsAsRendered.map((month, i) => {
+                    const isCurrent = month === currentMonth;
+                    return (
+                      <tr
+                        key={month}
+                        className={
+                          isCurrent
+                            ? "lantern-story__month-row lantern-story__month-row--current"
+                            : "lantern-story__month-row"
+                        }
+                        aria-label={
+                          isCurrent
+                            ? `${month} (current month — should be first, but renders last)`
+                            : undefined
+                        }
+                      >
+                        <td>{i + 1}</td>
+                        <td>
+                          {month}
+                          {isCurrent ? (
+                            <span className="lantern-story__month-tag">
+                              {" "}
+                              (current month)
+                            </span>
+                          ) : null}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+              {/* report-data-fidelity: only the first row was directly observed
+                  by execution (the counterexample); the rest of the ordering
+                  follows deterministically from the same getPeriods() code path,
+                  not from a separate observation. */}
+              <p className="lantern-story__provenance">
+                Row 1 observed in execution; the remaining order follows from the
+                same code path.
+              </p>
+            </>
+          ) : null}
+
+          {/* Generic evidence lines — a story with no month-table mock (e.g.
+              MoodPlays counterexamples). Each line is verbatim-sourced. */}
+          {execution.evidenceLines ? (
+            <ul
+              className="lantern-story__evidence"
+              data-testid={TEST_IDS.storyEvidence}
+            >
+              {execution.evidenceLines.map((line) => (
+                <li key={line} className="lantern-story__evidence-line">
+                  <code>{line}</code>
+                </li>
+              ))}
+            </ul>
+          ) : null}
+
           <p className="lantern-story__impact">{execution.userImpact}</p>
         </li>
 
@@ -825,7 +882,7 @@ export function StorySection({ story }: StorySectionProps): ReactElement {
           <span className="lantern-story__step-kicker">Revived</span>
           <p className="lantern-story__step-body">
             <strong>{revive.preFixResult}</strong> →{" "}
-            <strong>{revive.postFixResult}</strong> with a two-line fix.{" "}
+            <strong>{revive.postFixResult}</strong>.{" "}
             {revive.otherClaimsStatus}
             {revive.reproducesSameFail
               ? " Reproducible via replay (reproducesSameFail: true)."
@@ -836,6 +893,31 @@ export function StorySection({ story }: StorySectionProps): ReactElement {
           </pre>
         </li>
       </ol>
+
+      {/* Optional "how this target was chosen" note + credit. */}
+      {story.selection || story.credit ? (
+        <footer className="lantern-story__footer">
+          {story.selection ? (
+            <p
+              className="lantern-story__selection"
+              data-testid={TEST_IDS.storySelection}
+            >
+              {story.selection.note}{" "}
+              <span className="lantern-story__selection-doc">
+                (see {story.selection.docPath})
+              </span>
+            </p>
+          ) : null}
+          {story.credit ? (
+            <p
+              className="lantern-story__credit"
+              data-testid={TEST_IDS.storyCredit}
+            >
+              {story.credit}
+            </p>
+          ) : null}
+        </footer>
+      ) : null}
     </section>
   );
 }
@@ -872,6 +954,12 @@ export interface LanternReportViewProps {
    * finding — and the existing tests — are unaffected.
    */
   story?: LanternStory;
+  /**
+   * Human label for the target, shown in the header ("Lantern Report · <label>"
+   * / "Target: <label>"). Defaults to the writing-tracker label so that report
+   * renders unchanged; the demo's target switcher passes each report's label.
+   */
+  targetLabel?: string;
 }
 
 /**
@@ -887,6 +975,7 @@ export function LanternReportView({
   report,
   sampleData = false,
   story,
+  targetLabel = "writing-tracker (abandoned Lovable app)",
 }: LanternReportViewProps): ReactElement {
   // R10.7: no Lantern_Report available -> explicit "no report" message.
   if (report === null || report === undefined) {
@@ -923,7 +1012,7 @@ export function LanternReportView({
             <span className="lantern-header__flame" aria-hidden="true">
               🏮
             </span>
-            Lantern Report · writing-tracker (abandoned Lovable app)
+            Lantern Report · {targetLabel}
             {sampleBadge}
           </p>
           <h1
@@ -946,7 +1035,7 @@ export function LanternReportView({
             className="lantern-header__subheader"
             data-testid={TEST_IDS.subheader}
           >
-            Target: writing-tracker (abandoned Lovable app)
+            Target: {targetLabel}
           </p>
         </header>
       )}

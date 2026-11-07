@@ -14,29 +14,35 @@
 import { StrictMode, useEffect, useState, type ReactElement } from "react";
 import { createRoot } from "react-dom/client";
 import { LanternReportView } from "./components.js";
-import { loadFirstReportAsset } from "./load-report.js";
-import type { ReportAsset } from "./report-asset.js";
+import { loadManifest, loadReportAsset } from "./load-report.js";
+import type { ReportAsset, ReportManifestEntry } from "./report-asset.js";
 import "./lantern-theme.css";
 
 type LoadState =
   | { phase: "loading" }
-  | { phase: "ready"; asset: ReportAsset | null }
+  | { phase: "ready"; entries: readonly ReportManifestEntry[] }
   | { phase: "error"; message: string };
 
 /**
- * Loads the first pre-generated report asset from `/reports` and renders it.
- * While loading or on error it falls back to the UI's own "no report exists"
- * state (R10.7) by passing a null report — no sample data is ever synthesized
- * here.
+ * Loads the manifest of pre-generated report assets from `/reports` and renders
+ * a TARGET SWITCHER across them, fetching the selected report's asset on demand.
+ * Each target is a real pipeline report (writing-tracker, MoodPlays). While
+ * loading or on error it falls back to the UI's own "no report exists" state
+ * (R10.7) with a null report — no sample data is ever synthesized here.
  */
 function DemoApp(): ReactElement {
   const [state, setState] = useState<LoadState>({ phase: "loading" });
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [asset, setAsset] = useState<ReportAsset | null>(null);
 
+  // 1. Load the manifest once.
   useEffect(() => {
     let cancelled = false;
-    loadFirstReportAsset((input) => fetch(input))
-      .then((asset) => {
-        if (!cancelled) setState({ phase: "ready", asset });
+    loadManifest((input) => fetch(input))
+      .then((manifest) => {
+        if (cancelled) return;
+        setState({ phase: "ready", entries: manifest.reports });
+        setSelectedId(manifest.reports[0]?.id ?? null);
       })
       .catch((err: unknown) => {
         if (!cancelled) {
@@ -51,18 +57,64 @@ function DemoApp(): ReactElement {
     };
   }, []);
 
-  if (state.phase === "ready" && state.asset) {
-    return (
-      <LanternReportView
-        report={state.asset.report}
-        sampleData={state.asset.sampleData}
-        story={state.asset.story}
-      />
-    );
+  // 2. Fetch the selected report's asset whenever the selection changes.
+  useEffect(() => {
+    if (state.phase !== "ready" || selectedId === null) return;
+    const entry = state.entries.find((e) => e.id === selectedId);
+    if (!entry) return;
+    let cancelled = false;
+    setAsset(null);
+    loadReportAsset((input) => fetch(input), entry.path)
+      .then((a) => {
+        if (!cancelled) setAsset(a);
+      })
+      .catch(() => {
+        if (!cancelled) setAsset(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [state, selectedId]);
+
+  if (state.phase !== "ready") {
+    // Loading and error both show the "no report" state; render is null-safe.
+    return <LanternReportView report={null} />;
   }
 
-  // Loading and error both show the "no report" state; render is null-safe.
-  return <LanternReportView report={null} />;
+  const entries = state.entries;
+  const selectedEntry = entries.find((e) => e.id === selectedId) ?? null;
+
+  return (
+    <>
+      {entries.length > 1 ? (
+        <nav
+          className="lantern-switcher"
+          data-testid="lantern-target-switcher"
+          aria-label="Choose a target repo report"
+        >
+          <span className="lantern-switcher__label">Target:</span>
+          {entries.map((entry) => (
+            <button
+              key={entry.id}
+              type="button"
+              className="lantern-switcher__tab"
+              data-active={entry.id === selectedId ? "true" : undefined}
+              aria-pressed={entry.id === selectedId}
+              onClick={() => setSelectedId(entry.id)}
+            >
+              {entry.switchLabel ?? entry.title}
+            </button>
+          ))}
+        </nav>
+      ) : null}
+      <LanternReportView
+        report={asset ? asset.report : null}
+        sampleData={asset ? asset.sampleData : false}
+        story={asset ? asset.story : undefined}
+        targetLabel={selectedEntry?.targetLabel}
+      />
+    </>
+  );
 }
 
 const container = document.getElementById("root");

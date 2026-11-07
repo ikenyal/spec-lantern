@@ -31,26 +31,49 @@ import {
   WRITING_TRACKER_STORY,
   IS_SAMPLE_DATA,
 } from "../src/real-report.js";
+import {
+  MOODPLAYS_REPORT,
+  MOODPLAYS_STORY,
+  MOODPLAYS_IS_SAMPLE_DATA,
+} from "../src/moodplays-report.js";
 
-/** A report to export: its slug id, title, and the data + sample flag. */
+/** A report to export: its slug id, labels, and the data + sample flag. */
 interface ExportableReport {
   readonly id: string;
   readonly title: string;
+  /** Short label for the target-switcher tab. */
+  readonly switchLabel: string;
+  /** Human label for the report header ("Target: <targetLabel>"). */
+  readonly targetLabel: string;
   readonly asset: ReportAsset;
 }
 
 /**
- * The reports to export. The single real writing-tracker report assembled by
- * the pipeline (Stage B-D); the manifest shape already supports "one or more".
+ * The reports to export. Two real pipeline reports (Stage B–D each):
+ * writing-tracker and MoodPlays. The manifest shape supports "one or more"; the
+ * demo's target switcher lists them all.
  */
 const REPORTS: readonly ExportableReport[] = [
   {
     id: "writing-tracker",
     title: "writing-tracker (revived Lovable app)",
+    switchLabel: "writing-tracker",
+    targetLabel: "writing-tracker (abandoned Lovable app)",
     asset: {
       sampleData: IS_SAMPLE_DATA,
       report: WRITING_TRACKER_REPORT,
       story: WRITING_TRACKER_STORY,
+    },
+  },
+  {
+    id: "moodplays",
+    title: "MoodPlays (revived Lovable app)",
+    switchLabel: "MoodPlays",
+    targetLabel: "MoodPlays (abandoned Lovable app)",
+    asset: {
+      sampleData: MOODPLAYS_IS_SAMPLE_DATA,
+      report: MOODPLAYS_REPORT,
+      story: MOODPLAYS_STORY,
     },
   },
 ];
@@ -61,11 +84,18 @@ async function main(): Promise<void> {
   await mkdir(outDir, { recursive: true });
 
   const entries: ReportManifestEntry[] = [];
-  for (const { id, title, asset } of REPORTS) {
+  for (const { id, title, switchLabel, targetLabel, asset } of REPORTS) {
     const assetPath = reportAssetPath(id);
     const file = join(outDir, `${id}.json`);
     await writeFile(file, `${JSON.stringify(asset, null, 2)}\n`, "utf8");
-    entries.push({ id, title, path: assetPath, sampleData: asset.sampleData });
+    entries.push({
+      id,
+      title,
+      switchLabel,
+      targetLabel,
+      path: assetPath,
+      sampleData: asset.sampleData,
+    });
     console.log(`exported ${assetPath}`);
   }
 

@@ -61,6 +61,54 @@ body {
   padding: 2.5rem 1.5rem 4rem;
 }
 
+/* ------------------------------------------------------- target switcher -- */
+
+.lantern-switcher {
+  max-width: 1040px;
+  margin: 0 auto;
+  padding: 1.5rem 1.5rem 0;
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+}
+
+.lantern-switcher__label {
+  font-size: 0.72rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-muted);
+  font-weight: 700;
+}
+
+.lantern-switcher__tab {
+  appearance: none;
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--ink-muted);
+  background: var(--charcoal-raised);
+  border: 1px solid var(--charcoal-line);
+  border-radius: 999px;
+  padding: 0.35rem 0.9rem;
+}
+
+.lantern-switcher__tab:hover {
+  color: var(--ink);
+}
+
+.lantern-switcher__tab[data-active="true"] {
+  color: var(--charcoal);
+  background: var(--amber);
+  border-color: var(--amber);
+}
+
+.lantern-switcher__tab:focus-visible {
+  outline: 2px solid var(--amber-strong);
+  outline-offset: 2px;
+}
+
 /* ----------------------------------------------------------------- header -- */
 
 .lantern-header {
@@ -291,6 +339,25 @@ body {
 }
 .lantern-match__icon {
   color: var(--pass);
+}
+
+/* Symptom-of indicator: a mismatch row that is NOT itself a lie, only a symptom
+ * of another row's root-cause defect. Amber like a mismatch (it IS a
+ * predicted/actual gap) but clearly labeled, never "Lie exposed". */
+.lantern-symptom {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.4rem;
+  color: var(--amber-strong);
+  font-weight: 600;
+  font-size: 0.82rem;
+  max-width: 16rem;
+}
+.lantern-symptom__icon {
+  color: var(--amber);
+}
+.lantern-symptom__label {
+  line-height: 1.3;
 }
 
 /* --------------------------------------------------------- evidence card -- */
@@ -649,6 +716,55 @@ body {
   line-height: 1.5;
   color: var(--ink);
   white-space: pre;
+}
+
+/* Generic evidence lines (a story with no month-table mock). */
+.lantern-story__evidence {
+  list-style: none;
+  margin: 0.6rem 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.lantern-story__evidence-line code {
+  display: block;
+  padding: 0.5rem 0.7rem;
+  background: var(--charcoal-sunken);
+  border: 1px solid var(--charcoal-line);
+  border-left: 3px solid var(--amber);
+  border-radius: 6px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.8rem;
+  color: var(--ink);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+/* Story footer: how-this-target-was-chosen note + credit. */
+.lantern-story__footer {
+  margin-top: 1.75rem;
+  padding-top: 1.25rem;
+  border-top: 1px solid var(--charcoal-line);
+}
+
+.lantern-story__selection {
+  margin: 0 0 0.4rem;
+  color: var(--ink-muted);
+  font-size: 0.85rem;
+  line-height: 1.5;
+}
+
+.lantern-story__selection-doc {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.78rem;
+}
+
+.lantern-story__credit {
+  margin: 0;
+  color: var(--ink-muted);
+  font-size: 0.8rem;
 }
 
 /* --------------------------------------------- reduced-motion / responsive -- */
