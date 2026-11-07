@@ -90,6 +90,7 @@ export const TEST_IDS = {
   symptom: (propertyId: string) => `symptom-indicator-${propertyId}`,
   match: (propertyId: string) => `match-indicator-${propertyId}`,
   claim: (propertyId: string) => `claim-${propertyId}`,
+  claimNote: (propertyId: string) => `claim-note-${propertyId}`,
   // Task 18.2 — Counterexample (R10.4) and its parts.
   counterexample: (propertyId: string) => `counterexample-${propertyId}`,
   counterexampleInput: (propertyId: string) =>
@@ -111,6 +112,7 @@ export const TEST_IDS = {
   // Headline story section (above the table).
   story: "lantern-story",
   storyThesis: "lantern-story-thesis",
+  storySubhead: "lantern-story-subhead",
   storyStats: "lantern-story-stats",
   storyStep: (n: number) => `lantern-story-step-${n}`,
   storyMonths: "lantern-story-months",
@@ -369,6 +371,14 @@ export function ClaimHero({ comparison }: ClaimHeroProps): ReactElement {
       ) : null}
       <h2 className="lantern-claim__title">{title}</h2>
       <p className="lantern-claim__slug">{propertyId}</p>
+      {display?.note ? (
+        <p
+          className="lantern-claim__note"
+          data-testid={TEST_IDS.claimNote(propertyId)}
+        >
+          {display.note}
+        </p>
+      ) : null}
     </div>
   );
 }
@@ -544,7 +554,13 @@ export function CounterexampleDetail({
     );
   }
 
-  const contrast = extractExpectedActual(counterexample.observedOutput);
+  // Prefer an explicit, authored Expected-vs-Actual contrast (from the row's
+  // display, traceable to the persisted Counterexample) over parsing the raw
+  // observedOutput string, which for some properties is a fast-check assertion
+  // message that does not read as a clean contrast.
+  const contrast =
+    comparison.display?.evidence ??
+    extractExpectedActual(counterexample.observedOutput);
 
   // R10.4: show the triggering input/state and the observed output.
   return (
@@ -738,6 +754,12 @@ export interface StorySectionProps {
    * A `stats` string with no `{lies}` token renders verbatim (writing-tracker).
    */
   lieCount?: number;
+  /**
+   * The number of claims checked (report comparisons). Together with `lieCount`
+   * this substitutes the `{fooled}` token with "N/M" (lies / claims checked),
+   * so a "Kiro fooled N/M" stat is computed, never hand-written.
+   */
+  checkedCount?: number;
 }
 
 /**
@@ -757,17 +779,24 @@ export interface StorySectionProps {
  * month)" label and an `aria-label`, never colour alone. Each step is a labeled
  * region; the diff is a `<pre>`.
  */
-export function StorySection({ story, lieCount }: StorySectionProps): ReactElement {
+export function StorySection({
+  story,
+  lieCount,
+  checkedCount,
+}: StorySectionProps): ReactElement {
   const { comment, prediction, execution, revive } = story;
   // The month the claim PROMISED at the top — highlighted in the mock so a
   // viewer sees exactly where the current month ended up instead.
   const currentMonth = execution.expectedFirstRow;
-  // Substitute the computed lie count into the stat line's `{lies}` token. A
-  // stats string without the token renders unchanged (writing-tracker).
-  const statsText =
-    lieCount === undefined
-      ? story.stats
-      : story.stats.replace("{lies}", formatLieCount(lieCount));
+  // Substitute the computed counts into the stat line's tokens. A stats string
+  // without a token renders that part unchanged (writing-tracker has none).
+  let statsText = story.stats;
+  if (lieCount !== undefined) {
+    statsText = statsText.replace("{lies}", formatLieCount(lieCount));
+  }
+  if (lieCount !== undefined && checkedCount !== undefined) {
+    statsText = statsText.replace("{fooled}", `${lieCount}/${checkedCount}`);
+  }
 
   return (
     <section
@@ -1061,6 +1090,14 @@ export function LanternReportView({
           >
             {story.thesis}
           </h1>
+          {story.subhead ? (
+            <p
+              className="lantern-header__subhead"
+              data-testid={TEST_IDS.storySubhead}
+            >
+              {story.subhead}
+            </p>
+          ) : null}
         </header>
       ) : (
         <header className="lantern-header">
@@ -1080,7 +1117,11 @@ export function LanternReportView({
         </header>
       )}
       {story ? (
-        <StorySection story={story} lieCount={countLies(report.comparisons)} />
+        <StorySection
+          story={story}
+          lieCount={countLies(report.comparisons)}
+          checkedCount={report.comparisons.length}
+        />
       ) : null}
       <PropertyTable comparisons={report.comparisons} />
     </section>

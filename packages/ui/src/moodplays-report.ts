@@ -73,6 +73,12 @@ export const MOODPLAYS_REPORT: LanternReport = {
         title: "A 24-hour closing time parses to minutes since midnight",
         claimText: "// Handle 24-hour format (e.g., \"22:00\")",
         sourceLocation: "openingHoursParser.ts:17",
+        // Fix #2: explicit evidence from the persisted counterexample (input
+        // "00:00-13:24"; observedOutput shows closing time dropped to null).
+        evidence: {
+          expected: "close 13:24",
+          actual: "no close time (treated as open 24 hours)",
+        },
       },
     },
     {
@@ -127,6 +133,9 @@ export const MOODPLAYS_REPORT: LanternReport = {
         title: "A place open 24 hours is never reported as closing soon",
         claimText: "// Open 24 hours, never closing",
         sourceLocation: "openingHoursParser.ts:53",
+        // Fix #1: explain why this L53 comment Matches even though the adjacent
+        // L51 check is the headline lie.
+        note: "Holds for real 24-hour places; the bug is that non-24h times containing '24' are also treated as 24h (see headline).",
       },
     },
     {
@@ -173,6 +182,12 @@ export const MOODPLAYS_REPORT: LanternReport = {
         // 24h-detection defect (property-1's root cause) dropped the close time
         // before this >12h branch ran. Labeled a symptom, not a lie.
         symptomOf: "24h-detection bug",
+        // Fix #2: explicit evidence from the persisted counterexample (input
+        // "08:00-00:24"; observedOutput shows closing time dropped to null).
+        evidence: {
+          expected: "close 00:24",
+          actual: "no close time (treated as open 24 hours)",
+        },
       },
     },
     {
@@ -269,15 +284,22 @@ export const MOODPLAYS_REPORT: LanternReport = {
  */
 export const MOODPLAYS_STORY: LanternStory = {
   propertyId: "property-1.claim-24h-to-minutes",
+  // The shared PRODUCT thesis is the page headline for every target (same
+  // sentence as writing-tracker); the MoodPlays-specific lead is the subhead.
   thesis:
-    "A comment said \"check for 24 hours\" — the code checked for the characters \"24\". spec-lantern made Kiro predict, then executed, then proved the gap.",
-  // The lie count is the `{lies}` token, substituted by the UI with the number
-  // computed from the report (countLies, which excludes symptomOf rows) so this
-  // can never hard-write "1 lie" out of step with the data.
-  stats: "10 claims checked · {lies} · Kiro fooled · fixed in 2 lines",
+    "AI-built apps are full of comments that lie — and AI reviewers believe them. spec-lantern makes Kiro predict, then executes, then proves.",
+  subhead:
+    "Here a comment said \"check for 24 hours\" — the code checked for the characters \"24\".",
+  // Both numbers are tokens substituted by the UI from the report: {lies} via
+  // countLies (excludes symptomOf rows) and {fooled} = lies/claims-checked, so
+  // neither can drift from the data (like writing-tracker's "1/3").
+  stats: "10 claims checked · {lies} · Kiro fooled {fooled} · fixed in 2 lines",
   comment: {
-    claimText: "// Check for 24 hours … // Open 24 hours, never closing",
-    sourceLocation: "openingHoursParser.ts:51-53",
+    // Fix #1: quote ONLY the L51 check as the lie. The L53 comment
+    // ("// Open 24 hours, never closing") HOLDS for real 24-hour places
+    // (property-4 Match), so it is not quoted here.
+    claimText: "// Check for 24 hours",
+    sourceLocation: "openingHoursParser.ts:51",
   },
   prediction: {
     verdict: "PASS",

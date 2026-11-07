@@ -209,6 +209,29 @@ export interface PropertyDisplay {
    * or `transition`, which stay faithful to execution.
    */
   symptomOf?: string;
+  /**
+   * An explicit, human-readable Expected-vs-Actual contrast for the evidence
+   * card, authored from the row's persisted Counterexample when the raw
+   * `observedOutput` string is not self-explanatory (e.g. a fast-check assertion
+   * message). Both strings must be traceable to the Counterexample's real input
+   * and observed output — nothing invented (report-data-fidelity). When present
+   * the UI shows this contrast; the raw input/output still appears under "Raw
+   * details". When absent the UI falls back to parsing `observedOutput`.
+   */
+  evidence?: {
+    /** What the claim promised for the triggering input (e.g. "close 13:24"). */
+    expected: string;
+    /** What execution actually produced (e.g. "no close time (open 24h)"). */
+    actual: string;
+  };
+  /**
+   * An optional clarifying note shown under the row's claim. Used e.g. on a
+   * passing row whose comment is adjacent to a headline bug, to explain why it
+   * holds (e.g. property-4: "Holds for real 24-hour places; the bug is that
+   * non-24h times containing '24' are also treated as 24h — see headline").
+   * Purely presentational.
+   */
+  note?: string;
 }
 
 /** Per-property comparison record built by the Comparison Engine. (R7) */

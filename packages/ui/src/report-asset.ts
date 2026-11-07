@@ -34,8 +34,17 @@ import type { LanternReport } from "@spec-lantern/types";
 export interface LanternStory {
   /** The propertyId of the Confirmed_Bug this story is about. */
   readonly propertyId: string;
-  /** One-line thesis shown at the very top of the story. */
+  /**
+   * The page headline — the PRODUCT thesis, shared across every target (Kiro
+   * predicts, then executes, then proves). Rendered as the largest text.
+   */
   readonly thesis: string;
+  /**
+   * Optional target-specific one-liner shown BELOW the shared thesis (e.g. the
+   * MoodPlays "check for 24 hours vs the characters 24" sentence). Omitted for a
+   * target whose thesis already is its specific lead (writing-tracker).
+   */
+  readonly subhead?: string;
   /** Header stat line, e.g. "3 comments checked · 1 lie · …". */
   readonly stats: string;
   /** Step 1 — the lying comment, verbatim, and where it lives. */
