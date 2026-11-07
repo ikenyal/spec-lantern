@@ -1,0 +1,46 @@
+{
+  "claims": [
+    {
+      "id": "claim-24h-to-minutes",
+      "description": "A 24-hour-format time string (e.g. \"22:00\") is parsed to minutes since midnight, so the closing time extracted from a 24-hour range like \"10:00-22:00\" is surfaced as that time.",
+      "sourceFile": "sandbox/moodplays/src/utils/openingHoursParser.ts",
+      "commentRef": "L12 * Parse time string like \"10:00 PM\" or \"22:00\" to minutes since midnight ; L17 // Handle 24-hour format (e.g., \"22:00\")"
+    },
+    {
+      "id": "claim-12h-to-minutes",
+      "description": "A 12-hour-format time string (e.g. \"10:00 PM\") is parsed to minutes since midnight: PM adds 12 hours except at 12 PM, and 12 AM is midnight.",
+      "sourceFile": "sandbox/moodplays/src/utils/openingHoursParser.ts",
+      "commentRef": "L25 // Handle 12-hour format (e.g., \"10:00 PM\")"
+    },
+    {
+      "id": "claim-extract-closing-formats",
+      "description": "The closing time is extracted from the documented opening-hours range formats: \"10:00 AM - 10:00 PM\" and \"10:00-22:00\".",
+      "sourceFile": "sandbox/moodplays/src/utils/openingHoursParser.ts",
+      "commentRef": "L42-46 * Parse opening hours string and extract closing time / * Handles formats like: / * - \"10:00 AM - 10:00 PM\" / * - \"10:00-22:00\" / * - \"Open 24 hours\" ; L57 // Format: \"HH:MM AM - HH:MM PM\" or \"HH:MM - HH:MM\""
+    },
+    {
+      "id": "claim-24h-never-closing",
+      "description": "A place whose opening hours say it is open 24 hours is never reported as closing soon (it never has a closing time).",
+      "sourceFile": "sandbox/moodplays/src/utils/openingHoursParser.ts",
+      "commentRef": "L51 // Check for 24 hours ; L53 return null; // Open 24 hours, never closing"
+    },
+    {
+      "id": "claim-after-midnight",
+      "description": "A closing time that falls after midnight relative to the current time (e.g. closes 1:00 AM while it is late evening) is handled by treating it as tomorrow, yielding a positive minutes-until-close.",
+      "sourceFile": "sandbox/moodplays/src/utils/openingHoursParser.ts",
+      "commentRef": "L93 // Handle cases where closing time is after midnight (e.g., 1:00 AM) ; L96 // Closing time might be tomorrow (past midnight)"
+    },
+    {
+      "id": "claim-stale-closed",
+      "description": "When more than 12 hours remain until the computed closing time, the place is treated as already closed from yesterday rather than closing soon.",
+      "sourceFile": "sandbox/moodplays/src/utils/openingHoursParser.ts",
+      "commentRef": "L100 // If more than 12 hours until close, it's probably already closed from yesterday"
+    },
+    {
+      "id": "claim-format-until-close",
+      "description": "formatTimeUntilClose renders minutes-until-close as a human-readable string: \"Closing now\" at or below zero, \"Closes in N min\" under an hour, and \"Closes in Hh\" / \"Closes in Hh Mm\" at or above an hour.",
+      "sourceFile": "sandbox/moodplays/src/utils/openingHoursParser.ts",
+      "commentRef": "L113 * Format minutes until close into a human-readable string"
+    }
+  ]
+}
