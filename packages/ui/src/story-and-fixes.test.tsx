@@ -71,14 +71,15 @@ describe("bug #2: revived counts only FIXED; STILL_PASSING is muted", () => {
     expect(summary.checked).toBe(3);
   });
 
-  it("header summary says '1 revived' for the real report", () => {
+  it("the top summary line is removed (no 'claims checked · … revived')", () => {
     render(<LanternReportView report={WRITING_TRACKER_REPORT} />);
-    expect(screen.getByTestId(TEST_IDS.summary).textContent).toContain(
-      "1 revived",
-    );
+    expect(screen.queryByTestId(TEST_IDS.summary)).toBeNull();
+    const view = screen.getByTestId("lantern-report");
+    expect(view.textContent).not.toContain("claims checked");
+    expect(view.textContent).not.toContain("revived");
   });
 
-  it("a STILL_PASSING row shows the muted still-passing label, not the revival visual", () => {
+  it("a STILL_PASSING row shows only the one-line still-passing label", () => {
     const comparison: PropertyComparison = {
       propertyId: "p-sp",
       predicted: "PASS",
@@ -106,9 +107,11 @@ describe("bug #2: revived counts only FIXED; STILL_PASSING is muted", () => {
     const el = screen.getByTestId(TEST_IDS.transition("p-sp"));
     expect(el.className).toContain("lantern-still-passing");
     expect(el.textContent).toContain("Still passing after fix");
-    // Not the "Revived" framing / tombstone.
+    // Not the "Revived" framing / tombstone, and NO Pre-fix/Post-fix text.
     expect(el.textContent).not.toContain("Revived");
     expect(el.textContent).not.toContain("🪦");
+    expect(el.textContent).not.toContain("Pre-fix");
+    expect(el.textContent).not.toContain("Post-fix");
   });
 
   it("a FIXED row still shows the revival visual", () => {
@@ -152,11 +155,24 @@ describe("story section renders the lead finding from the real story", () => {
     );
   }
 
-  it("shows the thesis and the header stats verbatim", () => {
+  it("the thesis is the page's main headline (h1), verbatim", () => {
     renderWithStory();
-    expect(screen.getByTestId(TEST_IDS.storyThesis).textContent).toBe(
-      WRITING_TRACKER_STORY.thesis,
+    const headline = screen.getByTestId(TEST_IDS.storyThesis);
+    expect(headline.tagName).toBe("H1");
+    expect(headline.textContent).toBe(WRITING_TRACKER_STORY.thesis);
+  });
+
+  it("shows a small 'Lantern Report · writing-tracker …' label above the headline", () => {
+    renderWithStory();
+    const label = screen.getByTestId(TEST_IDS.subheader);
+    expect(label.textContent).toContain("Lantern Report");
+    expect(label.textContent).toContain(
+      "writing-tracker (abandoned Lovable app)",
     );
+  });
+
+  it("shows the header stats verbatim inside the story", () => {
+    renderWithStory();
     expect(screen.getByTestId(TEST_IDS.storyStats).textContent).toBe(
       "3 comments checked · 1 lie · Kiro fooled 1/3 · fixed in 2 lines",
     );
@@ -202,7 +218,15 @@ describe("story section renders the lead finding from the real story", () => {
     expect(bodyText[0]).not.toContain("(current month)");
   });
 
-  it("step 4 shows FAIL → PASS, the 2-line diff, and the replay flag", () => {
+  it("shows the provenance note under the monthly mock", () => {
+    renderWithStory();
+    const step = screen.getByTestId(TEST_IDS.storyStep(3));
+    expect(step.textContent).toContain(
+      "Row 1 observed in execution; the remaining order follows from the same code path.",
+    );
+  });
+
+  it("step 4 shows FAIL → PASS, the diff with the real file path, and the replay flag", () => {
     renderWithStory();
     const step = screen.getByTestId(TEST_IDS.storyStep(4));
     expect(step.textContent).toContain("FAIL");
@@ -213,6 +237,11 @@ describe("story section renders the lead finding from the real story", () => {
     expect(diff.textContent).toContain(
       "// Reverse to have most recent month first",
     );
+    // The diff header names the real source file, not the before/after temp files.
+    expect(diff.textContent).toContain(
+      "src/components/statistics/PeriodProgressSummary.tsx",
+    );
+    expect(diff.textContent).not.toContain("fix-task-1.before.txt");
   });
 
   it("no story prop renders no story section (table still renders)", () => {

@@ -148,7 +148,11 @@ export const WRITING_TRACKER_REPORT: LanternReport = {
  *   - `execution.expectedFirstRow` / `actualFirstRow`: verbatim from the
  *     counterexample observedOutput ("expected first row: Jan 2000, actual
  *     first row: Aug 1999").
- *   - `revive.diff`: results/stage-d/fix-task-1.diff, verbatim.
+ *   - `revive.diff`: the hunk body is verbatim from
+ *     results/stage-d/fix-task-1.diff; the two header lines name the real edited
+ *     file (fileEdit.path in results/stage-d/apply-fixes-reexecute-all.json,
+ *     "src/components/statistics/PeriodProgressSummary.tsx") instead of the
+ *     before/after temp filenames the textual diff was generated between.
  *   - `revive.preFixResult` / `postFixResult`: the property-1 transition in
  *     results/stage-d/apply-fixes-reexecute-all.json (FAIL -> PASS, FIXED).
  *   - `revive.reproducesSameFail`: results/stage-c/replay-property-1.json
@@ -186,8 +190,8 @@ export const WRITING_TRACKER_STORY: LanternStory = {
   },
   revive: {
     diff: [
-      "--- fix-task-1.before.txt\t2026-11-03 14:50:53",
-      "+++ fix-task-1.after.txt\t2026-11-03 14:50:53",
+      "--- a/src/components/statistics/PeriodProgressSummary.tsx",
+      "+++ b/src/components/statistics/PeriodProgressSummary.tsx",
       "@@ -51,8 +51,6 @@",
       "           end: monthEnd",
       "         });",

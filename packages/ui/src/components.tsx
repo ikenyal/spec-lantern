@@ -564,10 +564,10 @@ export interface TransitionDetailProps {
  *     which also involve a dead or newly-broken property) reads tombstone → lit
  *     lantern under the label "Revived".
  *   - A `STILL_PASSING` property was never dead, so the tombstone→lantern visual
- *     would overstate what happened (bug #2). Instead it shows a muted
- *     "✓ Still passing after fix", making clear the fix did not regress it.
+ *     would overstate what happened (bug #2). It shows a single muted line,
+ *     "✓ Still passing after fix", with no Pre-fix/Post-fix detail.
  *
- * The pre/post VERDICT text is always present (surfaced via the same
+ * For a true revival the pre/post VERDICT text is present (surfaced via the
  * `transition-pre-fix` / `transition-post-fix` testids) so the meaning never
  * relies on an emoji or colour alone (WCAG). The classification is exposed as
  * `data-classification` for styling.
@@ -578,8 +578,9 @@ export function TransitionDetail({
   const { propertyId, transition } = comparison;
   if (!transition) return null;
 
-  // Bug #2: a property that was already passing is NOT "revived". Show a muted
-  // reassurance that the fix left it passing, not the tombstone→lantern visual.
+  // Bug #2: a property that was already passing is NOT "revived". Show a single
+  // muted line — "✓ Still passing after fix" — with no Pre-fix/Post-fix text,
+  // never the tombstone→lantern revival visual.
   if (transition.classification === "STILL_PASSING") {
     return (
       <div
@@ -593,20 +594,6 @@ export function TransitionDetail({
         </span>
         <span className="lantern-still-passing__label">
           Still passing after fix
-        </span>
-        {/* Keep the pre/post verdicts present (and testable) without the
-            revival framing. */}
-        <span
-          className="lantern-still-passing__detail"
-          data-testid={TEST_IDS.transitionPreFix(propertyId)}
-        >
-          Pre-fix: {transition.preFixResult}
-        </span>
-        <span
-          className="lantern-still-passing__detail"
-          data-testid={TEST_IDS.transitionPostFix(propertyId)}
-        >
-          Post-fix: {transition.postFixResult}
         </span>
       </div>
     );
@@ -693,8 +680,10 @@ export interface StorySectionProps {
 }
 
 /**
- * The headline story: a four-step narrative of the single lead finding
- * (predict → lock → execute → revive), shown above the property table.
+ * The headline story: the stat line plus a four-step narrative of the single
+ * lead finding (predict → lock → execute → revive), shown above the property
+ * table. The thesis sentence is NOT rendered here — {@link LanternReportView}
+ * promotes it to the page headline.
  *
  * It renders ONLY values carried on the {@link LanternStory} — each of which is
  * a verbatim copy of a persisted pipeline artifact (report-data-fidelity). The
@@ -718,9 +707,8 @@ export function StorySection({ story }: StorySectionProps): ReactElement {
       data-testid={TEST_IDS.story}
       aria-label="Lead finding"
     >
-      <p className="lantern-story__thesis" data-testid={TEST_IDS.storyThesis}>
-        {story.thesis}
-      </p>
+      {/* The thesis is rendered as the page headline by LanternReportView; the
+          story keeps only the stat line and the four steps. */}
       <p className="lantern-story__stats" data-testid={TEST_IDS.storyStats}>
         {story.stats}
       </p>
@@ -818,6 +806,14 @@ export function StorySection({ story }: StorySectionProps): ReactElement {
               })}
             </tbody>
           </table>
+          {/* report-data-fidelity: only the first row was directly observed by
+              execution (the counterexample); the rest of the ordering follows
+              deterministically from the same getPeriods() code path, not from a
+              separate observation. */}
+          <p className="lantern-story__provenance">
+            Row 1 observed in execution; the remaining order follows from the
+            same code path.
+          </p>
           <p className="lantern-story__impact">{execution.userImpact}</p>
         </li>
 
@@ -903,39 +899,57 @@ export function LanternReportView({
     );
   }
 
-  const summary = summarize(report.comparisons);
-  const checkedWord = summary.checked === 1 ? "claim checked" : "claims checked";
-  const exposedWord = summary.exposed === 1 ? "lie exposed" : "lies exposed";
+  const sampleBadge = sampleData ? (
+    <span
+      className="lantern-sample-badge"
+      data-testid={TEST_IDS.sampleBadge}
+      title="Hand-authored sample data — replaced by real pipeline output (task 20)"
+    >
+      Sample data
+    </span>
+  ) : null;
 
   return (
     <section className="lantern" data-testid="lantern-report">
-      <header className="lantern-header">
-        <h1 className="lantern-header__title">
-          <span className="lantern-header__flame" aria-hidden="true">
-            🏮
-          </span>
-          Lantern Report
-          {sampleData ? (
-            <span
-              className="lantern-sample-badge"
-              data-testid={TEST_IDS.sampleBadge}
-              title="Hand-authored sample data — replaced by real pipeline output (task 20)"
-            >
-              Sample data
+      {story ? (
+        // With a story, the thesis IS the page headline (largest text), under a
+        // small "Lantern Report · <target>" label. No separate summary line —
+        // the story carries its own stat line.
+        <header className="lantern-header lantern-header--story">
+          <p
+            className="lantern-header__label"
+            data-testid={TEST_IDS.subheader}
+          >
+            <span className="lantern-header__flame" aria-hidden="true">
+              🏮
             </span>
-          ) : null}
-        </h1>
-        <p className="lantern-header__subheader" data-testid={TEST_IDS.subheader}>
-          Target: writing-tracker (abandoned Lovable app)
-        </p>
-        <p className="lantern-header__summary" data-testid={TEST_IDS.summary}>
-          {summary.checked} {checkedWord} ·{" "}
-          <span className="lantern-header__exposed">
-            {summary.exposed} {exposedWord}
-          </span>{" "}
-          · {summary.revived} revived
-        </p>
-      </header>
+            Lantern Report · writing-tracker (abandoned Lovable app)
+            {sampleBadge}
+          </p>
+          <h1
+            className="lantern-header__headline"
+            data-testid={TEST_IDS.storyThesis}
+          >
+            {story.thesis}
+          </h1>
+        </header>
+      ) : (
+        <header className="lantern-header">
+          <h1 className="lantern-header__title">
+            <span className="lantern-header__flame" aria-hidden="true">
+              🏮
+            </span>
+            Lantern Report
+            {sampleBadge}
+          </h1>
+          <p
+            className="lantern-header__subheader"
+            data-testid={TEST_IDS.subheader}
+          >
+            Target: writing-tracker (abandoned Lovable app)
+          </p>
+        </header>
+      )}
       {story ? <StorySection story={story} /> : null}
       <PropertyTable comparisons={report.comparisons} />
     </section>

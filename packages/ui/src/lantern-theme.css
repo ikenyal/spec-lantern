@@ -105,15 +105,33 @@ body {
   font-size: 0.95rem;
 }
 
-.lantern-header__summary {
-  margin: 0;
-  color: var(--ink-muted);
-  font-size: 1.05rem;
+/* Story header: a small "Lantern Report · <target>" label above the thesis,
+ * which is the page's largest text. */
+.lantern-header--story {
+  border-bottom: none;
+  padding-bottom: 0;
+  margin-bottom: 1.5rem;
 }
 
-.lantern-header__exposed {
-  color: var(--amber);
+.lantern-header__label {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin: 0 0 0.6rem;
+  color: var(--ink-muted);
+  font-size: 0.8rem;
+  letter-spacing: 0.04em;
   font-weight: 600;
+}
+
+.lantern-header__headline {
+  margin: 0;
+  font-size: 2.4rem;
+  line-height: 1.2;
+  font-weight: 800;
+  letter-spacing: -0.01em;
+  color: var(--ink);
+  max-width: 60ch;
 }
 
 /* ------------------------------------------------------------------ empty -- */
@@ -452,11 +470,6 @@ body {
   font-weight: 600;
 }
 
-.lantern-still-passing__detail {
-  font-size: 0.75rem;
-  color: var(--ink-muted);
-}
-
 /* ----------------------------------------------------------------- story -- */
 
 .lantern-story {
@@ -465,14 +478,6 @@ body {
   background: var(--charcoal-raised);
   border: 1px solid var(--charcoal-line);
   border-radius: 12px;
-}
-
-.lantern-story__thesis {
-  margin: 0 0 0.75rem;
-  font-size: 1.3rem;
-  font-weight: 700;
-  line-height: 1.35;
-  color: var(--ink);
 }
 
 .lantern-story__stats {
@@ -617,6 +622,12 @@ body {
   color: var(--amber);
   text-transform: uppercase;
   letter-spacing: 0.04em;
+}
+
+.lantern-story__provenance {
+  margin: 0.5rem 0 0;
+  color: var(--ink-muted);
+  font-size: 0.78rem;
 }
 
 .lantern-story__impact {
