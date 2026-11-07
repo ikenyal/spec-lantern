@@ -41,6 +41,33 @@
       "description": "formatTimeUntilClose renders minutes-until-close as a human-readable string: \"Closing now\" at or below zero, \"Closes in N min\" under an hour, and \"Closes in Hh\" / \"Closes in Hh Mm\" at or above an hour.",
       "sourceFile": "sandbox/moodplays/src/utils/openingHoursParser.ts",
       "commentRef": "L113 * Format minutes until close into a human-readable string"
+    },
+    {
+      "id": "claim-haversine-distance",
+      "description": "calculateDistance returns the great-circle distance between two latitude/longitude points in kilometers, computed with the Haversine formula using Earth's radius of 6371 km.",
+      "sourceFile": "sandbox/moodplays/src/utils/distanceCalculator.ts",
+      "commentRef": "L2 * Calculate distance between two coordinates using the Haversine formula ; L7 * @returns Distance in kilometers ; L15 const R = 6371; // Earth's radius in kilometers"
+    },
+    {
+      "id": "claim-format-distance",
+      "description": "formatDistance renders a distance in kilometers as a display string: distances under 1 km as whole meters (\"500 m\", km*1000 rounded), and 1 km or more as one-decimal kilometers (\"1.2 km\").",
+      "sourceFile": "sandbox/moodplays/src/utils/distanceCalculator.ts",
+      "commentRef": "L34 * Format distance for display ; L36 * @returns Formatted string (e.g., \"1.2 km\" or \"500 m\")"
+    },
+    {
+      "id": "claim-mood-categories-lookup",
+      "description": "getCategoriesForMood returns exactly the category list configured for the given mood in moodConfigs (and an empty array when no config matches); getMoodConfig finds the config whose id equals the requested mood.",
+      "sourceFile": "sandbox/moodplays/src/utils/moodMapper.ts",
+      "commentRef": "L21 categories: ['cafe', 'coffee_shop'], // Cafes for work ; L29 // Restaurants, cafes, bars for dates ; L37 // Fast food and quick spots ; L45 // Budget-friendly places ; L53 // Chill cafes and bars ; L61 // Bars and party spots"
+    },
+    {
+      "id": "claim-foursquare-category-ids",
+      "description": "The category id strings in each mood config are valid Foursquare category IDs (the mapping documented at the Foursquare categories docs URL).",
+      "sourceFile": "sandbox/moodplays/src/utils/moodMapper.ts",
+      "commentRef": "L12-13 // Foursquare category IDs mapping / // https://docs.foursquare.com/data-products/docs/categories",
+      "unverifiable": {
+        "reason": "Whether each string is a valid Foursquare category ID can only be confirmed against the external Foursquare categories API/taxonomy; the mapping is consumed by the network-backed places service, so there is no deterministic, network-free way to execute this claim (R3.6)."
+      }
     }
   ]
 }
