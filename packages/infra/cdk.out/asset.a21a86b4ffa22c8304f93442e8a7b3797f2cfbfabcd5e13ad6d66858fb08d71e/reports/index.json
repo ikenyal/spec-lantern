@@ -1,0 +1,10 @@
+{
+  "reports": [
+    {
+      "id": "writing-tracker",
+      "title": "writing-tracker (revived Lovable app)",
+      "path": "/reports/writing-tracker.json",
+      "sampleData": false
+    }
+  ]
+}

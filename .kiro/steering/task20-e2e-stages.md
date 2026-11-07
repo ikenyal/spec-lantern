@@ -1,5 +1,5 @@
 ---
-inclusion: always
+inclusion: manual
 ---
 
 # Task 20 (end-to-end on writing-tracker): staged execution with stop points
