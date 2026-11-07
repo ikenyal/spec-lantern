@@ -295,14 +295,39 @@ export interface ReportSummary {
 export function summarize(
   comparisons: readonly PropertyComparison[],
 ): ReportSummary {
-  let exposed = 0;
+  return { checked: comparisons.length, exposed: countLies(comparisons), revived: countRevived(comparisons) };
+}
+
+/**
+ * The number of distinct LIES in a report: Confirmed_Bugs whose OWN comment is
+ * the lie — i.e. excluding rows marked `display.symptomOf`, which are additional
+ * symptoms of another row's root-cause lie, not separate lies. This is the
+ * single source of truth for the lie count, used by {@link summarize} AND by a
+ * story's stat line (via {@link formatLieCount}) so the UI can never show a
+ * symptom as its own lie (e.g. MoodPlays must read "1 lie", not "2").
+ */
+export function countLies(comparisons: readonly PropertyComparison[]): number {
+  let lies = 0;
+  for (const c of comparisons) {
+    if (c.confirmedBug && !c.display?.symptomOf) lies += 1;
+  }
+  return lies;
+}
+
+/** The number of revived properties: transitions classified FIXED (FAIL→PASS). */
+export function countRevived(
+  comparisons: readonly PropertyComparison[],
+): number {
   let revived = 0;
   for (const c of comparisons) {
-    if (c.confirmedBug) exposed += 1;
-    // Count ONLY a true revival (FAIL -> PASS), never a STILL_PASSING row.
     if (c.transition && c.transition.classification === "FIXED") revived += 1;
   }
-  return { checked: comparisons.length, exposed, revived };
+  return revived;
+}
+
+/** Render "N lie" / "N lies" for a lie count — the shared pluralization. */
+export function formatLieCount(count: number): string {
+  return `${count} ${count === 1 ? "lie" : "lies"}`;
 }
 
 /* -------------------------------------------------------------------------- */
@@ -705,6 +730,14 @@ export function PropertyTable({ comparisons }: PropertyTableProps): ReactElement
 export interface StorySectionProps {
   /** The headline story to render above the table. */
   story: LanternStory;
+  /**
+   * The lie count COMPUTED from the report ({@link countLies}). When the story's
+   * `stats` text contains the token `{lies}`, it is substituted with
+   * `formatLieCount(lieCount)` so the lie number is derived from the data, never
+   * hand-written — the UI can never show "2 lies" when one row is a symptom.
+   * A `stats` string with no `{lies}` token renders verbatim (writing-tracker).
+   */
+  lieCount?: number;
 }
 
 /**
@@ -713,21 +746,28 @@ export interface StorySectionProps {
  * table. The thesis sentence is NOT rendered here — {@link LanternReportView}
  * promotes it to the page headline.
  *
- * It renders ONLY values carried on the {@link LanternStory} — each of which is
- * a verbatim copy of a persisted pipeline artifact (report-data-fidelity). The
- * component derives nothing: the months, the clock, the lock hash, and the diff
- * all come straight from the story payload.
+ * It renders ONLY values carried on the {@link LanternStory} — each a verbatim
+ * copy of a persisted pipeline artifact (report-data-fidelity) — with ONE
+ * derived exception: the lie count in the stat line is substituted from the
+ * report via the `{lies}` token (see {@link StorySectionProps.lieCount}), so the
+ * number is computed, not asserted.
  *
  * Accessibility: the monthly mock is a real `<table>` with a caption and scoped
  * headers; the current-month highlight is conveyed by a visible "(current
  * month)" label and an `aria-label`, never colour alone. Each step is a labeled
  * region; the diff is a `<pre>`.
  */
-export function StorySection({ story }: StorySectionProps): ReactElement {
+export function StorySection({ story, lieCount }: StorySectionProps): ReactElement {
   const { comment, prediction, execution, revive } = story;
   // The month the claim PROMISED at the top — highlighted in the mock so a
   // viewer sees exactly where the current month ended up instead.
   const currentMonth = execution.expectedFirstRow;
+  // Substitute the computed lie count into the stat line's `{lies}` token. A
+  // stats string without the token renders unchanged (writing-tracker).
+  const statsText =
+    lieCount === undefined
+      ? story.stats
+      : story.stats.replace("{lies}", formatLieCount(lieCount));
 
   return (
     <section
@@ -738,7 +778,7 @@ export function StorySection({ story }: StorySectionProps): ReactElement {
       {/* The thesis is rendered as the page headline by LanternReportView; the
           story keeps only the stat line and the four steps. */}
       <p className="lantern-story__stats" data-testid={TEST_IDS.storyStats}>
-        {story.stats}
+        {statsText}
       </p>
 
       <ol className="lantern-story__steps">
@@ -1039,7 +1079,9 @@ export function LanternReportView({
           </p>
         </header>
       )}
-      {story ? <StorySection story={story} /> : null}
+      {story ? (
+        <StorySection story={story} lieCount={countLies(report.comparisons)} />
+      ) : null}
       <PropertyTable comparisons={report.comparisons} />
     </section>
   );

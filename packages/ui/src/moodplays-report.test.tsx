@@ -12,7 +12,13 @@
  */
 import { describe, it, expect, afterEach } from "vitest";
 import { render, screen, cleanup } from "@testing-library/react";
-import { LanternReportView, TEST_IDS } from "./index.js";
+import type { PropertyComparison } from "@spec-lantern/types";
+import {
+  LanternReportView,
+  TEST_IDS,
+  countLies,
+  summarize,
+} from "./index.js";
 import { MOODPLAYS_REPORT, MOODPLAYS_STORY } from "./moodplays-report.js";
 
 afterEach(cleanup);
@@ -65,6 +71,41 @@ describe("MoodPlays report rows", () => {
     renderMoodplays();
     const lieEls = screen.queryAllByText("Lie exposed");
     expect(lieEls).toHaveLength(1);
+  });
+});
+
+describe("computed lie count (excludes symptomOf rows)", () => {
+  it("countLies counts only non-symptom confirmed bugs (MoodPlays = 1, though 2 are confirmed bugs)", () => {
+    const confirmed = MOODPLAYS_REPORT.comparisons.filter((c) => c.confirmedBug);
+    expect(confirmed).toHaveLength(2); // property-1 + property-6 both FAILed
+    expect(countLies(MOODPLAYS_REPORT.comparisons)).toBe(1); // only property-1 is a lie
+  });
+
+  it("summarize().exposed uses the same symptom-aware count (1 for MoodPlays)", () => {
+    expect(summarize(MOODPLAYS_REPORT.comparisons).exposed).toBe(1);
+  });
+
+  it("the rendered stats line reads '1 lie' and never '2 lies'", () => {
+    renderMoodplays();
+    const stats = screen.getByTestId(TEST_IDS.storyStats).textContent ?? "";
+    expect(stats).toContain("1 lie");
+    expect(stats).not.toContain("2 lies");
+    // The token was substituted, not shown literally.
+    expect(stats).not.toContain("{lies}");
+  });
+
+  it("two symptom rows + one lie still counts as one lie", () => {
+    const mk = (id: string, symptomOf?: string): PropertyComparison => ({
+      propertyId: id,
+      predicted: "PASS",
+      actual: { propertyId: id, outcome: "VERDICT", verdict: "FAIL" },
+      status: "PREDICTION_MISMATCH",
+      confirmedBug: true,
+      display: symptomOf ? { symptomOf } : undefined,
+    });
+    const comparisons = [mk("root"), mk("sym-a", "root bug"), mk("sym-b", "root bug")];
+    expect(countLies(comparisons)).toBe(1);
+    expect(summarize(comparisons).exposed).toBe(1);
   });
 });
 

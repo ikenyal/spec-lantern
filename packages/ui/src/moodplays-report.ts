@@ -271,7 +271,10 @@ export const MOODPLAYS_STORY: LanternStory = {
   propertyId: "property-1.claim-24h-to-minutes",
   thesis:
     "A comment said \"check for 24 hours\" — the code checked for the characters \"24\". spec-lantern made Kiro predict, then executed, then proved the gap.",
-  stats: "10 claims checked · 1 lie · Kiro fooled · fixed in 2 lines",
+  // The lie count is the `{lies}` token, substituted by the UI with the number
+  // computed from the report (countLies, which excludes symptomOf rows) so this
+  // can never hard-write "1 lie" out of step with the data.
+  stats: "10 claims checked · {lies} · Kiro fooled · fixed in 2 lines",
   comment: {
     claimText: "// Check for 24 hours … // Open 24 hours, never closing",
     sourceLocation: "openingHoursParser.ts:51-53",
