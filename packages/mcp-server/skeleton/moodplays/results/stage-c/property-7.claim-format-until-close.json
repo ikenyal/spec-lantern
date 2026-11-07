@@ -1,0 +1,16 @@
+{
+  "tool": "execute_properties",
+  "phase": "initial",
+  "capturedAt": "2026-11-07T21:37:48.796Z",
+  "propertyId": "property-7.claim-format-until-close",
+  "actualResult": {
+    "propertyId": "property-7.claim-format-until-close",
+    "outcome": "VERDICT",
+    "verdict": "PASS"
+  },
+  "executionContext": {
+    "randomSeed": 3413774052,
+    "timezone": "UTC",
+    "fixedCurrentTime": "2025-01-01T00:00:00.000Z"
+  }
+}

@@ -1,0 +1,16 @@
+{
+  "tool": "execute_properties",
+  "phase": "initial",
+  "capturedAt": "2026-11-07T21:37:48.795Z",
+  "propertyId": "property-5.claim-after-midnight",
+  "actualResult": {
+    "propertyId": "property-5.claim-after-midnight",
+    "outcome": "VERDICT",
+    "verdict": "PASS"
+  },
+  "executionContext": {
+    "randomSeed": 893232710,
+    "timezone": "UTC",
+    "fixedCurrentTime": "2025-01-01T00:00:00.000Z"
+  }
+}

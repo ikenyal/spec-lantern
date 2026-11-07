@@ -1,0 +1,16 @@
+{
+  "tool": "execute_properties",
+  "phase": "initial",
+  "capturedAt": "2026-11-07T21:37:48.794Z",
+  "propertyId": "property-2.claim-12h-to-minutes",
+  "actualResult": {
+    "propertyId": "property-2.claim-12h-to-minutes",
+    "outcome": "VERDICT",
+    "verdict": "PASS"
+  },
+  "executionContext": {
+    "randomSeed": 3687092681,
+    "timezone": "UTC",
+    "fixedCurrentTime": "2025-01-01T00:00:00.000Z"
+  }
+}

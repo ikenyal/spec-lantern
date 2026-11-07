@@ -1,0 +1,41 @@
+{
+  "tool": "replay_counterexample",
+  "capturedAt": "2026-11-07T21:43:27.207Z",
+  "propertyId": "property-6.claim-stale-closed",
+  "forcedExecutionContext": {
+    "randomSeed": 1039160878,
+    "timezone": "UTC",
+    "fixedCurrentTime": "2025-01-01T00:00:00.000Z"
+  },
+  "originalActualResult": {
+    "propertyId": "property-6.claim-stale-closed",
+    "outcome": "VERDICT",
+    "verdict": "FAIL",
+    "counterexample": {
+      "propertyId": "property-6.claim-stale-closed",
+      "input": "[{\"closeHour\":0,\"closeMinute\":24,\"minutesUntilClose\":721}]",
+      "observedOutput": "expected '00:24', actual closingTime 00:24, actual null: expected null\n---\nError: Property failed after 7 tests",
+      "executionContext": {
+        "randomSeed": 1039160878,
+        "timezone": "UTC",
+        "fixedCurrentTime": "2025-01-01T00:00:00.000Z"
+      }
+    }
+  },
+  "replayActualResult": {
+    "propertyId": "property-6.claim-stale-closed",
+    "outcome": "VERDICT",
+    "verdict": "FAIL",
+    "counterexample": {
+      "propertyId": "property-6.claim-stale-closed",
+      "input": "[{\"closeHour\":0,\"closeMinute\":24,\"minutesUntilClose\":721}]",
+      "observedOutput": "expected '00:24', actual closingTime 00:24, actual null: expected null\n---\nError: Property failed after 7 tests",
+      "executionContext": {
+        "randomSeed": 1039160878,
+        "timezone": "UTC",
+        "fixedCurrentTime": "2025-01-01T00:00:00.000Z"
+      }
+    }
+  },
+  "reproducesSameFail": true
+}

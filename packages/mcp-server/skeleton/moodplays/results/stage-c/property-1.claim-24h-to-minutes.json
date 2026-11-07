@@ -1,0 +1,26 @@
+{
+  "tool": "execute_properties",
+  "phase": "initial",
+  "capturedAt": "2026-11-07T21:37:48.784Z",
+  "propertyId": "property-1.claim-24h-to-minutes",
+  "actualResult": {
+    "propertyId": "property-1.claim-24h-to-minutes",
+    "outcome": "VERDICT",
+    "verdict": "FAIL",
+    "counterexample": {
+      "propertyId": "property-1.claim-24h-to-minutes",
+      "input": "[{\"openHour\":0,\"closeHour\":13,\"closeMinute\":24,\"minutesBeforeClose\":1}]",
+      "observedOutput": "expected '13:24', actual closingTime 13:24, actual null: expected null\n---\nError: Property failed after 48 tests",
+      "executionContext": {
+        "randomSeed": 3358481083,
+        "timezone": "UTC",
+        "fixedCurrentTime": "2025-01-01T00:00:00.000Z"
+      }
+    }
+  },
+  "executionContext": {
+    "randomSeed": 3358481083,
+    "timezone": "UTC",
+    "fixedCurrentTime": "2025-01-01T00:00:00.000Z"
+  }
+}

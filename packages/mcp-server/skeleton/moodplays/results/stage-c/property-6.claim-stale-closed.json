@@ -1,0 +1,26 @@
+{
+  "tool": "execute_properties",
+  "phase": "initial",
+  "capturedAt": "2026-11-07T21:37:48.796Z",
+  "propertyId": "property-6.claim-stale-closed",
+  "actualResult": {
+    "propertyId": "property-6.claim-stale-closed",
+    "outcome": "VERDICT",
+    "verdict": "FAIL",
+    "counterexample": {
+      "propertyId": "property-6.claim-stale-closed",
+      "input": "[{\"closeHour\":0,\"closeMinute\":24,\"minutesUntilClose\":721}]",
+      "observedOutput": "expected '00:24', actual closingTime 00:24, actual null: expected null\n---\nError: Property failed after 7 tests",
+      "executionContext": {
+        "randomSeed": 1039160878,
+        "timezone": "UTC",
+        "fixedCurrentTime": "2025-01-01T00:00:00.000Z"
+      }
+    }
+  },
+  "executionContext": {
+    "randomSeed": 1039160878,
+    "timezone": "UTC",
+    "fixedCurrentTime": "2025-01-01T00:00:00.000Z"
+  }
+}

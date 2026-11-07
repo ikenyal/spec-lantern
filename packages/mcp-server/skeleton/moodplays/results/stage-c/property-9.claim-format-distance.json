@@ -1,0 +1,16 @@
+{
+  "tool": "execute_properties",
+  "phase": "initial",
+  "capturedAt": "2026-11-07T21:37:48.796Z",
+  "propertyId": "property-9.claim-format-distance",
+  "actualResult": {
+    "propertyId": "property-9.claim-format-distance",
+    "outcome": "VERDICT",
+    "verdict": "PASS"
+  },
+  "executionContext": {
+    "randomSeed": 895880542,
+    "timezone": "UTC",
+    "fixedCurrentTime": "2025-01-01T00:00:00.000Z"
+  }
+}
