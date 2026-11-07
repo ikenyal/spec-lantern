@@ -2,6 +2,6 @@
   "propertyId": "property-8.claim-haversine-distance",
   "verdict": "PASS",
   "hashAlgorithm": "sha256",
-  "contentHash": "f9b1b1e2d88cc227d036604528ae4913091fa9db383398670baa0125fe297931",
-  "lockedAt": "2026-11-07T20:59:39.166Z"
+  "contentHash": "38f1fb87f13fb70f122530ddd2f7b9550e5d72a21520b579c45f094bbcb61b28",
+  "lockedAt": "2026-11-07T21:06:14.785Z"
 }
