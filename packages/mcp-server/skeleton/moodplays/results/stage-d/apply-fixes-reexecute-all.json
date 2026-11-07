@@ -1,0 +1,401 @@
+{
+  "tool": "apply_fixes_and_reexecute",
+  "capturedAt": "2026-11-07T21:59:05.025Z",
+  "fixTask": {
+    "id": "fix-1.claim-24h-detection",
+    "confirmedBugPropertyId": "property-1.claim-24h-to-minutes",
+    "description": "openingHoursParser.extractClosingTime (L51-53) treats ANY opening-hours string containing the substring \"24\" as open-24-hours and drops its closing time. The comment claims a 24-hour check, but the code checks for the substring \"24\". Replace the substring check with a match for actual 24-hour-operation phrasing (\"24 hours\"/\"24 hrs\"/\"24/7\"). Minimal: only the if-condition and its comments change.",
+    "appliesTo": "Target_Repo_Copy"
+  },
+  "fileEdit": {
+    "kind": "write",
+    "path": "src/utils/openingHoursParser.ts"
+  },
+  "result": {
+    "postFixExecution": {
+      "results": [
+        {
+          "propertyId": "property-1.claim-24h-to-minutes",
+          "outcome": "VERDICT",
+          "verdict": "PASS"
+        },
+        {
+          "propertyId": "property-2.claim-12h-to-minutes",
+          "outcome": "VERDICT",
+          "verdict": "PASS"
+        },
+        {
+          "propertyId": "property-3.claim-extract-closing-formats",
+          "outcome": "VERDICT",
+          "verdict": "PASS"
+        },
+        {
+          "propertyId": "property-4.claim-24h-never-closing",
+          "outcome": "VERDICT",
+          "verdict": "PASS"
+        },
+        {
+          "propertyId": "property-5.claim-after-midnight",
+          "outcome": "VERDICT",
+          "verdict": "PASS"
+        },
+        {
+          "propertyId": "property-6.claim-stale-closed",
+          "outcome": "VERDICT",
+          "verdict": "PASS"
+        },
+        {
+          "propertyId": "property-7.claim-format-until-close",
+          "outcome": "VERDICT",
+          "verdict": "PASS"
+        },
+        {
+          "propertyId": "property-8.claim-haversine-distance",
+          "outcome": "VERDICT",
+          "verdict": "PASS"
+        },
+        {
+          "propertyId": "property-9.claim-format-distance",
+          "outcome": "VERDICT",
+          "verdict": "PASS"
+        },
+        {
+          "propertyId": "property-10.claim-mood-categories-lookup",
+          "outcome": "VERDICT",
+          "verdict": "PASS"
+        }
+      ],
+      "executionContexts": {
+        "property-1.claim-24h-to-minutes": {
+          "randomSeed": 885115278,
+          "timezone": "UTC",
+          "fixedCurrentTime": "2025-01-01T00:00:00.000Z"
+        },
+        "property-2.claim-12h-to-minutes": {
+          "randomSeed": 2130356927,
+          "timezone": "UTC",
+          "fixedCurrentTime": "2025-01-01T00:00:00.000Z"
+        },
+        "property-3.claim-extract-closing-formats": {
+          "randomSeed": 4268169826,
+          "timezone": "UTC",
+          "fixedCurrentTime": "2025-01-01T00:00:00.000Z"
+        },
+        "property-4.claim-24h-never-closing": {
+          "randomSeed": 2842243468,
+          "timezone": "UTC",
+          "fixedCurrentTime": "2025-01-01T00:00:00.000Z"
+        },
+        "property-5.claim-after-midnight": {
+          "randomSeed": 4095604740,
+          "timezone": "UTC",
+          "fixedCurrentTime": "2025-01-01T00:00:00.000Z"
+        },
+        "property-6.claim-stale-closed": {
+          "randomSeed": 3505023349,
+          "timezone": "UTC",
+          "fixedCurrentTime": "2025-01-01T00:00:00.000Z"
+        },
+        "property-7.claim-format-until-close": {
+          "randomSeed": 205179181,
+          "timezone": "UTC",
+          "fixedCurrentTime": "2025-01-01T00:00:00.000Z"
+        },
+        "property-8.claim-haversine-distance": {
+          "randomSeed": 3812389192,
+          "timezone": "UTC",
+          "fixedCurrentTime": "2025-01-01T00:00:00.000Z"
+        },
+        "property-9.claim-format-distance": {
+          "randomSeed": 1941570718,
+          "timezone": "UTC",
+          "fixedCurrentTime": "2025-01-01T00:00:00.000Z"
+        },
+        "property-10.claim-mood-categories-lookup": {
+          "randomSeed": 2220673254,
+          "timezone": "UTC",
+          "fixedCurrentTime": "2025-01-01T00:00:00.000Z"
+        }
+      }
+    },
+    "outcomes": [
+      {
+        "propertyId": "property-1.claim-24h-to-minutes",
+        "preFixResult": {
+          "propertyId": "property-1.claim-24h-to-minutes",
+          "outcome": "VERDICT",
+          "verdict": "FAIL",
+          "counterexample": {
+            "propertyId": "property-1.claim-24h-to-minutes",
+            "input": "[{\"openHour\":0,\"closeHour\":13,\"closeMinute\":24,\"minutesBeforeClose\":1}]",
+            "observedOutput": "expected '13:24', actual closingTime 13:24, actual null: expected null\n---\nError: Property failed after 48 tests",
+            "executionContext": {
+              "randomSeed": 3358481083,
+              "timezone": "UTC",
+              "fixedCurrentTime": "2025-01-01T00:00:00.000Z"
+            }
+          }
+        },
+        "postFixResult": {
+          "propertyId": "property-1.claim-24h-to-minutes",
+          "outcome": "VERDICT",
+          "verdict": "PASS"
+        },
+        "transition": {
+          "propertyId": "property-1.claim-24h-to-minutes",
+          "preFixResult": "FAIL",
+          "postFixResult": "PASS",
+          "classification": "FIXED"
+        }
+      },
+      {
+        "propertyId": "property-2.claim-12h-to-minutes",
+        "preFixResult": {
+          "propertyId": "property-2.claim-12h-to-minutes",
+          "outcome": "VERDICT",
+          "verdict": "PASS"
+        },
+        "postFixResult": {
+          "propertyId": "property-2.claim-12h-to-minutes",
+          "outcome": "VERDICT",
+          "verdict": "PASS"
+        },
+        "transition": {
+          "propertyId": "property-2.claim-12h-to-minutes",
+          "preFixResult": "PASS",
+          "postFixResult": "PASS",
+          "classification": "STILL_PASSING"
+        }
+      },
+      {
+        "propertyId": "property-3.claim-extract-closing-formats",
+        "preFixResult": {
+          "propertyId": "property-3.claim-extract-closing-formats",
+          "outcome": "VERDICT",
+          "verdict": "PASS"
+        },
+        "postFixResult": {
+          "propertyId": "property-3.claim-extract-closing-formats",
+          "outcome": "VERDICT",
+          "verdict": "PASS"
+        },
+        "transition": {
+          "propertyId": "property-3.claim-extract-closing-formats",
+          "preFixResult": "PASS",
+          "postFixResult": "PASS",
+          "classification": "STILL_PASSING"
+        }
+      },
+      {
+        "propertyId": "property-4.claim-24h-never-closing",
+        "preFixResult": {
+          "propertyId": "property-4.claim-24h-never-closing",
+          "outcome": "VERDICT",
+          "verdict": "PASS"
+        },
+        "postFixResult": {
+          "propertyId": "property-4.claim-24h-never-closing",
+          "outcome": "VERDICT",
+          "verdict": "PASS"
+        },
+        "transition": {
+          "propertyId": "property-4.claim-24h-never-closing",
+          "preFixResult": "PASS",
+          "postFixResult": "PASS",
+          "classification": "STILL_PASSING"
+        }
+      },
+      {
+        "propertyId": "property-5.claim-after-midnight",
+        "preFixResult": {
+          "propertyId": "property-5.claim-after-midnight",
+          "outcome": "VERDICT",
+          "verdict": "PASS"
+        },
+        "postFixResult": {
+          "propertyId": "property-5.claim-after-midnight",
+          "outcome": "VERDICT",
+          "verdict": "PASS"
+        },
+        "transition": {
+          "propertyId": "property-5.claim-after-midnight",
+          "preFixResult": "PASS",
+          "postFixResult": "PASS",
+          "classification": "STILL_PASSING"
+        }
+      },
+      {
+        "propertyId": "property-6.claim-stale-closed",
+        "preFixResult": {
+          "propertyId": "property-6.claim-stale-closed",
+          "outcome": "VERDICT",
+          "verdict": "FAIL",
+          "counterexample": {
+            "propertyId": "property-6.claim-stale-closed",
+            "input": "[{\"closeHour\":0,\"closeMinute\":24,\"minutesUntilClose\":721}]",
+            "observedOutput": "expected '00:24', actual closingTime 00:24, actual null: expected null\n---\nError: Property failed after 7 tests",
+            "executionContext": {
+              "randomSeed": 1039160878,
+              "timezone": "UTC",
+              "fixedCurrentTime": "2025-01-01T00:00:00.000Z"
+            }
+          }
+        },
+        "postFixResult": {
+          "propertyId": "property-6.claim-stale-closed",
+          "outcome": "VERDICT",
+          "verdict": "PASS"
+        },
+        "transition": {
+          "propertyId": "property-6.claim-stale-closed",
+          "preFixResult": "FAIL",
+          "postFixResult": "PASS",
+          "classification": "FIXED"
+        }
+      },
+      {
+        "propertyId": "property-7.claim-format-until-close",
+        "preFixResult": {
+          "propertyId": "property-7.claim-format-until-close",
+          "outcome": "VERDICT",
+          "verdict": "PASS"
+        },
+        "postFixResult": {
+          "propertyId": "property-7.claim-format-until-close",
+          "outcome": "VERDICT",
+          "verdict": "PASS"
+        },
+        "transition": {
+          "propertyId": "property-7.claim-format-until-close",
+          "preFixResult": "PASS",
+          "postFixResult": "PASS",
+          "classification": "STILL_PASSING"
+        }
+      },
+      {
+        "propertyId": "property-8.claim-haversine-distance",
+        "preFixResult": {
+          "propertyId": "property-8.claim-haversine-distance",
+          "outcome": "VERDICT",
+          "verdict": "PASS"
+        },
+        "postFixResult": {
+          "propertyId": "property-8.claim-haversine-distance",
+          "outcome": "VERDICT",
+          "verdict": "PASS"
+        },
+        "transition": {
+          "propertyId": "property-8.claim-haversine-distance",
+          "preFixResult": "PASS",
+          "postFixResult": "PASS",
+          "classification": "STILL_PASSING"
+        }
+      },
+      {
+        "propertyId": "property-9.claim-format-distance",
+        "preFixResult": {
+          "propertyId": "property-9.claim-format-distance",
+          "outcome": "VERDICT",
+          "verdict": "PASS"
+        },
+        "postFixResult": {
+          "propertyId": "property-9.claim-format-distance",
+          "outcome": "VERDICT",
+          "verdict": "PASS"
+        },
+        "transition": {
+          "propertyId": "property-9.claim-format-distance",
+          "preFixResult": "PASS",
+          "postFixResult": "PASS",
+          "classification": "STILL_PASSING"
+        }
+      },
+      {
+        "propertyId": "property-10.claim-mood-categories-lookup",
+        "preFixResult": {
+          "propertyId": "property-10.claim-mood-categories-lookup",
+          "outcome": "VERDICT",
+          "verdict": "PASS"
+        },
+        "postFixResult": {
+          "propertyId": "property-10.claim-mood-categories-lookup",
+          "outcome": "VERDICT",
+          "verdict": "PASS"
+        },
+        "transition": {
+          "propertyId": "property-10.claim-mood-categories-lookup",
+          "preFixResult": "PASS",
+          "postFixResult": "PASS",
+          "classification": "STILL_PASSING"
+        }
+      }
+    ],
+    "transitions": [
+      {
+        "propertyId": "property-1.claim-24h-to-minutes",
+        "preFixResult": "FAIL",
+        "postFixResult": "PASS",
+        "classification": "FIXED"
+      },
+      {
+        "propertyId": "property-2.claim-12h-to-minutes",
+        "preFixResult": "PASS",
+        "postFixResult": "PASS",
+        "classification": "STILL_PASSING"
+      },
+      {
+        "propertyId": "property-3.claim-extract-closing-formats",
+        "preFixResult": "PASS",
+        "postFixResult": "PASS",
+        "classification": "STILL_PASSING"
+      },
+      {
+        "propertyId": "property-4.claim-24h-never-closing",
+        "preFixResult": "PASS",
+        "postFixResult": "PASS",
+        "classification": "STILL_PASSING"
+      },
+      {
+        "propertyId": "property-5.claim-after-midnight",
+        "preFixResult": "PASS",
+        "postFixResult": "PASS",
+        "classification": "STILL_PASSING"
+      },
+      {
+        "propertyId": "property-6.claim-stale-closed",
+        "preFixResult": "FAIL",
+        "postFixResult": "PASS",
+        "classification": "FIXED"
+      },
+      {
+        "propertyId": "property-7.claim-format-until-close",
+        "preFixResult": "PASS",
+        "postFixResult": "PASS",
+        "classification": "STILL_PASSING"
+      },
+      {
+        "propertyId": "property-8.claim-haversine-distance",
+        "preFixResult": "PASS",
+        "postFixResult": "PASS",
+        "classification": "STILL_PASSING"
+      },
+      {
+        "propertyId": "property-9.claim-format-distance",
+        "preFixResult": "PASS",
+        "postFixResult": "PASS",
+        "classification": "STILL_PASSING"
+      },
+      {
+        "propertyId": "property-10.claim-mood-categories-lookup",
+        "preFixResult": "PASS",
+        "postFixResult": "PASS",
+        "classification": "STILL_PASSING"
+      }
+    ],
+    "skippedPropertyIds": [],
+    "targetRepoCopyPath": "/var/folders/rd/955b2cy12x5_75__0sqw3zx00000gp/T/spec-lantern-target-copy-lnkZB5",
+    "appliedFixTaskIds": [
+      "fix-1.claim-24h-detection"
+    ]
+  }
+}

@@ -1,0 +1,13 @@
+--- a/src/utils/openingHoursParser.ts
++++ b/src/utils/openingHoursParser.ts
+@@ -48,8 +48,8 @@
+ function extractClosingTime(openingHours: string): string | null {
+   if (!openingHours) return null;
+   
+-  // Check for 24 hours
+-  if (openingHours.toLowerCase().includes('24')) {
++  // Check for 24-hour operation (e.g. "Open 24 hours", "24/7"), not just any "24"
++  if (/24\s*(?:hours?|hrs?|\/7)/i.test(openingHours)) {
+     return null; // Open 24 hours, never closing
+   }
+   
