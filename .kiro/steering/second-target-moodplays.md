@@ -34,3 +34,12 @@ At the end of EACH stage, STOP, report, and wait for "continue".
   copy; re-run ALL properties for regression. Report diffs and transitions.
 - E: add MoodPlays as a second report in the UI (report index lists both targets);
   keep writing-tracker unchanged. Do NOT deploy.
+
+## No pre-lock simulation of target logic
+- Do not copy, transcribe, or simulate the target's functions (e.g. in
+  `node -e`) to check whether a property will pass. That is executing the
+  target outside the runner in disguise, and tuning tests to the code.
+- Oracles may be sanity-checked only against independent sources (known
+  real-world values, the comment's own examples, math identities).
+- If unsure whether an oracle is right, say so in the report instead of
+  simulating the code.

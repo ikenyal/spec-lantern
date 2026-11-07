@@ -1,25 +1,30 @@
-// Feature: spec-lantern, Property 10: getCategoriesForMood returns the mood's configured categories and getMoodConfig matches by id
+// Feature: spec-lantern, Property 10: each mood's categories include what its inline comment names, and lookup matches by id
 
 // Correctness_Property for the MoodPlays Claim claim-mood-categories-lookup. It
-// targets the pure lookup helpers in
+// targets the pure lookup helpers + per-mood comments in
 //   sandbox/moodplays/src/utils/moodMapper.ts
-// whose per-mood comments annotate each config's category list, e.g. L21
-//   "categories: ['cafe', 'coffee_shop'], // Cafes for work" and L29
-//   "// Restaurants, cafes, bars for dates".
+// e.g. L21 "categories: ['cafe', 'coffee_shop'], // Cafes for work",
+//      L29 "// Restaurants, cafes, bars for dates",
+//      L53 "// Chill cafes and bars".
 //
 // 1:1 mapping: this is the one and only property test file for
-// claim-mood-categories-lookup. getMoodConfig, getCategoriesForMood, and
-// moodConfigs are exported and pure, so the property calls them directly. For
-// every configured mood it asserts getMoodConfig(id).id === id and
-// getCategoriesForMood(id) equals that config's categories; for an unknown
-// mood id it asserts the documented empty-array fallback (`|| []`). The
-// SEMANTIC judgement in the comments (whether a cafe "is for work") is
-// subjective and NOT asserted — only the deterministic lookup contract is.
+// claim-mood-categories-lookup.
 //
-// Note on the external taxonomy: whether each category string is a valid
-// Foursquare category ID is recorded separately as the UNVERIFIABLE Claim
-// claim-foursquare-category-ids (network-dependent, R3.6) and is NOT asserted
-// here.
+// INDEPENDENT ORACLE (from the comment text, not the code). An earlier draft
+// compared getCategoriesForMood(id) to getMoodConfig(id)?.categories — both are
+// the SAME lookup, so the oracle was circular. This version builds the oracle
+// from the ENGLISH of each mood's inline comment: the words a comment uses name
+// category ids ("Cafes" -> cafe, "Restaurants" -> restaurant, "Bars" -> bar,
+// "Fast food" -> fast_food), and the property asserts the mood's categories
+// INCLUDE each named category. A comment that names no concrete category
+// ("Budget-friendly places", and the vague "quick spots" / "party spots") gets
+// NO category assertion. We deliberately do NOT transcribe the source arrays
+// (that would copy the code); we assert a subset relationship derived purely
+// from what the comment claims.
+//
+// The deterministic lookup contract is also checked independently:
+// getMoodConfig(id).id === id for every configured mood, and an unknown mood id
+// yields an empty category list (the documented `|| []` fallback).
 //
 // kind: function. No clock is read; TZ pinned only for consistency.
 // Terminates PASS or FAIL; >=100 runs.
@@ -38,43 +43,59 @@ process.env.TZ = "UTC";
 
 const KNOWN_MOODS = moodConfigs.map((m) => m.id);
 
-test("getCategoriesForMood returns the mood's configured categories and getMoodConfig matches by id", () => {
+/**
+ * Oracle built from the INLINE COMMENT TEXT only (see moodMapper.ts):
+ *   work        "Cafes for work"                 -> cafe
+ *   date        "Restaurants, cafes, bars ..."   -> restaurant, cafe, bar
+ *   quick_bite  "Fast food and quick spots"      -> fast_food
+ *   budget      "Budget-friendly places"         -> (names no category)
+ *   sad         "Chill cafes and bars"           -> cafe, bar
+ *   fun         "Bars and party spots"           -> bar
+ * Each listed category must be INCLUDED in the mood's configured categories.
+ */
+const COMMENT_NAMES: Record<MoodType, string[]> = {
+  work: ["cafe"],
+  date: ["restaurant", "cafe", "bar"],
+  quick_bite: ["fast_food"],
+  budget: [],
+  sad: ["cafe", "bar"],
+  fun: ["bar"],
+};
+
+test("each mood's categories include what its inline comment names, and lookup matches by id", () => {
+  // Per configured mood: id match + comment-named categories are included.
+  for (const mood of KNOWN_MOODS) {
+    const config = getMoodConfig(mood);
+    expect(config, `expected a config for "${mood}"`).toBeDefined();
+    expect(
+      config?.id,
+      `expected config.id "${mood}", actual ${String(config?.id)}`,
+    ).toBe(mood);
+
+    const categories = getCategoriesForMood(mood);
+    for (const named of COMMENT_NAMES[mood]) {
+      expect(
+        categories.includes(named),
+        `mood "${mood}": comment names "${named}" but categories are [${categories.join(", ")}]`,
+      ).toBe(true);
+    }
+  }
+
+  // Unknown-mood fallback: an id not in the config list yields [], and
+  // getMoodConfig returns undefined. (>=100 runs via random arbitrary ids.)
   fc.assert(
-    fc.property(
-      fc.record({
-        // A configured mood id, plus an arbitrary string that may or may not be
-        // a known mood (to exercise the unknown-mood fallback too).
-        known: fc.constantFrom(...KNOWN_MOODS),
-        arbitrary: fc.string(),
-      }),
-      ({ known, arbitrary }) => {
-        // getMoodConfig finds the config whose id equals the requested mood.
-        const config = getMoodConfig(known);
-        expect(config, `expected a config for "${known}"`).toBeDefined();
+    fc.property(fc.string(), (arbitrary) => {
+      if (!KNOWN_MOODS.includes(arbitrary as MoodType)) {
         expect(
-          config?.id,
-          `expected config.id "${known}", actual ${String(config?.id)}`,
-        ).toBe(known);
-
-        // getCategoriesForMood returns exactly that config's categories.
+          getMoodConfig(arbitrary as MoodType),
+          `expected undefined config for unknown "${arbitrary}"`,
+        ).toBeUndefined();
         expect(
-          getCategoriesForMood(known),
-          `categories mismatch for "${known}"`,
-        ).toEqual(config?.categories);
-
-        // Unknown-mood fallback: an id not in the config list yields [].
-        if (!KNOWN_MOODS.includes(arbitrary as MoodType)) {
-          expect(
-            getMoodConfig(arbitrary as MoodType),
-            `expected undefined config for unknown "${arbitrary}"`,
-          ).toBeUndefined();
-          expect(
-            getCategoriesForMood(arbitrary as MoodType),
-            `expected [] for unknown "${arbitrary}"`,
-          ).toEqual([]);
-        }
-      },
-    ),
+          getCategoriesForMood(arbitrary as MoodType),
+          `expected [] for unknown "${arbitrary}"`,
+        ).toEqual([]);
+      }
+    }),
     { numRuns: 100 },
   );
 });
