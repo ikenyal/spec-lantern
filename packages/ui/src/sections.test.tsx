@@ -34,6 +34,15 @@ const SECTIONS: ReportSectionsAsset = {
       id: "writing-tracker",
       label: "writing-tracker",
       predictionsLockedBeforeExecution: true,
+      verdictMismatches: [],
+      harnessRevisions: {
+        count: 2,
+        timing: "after-first-run",
+        timingNote:
+          "a first run exposed harness defects, which were then revised and re-locked with the verdicts unchanged",
+        readmePath:
+          "packages/mcp-server/skeleton/writing-tracker-full/locks/superseded/README.md",
+      },
       steps: [
         {
           phase: "predictions-locked",
@@ -81,6 +90,15 @@ const SECTIONS: ReportSectionsAsset = {
       id: "moodplays",
       label: "MoodPlays",
       predictionsLockedBeforeExecution: true,
+      verdictMismatches: [],
+      harnessRevisions: {
+        count: 5,
+        timing: "before-any-execution",
+        timingNote:
+          "all 5 restated the implementation and were rewritten with independent oracles before any execution",
+        readmePath:
+          "packages/mcp-server/skeleton/moodplays/locks/superseded/README.md",
+      },
       steps: [
         {
           phase: "predictions-locked",
@@ -163,10 +181,67 @@ describe("ReportSections — Behind the lantern (timeline)", () => {
     );
   });
 
-  it("shows the 'predictions locked before execution' callout from the computed flag", () => {
+  it("states the prediction-lock claim and the harness revisions SEPARATELY", () => {
     render(<ReportSections sections={SECTIONS} targetId="writing-tracker" />);
-    const callout = screen.getByTestId(TEST_IDS.timelineLockedBefore);
-    expect(callout.textContent).toMatch(/before/i);
+    // 1. Predicted verdicts locked before any execution (its own statement).
+    const verdicts = screen.getByTestId(TEST_IDS.timelineVerdictsLocked);
+    expect(verdicts.textContent).toMatch(
+      /All predicted verdicts were locked before any execution/i,
+    );
+    // 2. Harness revisions are a DISTINCT statement, with count + timing + link.
+    const harness = screen.getByTestId(TEST_IDS.timelineHarnessRevisions);
+    expect(harness.textContent).toMatch(/2 test harnesses were revised/i);
+    expect(harness.textContent).toMatch(/verdicts unchanged/i);
+    expect(harness.textContent).toMatch(/a first run exposed harness defects/i);
+    const readmeLink = within(harness).getByRole("link");
+    expect(readmeLink.getAttribute("href")).toMatch(
+      /github\.com\/ikenyal\/spec-lantern\/blob\/main\/.*superseded\/README\.md/,
+    );
+  });
+
+  it("states the MoodPlays harness revisions happened before any execution", () => {
+    render(<ReportSections sections={SECTIONS} targetId="moodplays" />);
+    const harness = screen.getByTestId(TEST_IDS.timelineHarnessRevisions);
+    expect(harness.textContent).toMatch(/5 test harnesses were revised/i);
+    expect(harness.textContent).toMatch(/before any execution/i);
+  });
+
+  it("flags a verdict mismatch between a superseded and active lock", () => {
+    const withMismatch: ReportSectionsAsset = {
+      ...SECTIONS,
+      timelines: [
+        {
+          ...SECTIONS.timelines[0],
+          verdictMismatches: [
+            {
+              propertyId: "property-2",
+              activeVerdict: "PASS",
+              supersededVerdict: "FAIL",
+            },
+          ],
+        },
+      ],
+    };
+    render(<ReportSections sections={withMismatch} targetId="writing-tracker" />);
+    const flag = screen.getByTestId(TEST_IDS.timelineVerdictMismatch);
+    expect(flag.getAttribute("role")).toBe("alert");
+    expect(flag.textContent).toMatch(/property-2/);
+    expect(flag.textContent).toMatch(/active PASS/);
+    expect(flag.textContent).toMatch(/superseded FAIL/);
+  });
+
+  it("shows a warning statement when not every verdict was locked before execution", () => {
+    const notLocked: ReportSectionsAsset = {
+      ...SECTIONS,
+      timelines: [
+        { ...SECTIONS.timelines[0], predictionsLockedBeforeExecution: false },
+      ],
+    };
+    render(<ReportSections sections={notLocked} targetId="writing-tracker" />);
+    const verdicts = screen.getByTestId(TEST_IDS.timelineVerdictsLocked);
+    expect(verdicts.textContent).toMatch(
+      /Not every predicted verdict was locked before execution/i,
+    );
   });
 
   it("selects the timeline by target id (MoodPlays)", () => {
@@ -175,13 +250,26 @@ describe("ReportSections — Behind the lantern (timeline)", () => {
     expect(heading).toBeTruthy();
   });
 
-  it("renders each timestamp as a machine-readable <time>", () => {
+  it("keeps the raw value in datetime but displays every time normalized to UTC", () => {
     const { container } = render(
       <ReportSections sections={SECTIONS} targetId="writing-tracker" />,
     );
-    const times = container.querySelectorAll("time[datetime]");
+    const times = Array.from(container.querySelectorAll("time[datetime]"));
     expect(times.length).toBeGreaterThan(0);
+    // The first step's raw value is preserved in the datetime attribute …
     expect(times[0].getAttribute("datetime")).toBe("2026-11-03T05:21:22.398Z");
+    // … while the DISPLAYED text is normalized to one UTC format.
+    expect(times[0].textContent).toBe("2026-11-03 05:21:22 UTC");
+    // A git commit date with a +09:00 offset (lock-commit step) also displays
+    // as UTC, so the steps read in the correct order at a glance.
+    const lockCommitTime = times.find(
+      (t) => t.getAttribute("datetime") === "2026-11-03T14:23:15+09:00",
+    );
+    expect(lockCommitTime?.textContent).toBe("2026-11-03 05:23:15 UTC");
+    // Every displayed time ends in "UTC".
+    for (const t of times) {
+      expect(t.textContent).toMatch(/ UTC$/);
+    }
   });
 });
 

@@ -77,6 +77,7 @@ import type {
   ReportSectionsAsset,
   TargetTimeline,
 } from "./report-asset.js";
+import { formatUtc } from "./report-asset.js";
 
 /* -------------------------------------------------------------------------- */
 /* data-testid conventions                                                    */
@@ -131,6 +132,9 @@ export const TEST_IDS = {
   timeline: "lantern-timeline",
   timelineStep: (phase: string) => `lantern-timeline-step-${phase}`,
   timelineLockedBefore: "lantern-timeline-locked-before",
+  timelineVerdictsLocked: "lantern-timeline-verdicts-locked",
+  timelineHarnessRevisions: "lantern-timeline-harness-revisions",
+  timelineVerdictMismatch: "lantern-timeline-verdict-mismatch",
   isolation: "lantern-isolation",
   isolationPhase: (id: string) => `lantern-isolation-phase-${id}`,
   honesty: "lantern-honesty",
@@ -1010,12 +1014,21 @@ export function StorySection({
 /* Behind the lantern — per-target timeline (section 1)                        */
 /* -------------------------------------------------------------------------- */
 
+/** Default GitHub blob base for linking a repo-relative file path. */
+const DEFAULT_FILE_BASE =
+  "https://github.com/ikenyal/spec-lantern/blob/main/";
+
 /** Props for {@link BehindTheLanternSection}. */
 export interface BehindTheLanternSectionProps {
   /** The per-target timeline to render (one target's steps). */
   timeline: TargetTimeline;
   /** Base URL for commit links (e.g. ".../commit/"). */
   commitBase: string;
+  /**
+   * GitHub blob base for resolving a repo-relative file path (the superseded
+   * locks README link). Defaults to the canonical repo blob base.
+   */
+  fileBase?: string;
 }
 
 /**
@@ -1036,8 +1049,10 @@ export interface BehindTheLanternSectionProps {
 export function BehindTheLanternSection({
   timeline,
   commitBase,
+  fileBase = DEFAULT_FILE_BASE,
 }: BehindTheLanternSectionProps): ReactElement {
   const linkFor = (hash: string): string => `${commitBase}${hash}`;
+  const harness = timeline.harnessRevisions;
 
   return (
     <section
@@ -1052,18 +1067,74 @@ export function BehindTheLanternSection({
         Behind the lantern · {timeline.label}
       </h3>
 
-      {timeline.predictionsLockedBeforeExecution ? (
-        <p
-          className="lantern-timeline__locked-before"
-          data-testid={TEST_IDS.timelineLockedBefore}
-        >
-          <span className="lantern-timeline__locked-icon" aria-hidden="true">
-            🔒
-          </span>
-          Predictions were committed to git <strong>before</strong> any
-          execution.
-        </p>
-      ) : null}
+      {/* The two statements are shown SEPARATELY and honestly: the predicted
+          verdicts (locked before any execution) and the harness revisions
+          (re-locks, verdicts unchanged, with their timing stated). */}
+      <div
+        className="lantern-timeline__locked-before"
+        data-testid={TEST_IDS.timelineLockedBefore}
+      >
+        {timeline.predictionsLockedBeforeExecution ? (
+          <p
+            className="lantern-timeline__claim"
+            data-testid={TEST_IDS.timelineVerdictsLocked}
+          >
+            <span className="lantern-timeline__locked-icon" aria-hidden="true">
+              🔒
+            </span>
+            All predicted verdicts were locked before any execution.
+          </p>
+        ) : (
+          <p
+            className="lantern-timeline__claim"
+            data-testid={TEST_IDS.timelineVerdictsLocked}
+          >
+            <span className="lantern-timeline__locked-icon" aria-hidden="true">
+              ⚠
+            </span>
+            Not every predicted verdict was locked before execution.
+          </p>
+        )}
+
+        {harness ? (
+          <p
+            className="lantern-timeline__harness"
+            data-testid={TEST_IDS.timelineHarnessRevisions}
+          >
+            {harness.count} test{" "}
+            {harness.count === 1 ? "harness was" : "harnesses were"} revised and
+            re-locked (verdicts unchanged) — {harness.timingNote}.{" "}
+            <a
+              className="lantern-timeline__harness-link"
+              href={`${fileBase}${harness.readmePath}`}
+              target="_blank"
+              rel="noreferrer noopener"
+            >
+              superseded locks README
+            </a>
+          </p>
+        ) : null}
+
+        {timeline.verdictMismatches.length > 0 ? (
+          <p
+            className="lantern-timeline__mismatch"
+            data-testid={TEST_IDS.timelineVerdictMismatch}
+            role="alert"
+          >
+            <span aria-hidden="true">⚠ </span>
+            {timeline.verdictMismatches.length} superseded lock
+            {timeline.verdictMismatches.length === 1 ? "" : "s"} disagree with
+            the active verdict:{" "}
+            {timeline.verdictMismatches
+              .map(
+                (m) =>
+                  `${m.propertyId} (active ${m.activeVerdict}, superseded ${m.supersededVerdict})`,
+              )
+              .join("; ")}
+            .
+          </p>
+        ) : null}
+      </div>
 
       <ol className="lantern-timeline__steps">
         {timeline.steps.map((step) => (
@@ -1077,11 +1148,13 @@ export function BehindTheLanternSection({
             <div className="lantern-timeline__step-body">
               <span className="lantern-timeline__step-label">{step.label}</span>
               {step.at ? (
+                // Display normalized to one UTC format so the steps read in the
+                // correct order; the raw value stays in the datetime attribute.
                 <time
                   className="lantern-timeline__step-time"
                   dateTime={step.at}
                 >
-                  {step.at}
+                  {formatUtc(step.at)}
                 </time>
               ) : null}
               {step.detail ? (
@@ -1213,10 +1286,6 @@ export interface SameStandardSectionProps {
    */
   fileBase?: string;
 }
-
-/** Default GitHub blob base for linking a repo-relative file path. */
-const DEFAULT_FILE_BASE =
-  "https://github.com/ikenyal/spec-lantern/blob/main/";
 
 /**
  * Section 3 — "We hold ourselves to the same standard": the episodes where

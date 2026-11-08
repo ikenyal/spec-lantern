@@ -875,10 +875,37 @@ body {
   border-radius: 8px;
   color: var(--ink);
   font-size: 0.92rem;
+  display: grid;
+  gap: 0.4rem;
+}
+
+.lantern-timeline__claim {
+  margin: 0;
+  font-weight: 600;
 }
 
 .lantern-timeline__locked-icon {
   margin-right: 0.4rem;
+}
+
+.lantern-timeline__harness {
+  margin: 0;
+  font-size: 0.86rem;
+  color: var(--ink-muted);
+}
+
+.lantern-timeline__harness-link {
+  white-space: nowrap;
+}
+
+.lantern-timeline__mismatch {
+  margin: 0;
+  padding: 0.5rem 0.75rem;
+  border: 1px solid var(--fail);
+  border-radius: 6px;
+  background: rgba(255, 143, 143, 0.12);
+  color: var(--ink);
+  font-size: 0.86rem;
 }
 
 .lantern-timeline__steps {

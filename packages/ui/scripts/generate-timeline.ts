@@ -100,6 +100,12 @@ async function main(): Promise<void> {
       executionResultName: "property-1.claim-monthly-order.json",
       replayResultName: "replay-property-1.json",
       fixResultName: "apply-fixes-reexecute-all.json",
+      // From writing-tracker-full/locks/superseded/README.md: "The FIRST
+      // Stage-C execution ... revealed that property-2 and property-3 contained
+      // test-harness defects" — the 2 revisions came AFTER a first run.
+      harnessRevisionTiming: "after-first-run",
+      harnessRevisionTimingNote:
+        "a first run exposed harness defects (a brittle DOM lookup and a trim mismatch), which were then revised and re-locked with the verdicts unchanged",
     },
     {
       id: "moodplays",
@@ -110,6 +116,11 @@ async function main(): Promise<void> {
       executionResultName: "execute-properties-all.json",
       replayResultName: "replay-property-1.claim-24h-to-minutes.json",
       fixResultName: "apply-fixes-reexecute-all.json",
+      // From moodplays/locks/superseded/README.md: "All were caught by REVIEW,
+      // before any execution (no Stage C has run)." — all 5 before any run.
+      harnessRevisionTiming: "before-any-execution",
+      harnessRevisionTimingNote:
+        "all 5 restated the implementation and were rewritten with independent oracles before any execution",
     },
   ];
 

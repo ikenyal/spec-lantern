@@ -10,9 +10,11 @@
  *
  *   - the six timeline steps come out in order, each sourced from the right
  *     file / commit;
- *   - `predictionsLockedBeforeExecution` is COMPUTED from the timestamps
- *     (earliest lockedAt vs execution capturedAt) — true when the lock precedes
- *     execution, false when it does not;
+ *   - `predictionsLockedBeforeExecution` is COMPUTED as `latest active lockedAt
+ *     < earliest execution capturedAt` — true only when EVERY active prediction
+ *     was locked before execution, false when any re-lock lands after it;
+ *   - every superseded lock's verdict must equal the active lock's verdict for
+ *     the same property; a mismatch is flagged;
  *   - commit short hashes + subjects come from the injected git reader;
  *   - the replay step reflects `reproducesSameFail`;
  *   - the honesty items resolve the Safety-Gate commit from git and link the
@@ -47,8 +49,19 @@ const TARGET: TargetSource = {
 };
 
 const locksDir = join(TARGET.rootAbs, "locks");
+const supersededDir = join(locksDir, "superseded");
 const stageCDir = join(TARGET.rootAbs, "results", "stage-c");
 const stageDDir = join(TARGET.rootAbs, "results", "stage-d");
+
+/** Serialize a minimal lock file body. */
+function lock(
+  propertyId: string,
+  verdict: string,
+  lockedAt: string,
+  contentHash = "abcdef0123456789aaaa",
+): string {
+  return JSON.stringify({ propertyId, verdict, lockedAt, contentHash });
+}
 
 /** A reader backed by in-memory file + git maps. */
 function makeReaders(opts: {
@@ -75,40 +88,65 @@ function makeReaders(opts: {
   };
 }
 
-/** The standard happy-path fixture: lock precedes execution. */
-function standardReaders(
-  lockedAt = "2026-01-01T00:00:00.000Z",
-  executionCapturedAt = "2026-01-02T00:00:00.000Z",
-): TimelineReaders {
+/**
+ * The standard happy-path fixture. Two active locks; the LATEST of them
+ * (`property-2` at +06:00) still precedes execution, so the tightened claim is
+ * true. Optional superseded locks exercise the harness-revision + verdict
+ * checks.
+ */
+function standardReaders(opts?: {
+  /** Active lock for property-1 (the anchor). */
+  p1LockedAt?: string;
+  /** Active lock for property-2 (the LATEST active lock in the fixture). */
+  p2LockedAt?: string;
+  executionCapturedAt?: string;
+  /** Superseded lock names under superseded/. */
+  supersededNames?: readonly string[];
+  /** Superseded lock bodies keyed by name. */
+  supersededFiles?: Record<string, string>;
+}): TimelineReaders {
+  const p1LockedAt = opts?.p1LockedAt ?? "2026-01-01T00:00:00.000Z";
+  const p2LockedAt = opts?.p2LockedAt ?? "2026-01-01T06:00:00.000Z";
+  const executionCapturedAt =
+    opts?.executionCapturedAt ?? "2026-01-02T00:00:00.000Z";
+
+  const dirs: Record<string, readonly string[]> = {
+    [locksDir]: ["property-1.lock.json", "property-2.lock.json", "notes.txt"],
+  };
+  const files: Record<string, string> = {
+    [join(locksDir, "property-1.lock.json")]: lock(
+      "property-1",
+      "PASS",
+      p1LockedAt,
+    ),
+    [join(locksDir, "property-2.lock.json")]: lock(
+      "property-2",
+      "PASS",
+      p2LockedAt,
+      "ffff",
+    ),
+    [join(stageCDir, "exec-all.json")]: JSON.stringify({
+      capturedAt: executionCapturedAt,
+    }),
+    [join(stageCDir, "replay-1.json")]: JSON.stringify({
+      capturedAt: "2026-01-02T00:05:00.000Z",
+      reproducesSameFail: true,
+    }),
+    [join(stageDDir, "fix-all.json")]: JSON.stringify({
+      capturedAt: "2026-01-03T00:00:00.000Z",
+    }),
+  };
+
+  if (opts?.supersededNames) {
+    dirs[supersededDir] = opts.supersededNames;
+    for (const name of opts.supersededNames) {
+      files[join(supersededDir, name)] = opts.supersededFiles?.[name] ?? "";
+    }
+  }
+
   return makeReaders({
-    dirs: {
-      [locksDir]: ["property-1.lock.json", "property-2.lock.json", "notes.txt"],
-    },
-    files: {
-      [join(locksDir, "property-1.lock.json")]: JSON.stringify({
-        propertyId: "property-1",
-        verdict: "PASS",
-        contentHash: "abcdef0123456789aaaa",
-        lockedAt,
-      }),
-      [join(locksDir, "property-2.lock.json")]: JSON.stringify({
-        propertyId: "property-2",
-        verdict: "PASS",
-        contentHash: "ffff",
-        // deliberately LATER than property-1 so "earliest" picks property-1.
-        lockedAt: "2026-01-01T06:00:00.000Z",
-      }),
-      [join(stageCDir, "exec-all.json")]: JSON.stringify({
-        capturedAt: executionCapturedAt,
-      }),
-      [join(stageCDir, "replay-1.json")]: JSON.stringify({
-        capturedAt: "2026-01-02T00:05:00.000Z",
-        reproducesSameFail: true,
-      }),
-      [join(stageDDir, "fix-all.json")]: JSON.stringify({
-        capturedAt: "2026-01-03T00:00:00.000Z",
-      }),
-    },
+    dirs,
+    files,
     adds: {
       "rel/demo/locks/property-1.lock.json": {
         shortHash: "aaa1111",
@@ -173,17 +211,31 @@ describe("buildTargetTimeline", () => {
     expect(replay.detail).toMatch(/reproduced/);
   });
 
-  it("computes predictionsLockedBeforeExecution = true when the lock precedes execution", async () => {
+  it("predictionsLockedBeforeExecution = true only when EVERY active lock precedes execution", async () => {
+    // Both active locks (p1 @00:00, p2 @06:00) precede execution @ day 2.
     const t = await buildTargetTimeline(standardReaders(), TARGET);
     expect(t.predictionsLockedBeforeExecution).toBe(true);
   });
 
-  it("computes predictionsLockedBeforeExecution = false when execution precedes the lock", async () => {
-    // Execution captured BEFORE the lock — the flag must be false, not asserted.
-    const readers = standardReaders(
-      "2026-02-01T00:00:00.000Z", // locked later
-      "2026-01-01T00:00:00.000Z", // executed earlier
-    );
+  it("uses the LATEST active lock, not the earliest: a re-lock after execution flips it to false", async () => {
+    // p1 was locked well before execution, but p2 was RE-LOCKED after it.
+    // Using the earliest lock would wrongly report true; the tightened claim
+    // (latest active lock < execution) must be FALSE.
+    const readers = standardReaders({
+      p1LockedAt: "2026-01-01T00:00:00.000Z", // before execution
+      p2LockedAt: "2026-01-02T12:00:00.000Z", // AFTER execution
+      executionCapturedAt: "2026-01-02T00:00:00.000Z",
+    });
+    const t = await buildTargetTimeline(readers, TARGET);
+    expect(t.predictionsLockedBeforeExecution).toBe(false);
+  });
+
+  it("computes false when execution precedes all locks", async () => {
+    const readers = standardReaders({
+      p1LockedAt: "2026-02-01T00:00:00.000Z",
+      p2LockedAt: "2026-02-01T06:00:00.000Z",
+      executionCapturedAt: "2026-01-01T00:00:00.000Z",
+    });
     const t = await buildTargetTimeline(readers, TARGET);
     expect(t.predictionsLockedBeforeExecution).toBe(false);
   });
@@ -192,10 +244,11 @@ describe("buildTargetTimeline", () => {
     const readers = makeReaders({
       dirs: { [locksDir]: ["property-1.lock.json"] },
       files: {
-        [join(locksDir, "property-1.lock.json")]: JSON.stringify({
-          contentHash: "abcdef0123456789",
-          lockedAt: "2026-01-01T00:00:00.000Z",
-        }),
+        [join(locksDir, "property-1.lock.json")]: lock(
+          "property-1",
+          "PASS",
+          "2026-01-01T00:00:00.000Z",
+        ),
         [join(stageCDir, "exec-all.json")]: JSON.stringify({
           capturedAt: "2026-01-02T00:00:00.000Z",
         }),
@@ -211,6 +264,80 @@ describe("buildTargetTimeline", () => {
     const t = await buildTargetTimeline(readers, TARGET);
     const replay = t.steps.find((s) => s.phase === "replay-reproduced")!;
     expect(replay.detail).toMatch(/did not reproduce/);
+  });
+});
+
+/* -------------------------------------------------------------------------- */
+/* Verdict equality between superseded and active locks                       */
+/* -------------------------------------------------------------------------- */
+
+describe("buildTargetTimeline — superseded/active verdict check", () => {
+  it("reports no verdict mismatch when every superseded verdict matches the active one", async () => {
+    const readers = standardReaders({
+      supersededNames: ["property-2.lock.json"],
+      supersededFiles: {
+        // Same property, same verdict (PASS) — only the hash/source changed.
+        "property-2.lock.json": lock(
+          "property-2",
+          "PASS",
+          "2026-01-01T03:00:00.000Z",
+          "oldhash",
+        ),
+      },
+    });
+    const t = await buildTargetTimeline(readers, TARGET);
+    expect(t.verdictMismatches).toEqual([]);
+    expect(t.harnessRevisions).toBeUndefined(); // no timing declared on TARGET
+  });
+
+  it("FLAGS a superseded lock whose verdict differs from the active lock", async () => {
+    const readers = standardReaders({
+      supersededNames: ["property-2.lock.json"],
+      supersededFiles: {
+        // A re-lock must NEVER change the verdict; this superseded says FAIL
+        // while the active says PASS — a data-integrity flag.
+        "property-2.lock.json": lock(
+          "property-2",
+          "FAIL",
+          "2026-01-01T03:00:00.000Z",
+          "oldhash",
+        ),
+      },
+    });
+    const t = await buildTargetTimeline(readers, TARGET);
+    expect(t.verdictMismatches).toEqual([
+      {
+        propertyId: "property-2",
+        activeVerdict: "PASS",
+        supersededVerdict: "FAIL",
+      },
+    ]);
+  });
+
+  it("surfaces harnessRevisions (count + timing + README) when timing is declared", async () => {
+    const target: TargetSource = {
+      ...TARGET,
+      harnessRevisionTiming: "after-first-run",
+      harnessRevisionTimingNote: "a first run exposed the harness defects",
+    };
+    const readers = standardReaders({
+      supersededNames: ["property-2.lock.json"],
+      supersededFiles: {
+        "property-2.lock.json": lock(
+          "property-2",
+          "PASS",
+          "2026-01-01T03:00:00.000Z",
+          "oldhash",
+        ),
+      },
+    });
+    const t = await buildTargetTimeline(readers, target);
+    expect(t.harnessRevisions).toEqual({
+      count: 1,
+      timing: "after-first-run",
+      timingNote: "a first run exposed the harness defects",
+      readmePath: "rel/demo/locks/superseded/README.md",
+    });
   });
 });
 

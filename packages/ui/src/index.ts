@@ -78,6 +78,7 @@ export {
   GITHUB_COMMIT_BASE,
   reportAssetPath,
   commitUrl,
+  formatUtc,
   type ReportAsset,
   type ReportManifest,
   type ReportManifestEntry,
@@ -90,6 +91,9 @@ export {
   type IsolationPhase,
   type IsolationGuarantee,
   type HonestyItem,
+  type VerdictMismatch,
+  type HarnessRevisions,
+  type HarnessRevisionTiming,
 } from "./report-asset.js";
 export {
   loadManifest,

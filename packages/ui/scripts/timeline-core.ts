@@ -21,11 +21,14 @@ import { join } from "node:path";
 import {
   GITHUB_COMMIT_BASE,
   commitUrl,
+  type HarnessRevisionTiming,
+  type HarnessRevisions,
   type HonestyItem,
   type IsolationModel,
   type ReportSectionsAsset,
   type TargetTimeline,
   type TimelineStep,
+  type VerdictMismatch,
 } from "../src/report-asset.js";
 
 /* -------------------------------------------------------------------------- */
@@ -75,19 +78,51 @@ export interface TargetSource {
   readonly replayResultName: string;
   /** The stage-d result file that anchors "fix" + "regression check". */
   readonly fixResultName: string;
+  /**
+   * When the test-harness revisions happened relative to execution — a prose
+   * fact recorded VERBATIM in this target's `locks/superseded/README.md`, which
+   * timestamps alone cannot establish (a re-lock can predate the persisted
+   * single-source execution run even when a FIRST run already exposed the
+   * defect). Carried here with a `timingNote` and the README link so the reader
+   * can verify it against the source. Omitted for a target with no superseded
+   * locks.
+   */
+  readonly harnessRevisionTiming?: HarnessRevisionTiming;
+  /** One-line, README-sourced statement of that timing for display. */
+  readonly harnessRevisionTimingNote?: string;
 }
 
 /* -------------------------------------------------------------------------- */
 /* Small parse helpers (verbatim reads, never fabrication)                    */
 /* -------------------------------------------------------------------------- */
 
-/** Parse the `lockedAt` ISO string out of a lock file's JSON. */
-function parseLockedAt(json: string): string {
-  const obj = JSON.parse(json) as { lockedAt?: unknown };
+/** The fields the generator reads out of a Prediction_Lock file. */
+interface LockFields {
+  readonly propertyId: string;
+  readonly verdict: string;
+  readonly lockedAt: string;
+  readonly contentHash?: string;
+}
+
+/** Parse the fields the generator needs out of a lock file's JSON. */
+function parseLock(json: string): LockFields {
+  const obj = JSON.parse(json) as Record<string, unknown>;
   if (typeof obj.lockedAt !== "string") {
     throw new Error("lock file has no string lockedAt");
   }
-  return obj.lockedAt;
+  if (typeof obj.propertyId !== "string") {
+    throw new Error("lock file has no string propertyId");
+  }
+  if (typeof obj.verdict !== "string") {
+    throw new Error("lock file has no string verdict");
+  }
+  return {
+    propertyId: obj.propertyId,
+    verdict: obj.verdict,
+    lockedAt: obj.lockedAt,
+    contentHash:
+      typeof obj.contentHash === "string" ? obj.contentHash : undefined,
+  };
 }
 
 /** Parse the `capturedAt` ISO string out of a result file's JSON. */
@@ -105,13 +140,72 @@ function parseReproduces(json: string): boolean {
   return obj.reproducesSameFail === true;
 }
 
-/** The earliest ISO timestamp among a list, or undefined when empty. */
+/** The earliest instant among ISO strings, or undefined when empty. */
 function earliest(isoTimes: readonly string[]): string | undefined {
   let min: string | undefined;
   for (const t of isoTimes) {
-    if (min === undefined || t < min) min = t;
+    if (min === undefined || Date.parse(t) < Date.parse(min)) min = t;
   }
   return min;
+}
+
+/** The latest instant among ISO strings, or undefined when empty. */
+function latest(isoTimes: readonly string[]): string | undefined {
+  let max: string | undefined;
+  for (const t of isoTimes) {
+    if (max === undefined || Date.parse(t) > Date.parse(max)) max = t;
+  }
+  return max;
+}
+
+/**
+ * Read every `*.lock.json` lock in a directory (ignoring other files), via the
+ * injected reader. Returns the parsed {@link LockFields} for each.
+ */
+async function readLocksInDir(
+  readers: TimelineReaders,
+  dirAbs: string,
+): Promise<readonly LockFields[]> {
+  let names: readonly string[];
+  try {
+    names = (await readers.listDir(dirAbs)).filter((n) =>
+      n.endsWith(".lock.json"),
+    );
+  } catch {
+    // No such directory (e.g. no superseded/) -> no locks.
+    return [];
+  }
+  const locks: LockFields[] = [];
+  for (const name of names) {
+    locks.push(parseLock(await readers.readFile(join(dirAbs, name))));
+  }
+  return locks;
+}
+
+/**
+ * Flag any superseded lock whose verdict differs from the ACTIVE lock's verdict
+ * for the same property. A re-lock may only change the hashed property source,
+ * never the predicted verdict — so a non-empty result is a data-integrity flag.
+ * A superseded property with no active counterpart is also flagged (its active
+ * verdict reads as "(none)").
+ */
+export function findVerdictMismatches(
+  active: readonly LockFields[],
+  superseded: readonly LockFields[],
+): VerdictMismatch[] {
+  const activeByProp = new Map(active.map((l) => [l.propertyId, l.verdict]));
+  const mismatches: VerdictMismatch[] = [];
+  for (const s of superseded) {
+    const activeVerdict = activeByProp.get(s.propertyId);
+    if (activeVerdict !== s.verdict) {
+      mismatches.push({
+        propertyId: s.propertyId,
+        activeVerdict: activeVerdict ?? "(none)",
+        supersededVerdict: s.verdict,
+      });
+    }
+  }
+  return mismatches;
 }
 
 /* -------------------------------------------------------------------------- */
@@ -128,28 +222,29 @@ export async function buildTargetTimeline(
   target: TargetSource,
 ): Promise<TargetTimeline> {
   const locksDirAbs = join(target.rootAbs, "locks");
+  const supersededDirAbs = join(locksDirAbs, "superseded");
   const stageCAbs = join(target.rootAbs, "results", "stage-c");
 
-  // 1. Predictions locked — the EARLIEST lockedAt across all active lock files.
-  const lockNames = (await readers.listDir(locksDirAbs)).filter((n) =>
-    n.endsWith(".lock.json"),
-  );
-  const lockedAts: string[] = [];
-  for (const name of lockNames) {
-    lockedAts.push(parseLockedAt(await readers.readFile(join(locksDirAbs, name))));
-  }
+  // 1. Predictions locked. Read ALL active locks; the headline claim uses the
+  //    LATEST active lockedAt (so it holds only if EVERY active prediction was
+  //    locked before execution), while the step time shows the earliest.
+  const activeLocks = await readLocksInDir(readers, locksDirAbs);
+  const lockedAts = activeLocks.map((l) => l.lockedAt);
   const earliestLockedAt = earliest(lockedAts);
+  const latestLockedAt = latest(lockedAts);
 
   // The lock short hash shown as the "predictions locked" detail: the anchor
   // lock's contentHash, read verbatim from the file (first 12 chars).
-  const anchorLockJson = await readers.readFile(
-    join(locksDirAbs, target.anchorLockName),
+  const anchorLock = parseLock(
+    await readers.readFile(join(locksDirAbs, target.anchorLockName)),
   );
-  const anchorLock = JSON.parse(anchorLockJson) as { contentHash?: unknown };
-  const lockShortHash =
-    typeof anchorLock.contentHash === "string"
-      ? anchorLock.contentHash.slice(0, 12)
-      : undefined;
+  const lockShortHash = anchorLock.contentHash?.slice(0, 12);
+
+  // Verdict-equality check: every superseded lock's verdict must equal the
+  // active lock's verdict for the same property (a re-lock never changes the
+  // predicted verdict). Surfaced, never hidden.
+  const supersededLocks = await readLocksInDir(readers, supersededDirAbs);
+  const verdictMismatches = findVerdictMismatches(activeLocks, supersededLocks);
 
   // 2. Lock commit — the git commit that ADDED the anchor lock file.
   const lockCommit = await readers.firstCommitForPath(
@@ -223,15 +318,39 @@ export async function buildTargetTimeline(
     },
   ];
 
-  // The headline point, COMPUTED: the earliest lock precedes the execution.
+  // The headline point, COMPUTED and TIGHTENED: the LATEST active lock precedes
+  // the execution — i.e. EVERY predicted verdict was locked before any run.
+  // Using the latest (not earliest) means a single late re-lock after execution
+  // flips this to false, as it should.
   const predictionsLockedBeforeExecution =
-    earliestLockedAt !== undefined && earliestLockedAt < executionCapturedAt;
+    latestLockedAt !== undefined &&
+    Date.parse(latestLockedAt) < Date.parse(executionCapturedAt);
+
+  // Harness revisions — present only when there are superseded locks. Reported
+  // SEPARATELY from the prediction-lock claim. Its timing relative to execution
+  // is the README-sourced prose fact on the target (see TargetSource), not a
+  // timestamp inference.
+  const harnessRevisions: HarnessRevisions | undefined =
+    supersededLocks.length > 0 && target.harnessRevisionTiming
+      ? {
+          count: supersededLocks.length,
+          timing: target.harnessRevisionTiming,
+          timingNote:
+            target.harnessRevisionTimingNote ??
+            (target.harnessRevisionTiming === "before-any-execution"
+              ? "revised and re-locked before any execution"
+              : "revised and re-locked after a first run exposed the harness defects"),
+          readmePath: `${target.rootRel}/locks/superseded/README.md`,
+        }
+      : undefined;
 
   return {
     id: target.id,
     label: target.label,
     steps,
     predictionsLockedBeforeExecution,
+    verdictMismatches,
+    harnessRevisions,
   };
 }
 

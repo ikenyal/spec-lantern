@@ -133,6 +133,24 @@ export function commitUrl(hash: string): string {
   return `${GITHUB_COMMIT_BASE}${hash}`;
 }
 
+/**
+ * Normalize any ISO timestamp (whatever its original offset — the lock/result
+ * files are UTC `Z`, but git commit dates carry a `+09:00` offset) to a SINGLE
+ * UTC display format: `YYYY-MM-DD HH:MM:SS UTC`. Used for every displayed time
+ * in the timeline so the steps read in the correct order at a glance; the raw
+ * value is still kept verbatim in the `<time datetime>` attribute. Returns the
+ * input unchanged when it is not a parseable date (never throws).
+ */
+export function formatUtc(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return iso;
+  const p = (n: number, w = 2): string => String(n).padStart(w, "0");
+  return (
+    `${p(d.getUTCFullYear(), 4)}-${p(d.getUTCMonth() + 1)}-${p(d.getUTCDate())} ` +
+    `${p(d.getUTCHours())}:${p(d.getUTCMinutes())}:${p(d.getUTCSeconds())} UTC`
+  );
+}
+
 /** The fixed ordered phases of the "Behind the lantern" timeline. */
 export type TimelinePhase =
   | "predictions-locked"
@@ -169,11 +187,58 @@ export interface TimelineStep {
 }
 
 /**
+ * A superseded lock whose verdict does NOT equal the active lock's verdict for
+ * the same property — a data-integrity flag. A re-lock is only allowed to
+ * change the hashed property source, never the predicted verdict (the predicted
+ * verdict carries over verbatim), so a non-empty list means something is wrong
+ * and the generator surfaces it rather than hiding it.
+ */
+export interface VerdictMismatch {
+  readonly propertyId: string;
+  readonly activeVerdict: string;
+  readonly supersededVerdict: string;
+}
+
+/**
+ * When the test-harness revisions (the re-locks whose old locks live in
+ * `locks/superseded/`) happened RELATIVE to execution. This is a prose fact
+ * recorded verbatim in each target's `locks/superseded/README.md` — it cannot
+ * be derived from timestamps alone (a re-lock time can precede the persisted
+ * single-source execution run even when a FIRST run already happened), so it is
+ * carried here with a link to that README for the reader to verify.
+ *   - "before-any-execution": all revisions were made by review before any run
+ *     (MoodPlays: 5 tautological oracles rewritten before Stage C).
+ *   - "after-first-run": a first run exposed harness defects, which were then
+ *     revised and re-locked (writing-tracker: 2 harness defects).
+ */
+export type HarnessRevisionTiming = "before-any-execution" | "after-first-run";
+
+/**
+ * The test-harness revision summary for a target: how many property harnesses
+ * were revised and re-locked (verdicts unchanged), WHEN that happened relative
+ * to execution, and the README that records it verbatim. Present only when the
+ * target has a `locks/superseded/` directory with superseded locks.
+ */
+export interface HarnessRevisions {
+  /** How many property harnesses were revised + re-locked. */
+  readonly count: number;
+  /** When the revisions happened relative to execution (from the README). */
+  readonly timing: HarnessRevisionTiming;
+  /** One-line, verbatim-sourced statement of the timing for display. */
+  readonly timingNote: string;
+  /** Repo-relative path to the superseded-locks README. */
+  readonly readmePath: string;
+}
+
+/**
  * The per-target "Behind the lantern" timeline: the ordered steps from
- * predictions-locked through the regression check. The headline point —
- * `predictionsLockedBeforeExecution` — is COMPUTED by the generator by
- * comparing the earliest `lockedAt` against the earliest execution
- * `capturedAt`, never asserted by hand.
+ * predictions-locked through the regression check, plus the honesty metadata
+ * about prediction locks and harness revisions.
+ *
+ * The headline point — `predictionsLockedBeforeExecution` — is COMPUTED by the
+ * generator as `latest active lockedAt < earliest execution capturedAt`, never
+ * asserted by hand. Using the LATEST active lock (not the earliest) means the
+ * claim holds only when EVERY active prediction was locked before execution.
  */
 export interface TargetTimeline {
   /** Target id (matches a {@link ReportManifestEntry.id}). */
@@ -183,10 +248,24 @@ export interface TargetTimeline {
   /** The ordered timeline steps. */
   readonly steps: readonly TimelineStep[];
   /**
-   * True when the earliest prediction lock precedes the earliest execution —
-   * the whole point of the section. Computed from the timestamps, not asserted.
+   * True when the LATEST active prediction lock precedes the EARLIEST execution
+   * — i.e. every predicted verdict was locked before any execution. Computed
+   * from the timestamps, not asserted.
    */
   readonly predictionsLockedBeforeExecution: boolean;
+  /**
+   * Any superseded lock whose verdict differs from its active lock's verdict
+   * for the same property. Empty in a healthy repo (a re-lock never changes the
+   * predicted verdict); surfaced so a mismatch is flagged, never hidden.
+   */
+  readonly verdictMismatches: readonly VerdictMismatch[];
+  /**
+   * The test-harness revision summary, present only when the target has
+   * superseded locks. Reported SEPARATELY from the prediction-lock claim so the
+   * two are not conflated: predicted verdicts are locked before execution;
+   * harness revisions are a distinct event whose timing is stated honestly.
+   */
+  readonly harnessRevisions?: HarnessRevisions;
 }
 
 /**
