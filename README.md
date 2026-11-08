@@ -237,8 +237,16 @@ headers and cache invalidation on every redeploy
 ([hosted-demo-stack.ts](./packages/infra/lib/hosted-demo-stack.ts)). Every
 resource is tagged `Project=spec-lantern` and `Event=Kiroween2026`.
 
-**Prerequisites.** AWS credentials for the AWS profile the stack is pinned to
-(region `ap-northeast-1`; see [`packages/infra`](./packages/infra)); all commands pass that profile explicitly.
+**Prerequisites.** AWS credentials for the AWS profile used in
+[`packages/infra/package.json`](./packages/infra/package.json) (region
+`ap-northeast-1`); all commands pass that profile explicitly. The target
+account is read from `SPEC_LANTERN_AWS_ACCOUNT` and is never written to the
+repo; synthesis stops if it is missing
+([spec-lantern-infra.ts](./packages/infra/bin/spec-lantern-infra.ts)).
+
+```sh
+export SPEC_LANTERN_AWS_ACCOUNT=<your 12-digit account id>
+```
 A one-time `cdk bootstrap` of that account/region is required (run it after
 reviewing the diff).
 
@@ -267,6 +275,20 @@ npm run destroy:demo
 
 This tears down the CloudFront distribution and empties/removes the throwaway
 bucket.
+
+## Security notes
+
+- **No credentials in the repository.** The full git history (every commit) was
+  scanned with [gitleaks](https://github.com/gitleaks/gitleaks): no access keys,
+  tokens, or private keys. Its only findings were S3 asset object keys (content
+  hashes) inside a CDK build output that is no longer tracked.
+- **AWS account ID.** The deploy account is now read from an environment
+  variable. Early commits contain the account ID; AWS does not treat account IDs
+  as secret, and the history is deliberately left intact because the commit
+  history is part of the evidence that every prediction was locked before
+  execution (rewriting it would change every commit hash this README links to).
+- **Target code never runs on the host.** See the [safety model](#4-safety-model-what-the-code-enforces).
+
 
 ## 10. Credits and license
 

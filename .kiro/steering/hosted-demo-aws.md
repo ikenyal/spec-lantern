@@ -4,7 +4,7 @@ inclusion: always
 
 # Hosted_Demo AWS constraints (task 19 and any later deploy work)
 
-- AWS: use ONLY the profile "brightflow-sandbox-ikeda" (account 402040564721,
+- AWS: use ONLY the profile "brightflow-sandbox-ikeda" (account from the SPEC_LANTERN_AWS_ACCOUNT env var, never written to the repo;
   region ap-northeast-1). Never use any other profile. Pass --profile explicitly
   on every AWS/CDK command.
 - IaC: AWS CDK in TypeScript, in a new packages/infra workspace.

@@ -7,17 +7,26 @@
  * runner and never executes Target_Repo code — the demo serves static JSON
  * reports and the built UI, nothing more.
  *
- * Deploy target is pinned to the sandbox account/region required by the
- * project. Every resource is tagged Project=spec-lantern, Event=Kiroween2026.
+ * The deploy account is read from SPEC_LANTERN_AWS_ACCOUNT (never committed)
+ * and the region is pinned to ap-northeast-1. If the variable is missing or
+ * malformed, synthesis stops instead of guessing an account. Every resource is
+ * tagged Project=spec-lantern, Event=Kiroween2026.
  */
 import { App, Tags } from "aws-cdk-lib";
 import { HostedDemoStack } from "../lib/hosted-demo-stack";
+
+const account = process.env.SPEC_LANTERN_AWS_ACCOUNT;
+if (!account || !/^\d{12}$/.test(account)) {
+  throw new Error(
+    "Set SPEC_LANTERN_AWS_ACCOUNT to the 12-digit AWS account to deploy the demo into.",
+  );
+}
 
 const app = new App();
 
 new HostedDemoStack(app, "SpecLanternHostedDemo", {
   env: {
-    account: "402040564721",
+    account,
     region: "ap-northeast-1",
   },
   description:
