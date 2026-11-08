@@ -120,11 +120,17 @@ type FailureKind = "assertion" | "timeout" | "thrown";
  *      "Error: Hook timed out in ..."
  *  - fast-check wrapping an assertion (a genuine property FAIL):
  *      "Error: Property failed after N tests ... Counterexample: [...] ... Got AssertionError: <custom msg>: expected 'X' to be 'Y'"
- *  - fast-check wrapping a thrown error (NOT a property FAIL):
- *      "Error: Property failed after N tests ... Counterexample: [...] ... Got error: <message>"
+ *      (node:assert emits "Got AssertionError [ERR_ASSERTION]:" — still an assertion.)
+ *  - fast-check wrapping a boolean-returning predicate that returned false (a
+ *    genuine property FAIL — the OTHER canonical fast-check idiom, where the
+ *    property reports falsity by returning `false` instead of throwing):
+ *      "Error: Property failed after N tests ... Counterexample: [...] ... Got error: Property failed by returning false"
+ *  - fast-check wrapping a real thrown error (NOT a property FAIL):
+ *      "Error: Property failed after N tests ... Counterexample: [...] ... Got error: <TypeError/Error message>"
  *
  * Precedence: TIMEOUT first (a timed-out assertion must never read as FAIL),
- * then ASSERTION, then everything else is a thrown error.
+ * then ASSERTION, then the boolean-false property FAIL, then everything else is
+ * a thrown error.
  */
 function classifyFailureMessage(failureMessage: string): FailureKind {
   const msg = failureMessage;
@@ -137,9 +143,10 @@ function classifyFailureMessage(failureMessage: string): FailureKind {
   }
 
   // 2. Assertion failures. fast-check re-emits the inner error prefixed with
-  //    "Got AssertionError:"; a plain assertion starts with "AssertionError:".
-  //    Vitest/chai assertion errors are named AssertionError regardless of
-  //    locale. The "expected … to be …" diff is a secondary structural signal.
+  //    "Got AssertionError:" (vitest/chai) or "Got AssertionError [ERR_ASSERTION]:"
+  //    (node:assert); a plain assertion starts with "AssertionError:". Assertion
+  //    error class names are emitted verbatim and are not localized, so keying on
+  //    them is robust. The "expected … to be …" diff is a secondary signal.
   if (/\bAssertionError\b/.test(msg)) {
     // Guard against a thrown error that merely mentions the word: fast-check's
     // "Got error:" prefix only appears for NON-assertion throws, so if the
@@ -151,12 +158,27 @@ function classifyFailureMessage(failureMessage: string): FailureKind {
     return "assertion";
   }
 
-  // 3. fast-check wrapping a thrown (non-assertion) error.
+  // 3. fast-check's boolean-returning-predicate FAIL. When a property predicate
+  //    returns `false` (rather than throwing an assertion), fast-check does not
+  //    wrap a user error — it synthesizes exactly "Property failed by returning
+  //    false". This is the other canonical fast-check failure idiom and is a
+  //    genuine prediction contradiction (a real Counterexample was shrunk), NOT
+  //    a harness error. Keyed off fast-check's fixed, locale-independent phrase.
+  if (
+    /Property failed after/.test(msg) &&
+    /Got error:\s*Property failed by returning false\b/.test(msg)
+  ) {
+    return "assertion";
+  }
+
+  // 4. fast-check wrapping a real thrown (non-assertion) error — a TypeError, a
+  //    bare Error with a user message, a component crash, etc. This did NOT
+  //    evaluate to PASS/FAIL, so it is an execution error, not a verdict.
   if (/Property failed after/.test(msg) && /Got error:/.test(msg)) {
     return "thrown";
   }
 
-  // 4. Anything else that reached here is a thrown non-assertion error
+  // 5. Anything else that reached here is a thrown non-assertion error
   //    (TypeError, bare Error, component crash on render, etc.).
   return "thrown";
 }
@@ -417,6 +439,15 @@ function readableFailureSummary(failureMessage: string): string {
     const actual = diff[1].trim();
     const expected = diff[2].trim();
     return `expected ${expected}, actual ${actual}`;
+  }
+
+  // 3. The boolean-returning-predicate FAIL carries no expected/actual diff —
+  //    fast-check only reports that the predicate returned false. Surface that
+  //    verbatim so the Counterexample's observed output names what happened
+  //    (the property was false for the shrunk input) rather than the opaque
+  //    "Property failed after N tests" wrapper header.
+  if (/Got error:\s*Property failed by returning false\b/.test(failureMessage)) {
+    return "property returned false for the counterexample input";
   }
 
   return "";

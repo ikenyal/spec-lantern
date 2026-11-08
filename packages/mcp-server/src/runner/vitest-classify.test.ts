@@ -261,3 +261,139 @@ describe("applyTimeoutLimit — TIMEOUT carries the limit in effect (task 10.2, 
     expect(applyTimeoutLimit(error, 30)).toEqual(error);
   });
 });
+
+describe("parseVitestJson — both fast-check failure styles are a VERDICT FAIL (regression: packaged-power run)", () => {
+  // Helper: wrap a single fast-check failure message as the one failing
+  // assertion in an otherwise-minimal Vitest JSON report, and classify it.
+  function classifyFailure(failureMessage: string): ActualResult {
+    return parseVitestJson(
+      PROPERTY_ID,
+      report({
+        numTotalTests: 1,
+        numFailedTests: 1,
+        numPassedTests: 0,
+        testResults: [
+          {
+            status: "failed",
+            assertionResults: [
+              { status: "failed", failureMessages: [failureMessage] },
+            ],
+          },
+        ],
+      }),
+      "",
+      CTX,
+    );
+  }
+
+  function expectFailWithCounterexample(
+    result: ActualResult,
+    expectedInputFragment: string,
+  ): void {
+    expect(result.outcome).toBe("VERDICT");
+    // An EXECUTION_ERROR here would be the exact regression this guards against.
+    expect(result.outcome).not.toBe("EXECUTION_ERROR");
+    if (result.outcome !== "VERDICT") throw new Error("expected VERDICT");
+    expect(result.verdict).toBe("FAIL");
+
+    const cx = result.counterexample;
+    expect(cx).toBeDefined();
+    expect(cx?.propertyId).toBe(PROPERTY_ID);
+    // The shrunk Counterexample payload (triggering input) is extracted from
+    // fast-check's "Counterexample:" line.
+    expect(String(cx?.input)).toContain(expectedInputFragment);
+    // The seed that drove the run is bundled for exact replay (R6.2). It is the
+    // recorded Execution_Context seed, which is what fast-check was configured
+    // with and what its report echoes back.
+    expect(cx?.executionContext).toEqual(CTX);
+    expect(cx?.executionContext.randomSeed).toBe(42);
+  }
+
+  // Style 1 — fc.assert(fc.property(..., () => expect(...).toBe(...))): the
+  // predicate THROWS a vitest/chai AssertionError, which fast-check re-emits as
+  // "Got AssertionError:". Already classified correctly; kept as a guard so the
+  // two styles live side by side.
+  it("fc.assert + expect() (assertion throw) → VERDICT FAIL with counterexample", () => {
+    const fcAssertExpect = [
+      "Error: Property failed after 3 tests",
+      '{ seed: 42, path: "2:1", endOnFailure: true }',
+      'Counterexample: [{"closeHour":0,"closeMinute":24,"minutesUntilClose":721}]',
+      "Shrunk 2 time(s)",
+      "Got AssertionError: expected '00:24' to be null // Object.is equality",
+    ].join("\n");
+
+    const result = classifyFailure(fcAssertExpect);
+    expectFailWithCounterexample(result, '"closeHour":0');
+    if (result.outcome !== "VERDICT") throw new Error("unreachable");
+    // The readable observed output surfaces the expected/actual, not the stack.
+    expect(String(result.counterexample?.observedOutput)).toContain("expected");
+  });
+
+  // Style 2 — fc.assert(fc.property(..., (x) => predicate(x))): the predicate
+  // REPORTS FALSITY BY RETURNING false (the other canonical fast-check idiom).
+  // fast-check does not wrap a user error; it synthesizes
+  // "Got error: Property failed by returning false". This is the regression a
+  // real packaged-power run hit — it was misclassified as EXECUTION_ERROR
+  // because the message contains "Got error:" and no "AssertionError". It MUST
+  // be a VERDICT FAIL, carrying the shrunk counterexample.
+  it("fc.assert returning false (boolean predicate) → VERDICT FAIL with counterexample", () => {
+    const fcBooleanFalse = [
+      "Error: Property failed after 1 tests",
+      '{ seed: 42, path: "0:0", endOnFailure: true }',
+      "Counterexample: [0]",
+      "Shrunk 1 time(s)",
+      "Got error: Property failed by returning false",
+      "",
+      "Hint: Enable verbose mode in order to have the list of all failing values encountered during the run",
+    ].join("\n");
+
+    const result = classifyFailure(fcBooleanFalse);
+    expectFailWithCounterexample(result, "0");
+    if (result.outcome !== "VERDICT") throw new Error("unreachable");
+    // Observed output names what happened rather than echoing the opaque
+    // "Property failed after N tests" wrapper header.
+    expect(String(result.counterexample?.observedOutput)).toContain(
+      "property returned false",
+    );
+  });
+
+  // fc.check + expect(result.failed).toBe(false): here the TOP-LEVEL throw is a
+  // plain vitest AssertionError ("expected true to be false") with NO
+  // fast-check "Property failed after" wrapper — the fc.check result object was
+  // asserted on directly. It is still a genuine assertion FAIL.
+  it("fc.check + expect(result.failed).toBe(false) → VERDICT FAIL", () => {
+    const fcCheckExpect = [
+      "AssertionError: expected true to be false // Object.is equality",
+      "- Expected",
+      "+ Received",
+      "- false",
+      "+ true",
+    ].join("\n");
+
+    const result = classifyFailure(fcCheckExpect);
+    expect(result.outcome).toBe("VERDICT");
+    if (result.outcome !== "VERDICT") throw new Error("expected VERDICT");
+    expect(result.verdict).toBe("FAIL");
+    expect(result.counterexample).toBeDefined();
+  });
+
+  // Guard the OTHER direction: a real thrown (non-assertion) error wrapped by
+  // fast-check stays an EXECUTION_ERROR. "Got error:" with a real error message
+  // (not the "returning false" sentinel) is NOT a prediction contradiction.
+  it("fc.assert wrapping a real thrown error stays EXECUTION_ERROR (not FAIL)", () => {
+    const fcThrown = [
+      "Error: Property failed after 1 tests",
+      '{ seed: 42, path: "0:0", endOnFailure: true }',
+      "Counterexample: [[]]",
+      "Got error: TypeError: Cannot read properties of null (reading 'label')",
+    ].join("\n");
+
+    const result = classifyFailure(fcThrown);
+    expect(result.outcome).toBe("EXECUTION_ERROR");
+    expect(result.outcome).not.toBe("VERDICT");
+    if (result.outcome !== "EXECUTION_ERROR") throw new Error("expected error");
+    expect(result.reason).toContain("non-assertion error");
+    // The reason names the real error, not the opaque wrapper header.
+    expect(result.reason).toContain("TypeError");
+  });
+});
