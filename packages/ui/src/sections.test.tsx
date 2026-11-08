@@ -20,6 +20,7 @@ import {
 } from "./index.js";
 import {
   GITHUB_COMMIT_BASE,
+  formatUtc,
   type ReportSectionsAsset,
 } from "./report-asset.js";
 import type { LanternReport } from "@spec-lantern/types";
@@ -45,17 +46,19 @@ const SECTIONS: ReportSectionsAsset = {
       },
       steps: [
         {
-          phase: "predictions-locked",
-          label: "Predictions locked",
+          phase: "predictions-first-locked",
+          label: "Predictions first locked",
           at: "2026-11-03T05:21:22.398Z",
+          commit: "00191a6",
+          commitSubject: "stage B: locked predictions",
           detail: "lock hash 0fcb9d687dd6",
         },
         {
-          phase: "lock-commit",
-          label: "Lock committed to git",
-          at: "2026-11-03T14:23:15+09:00",
-          commit: "00191a6",
-          commitSubject: "stage B: locked predictions",
+          phase: "final-locks",
+          label: "Final locks",
+          at: "2026-11-03T05:35:18.368Z",
+          commit: "be4c190",
+          commitSubject: "stage C: harness revision re-lock",
         },
         {
           phase: "execution",
@@ -73,9 +76,9 @@ const SECTIONS: ReportSectionsAsset = {
         {
           phase: "fix",
           label: "Fix applied to a throwaway copy",
-          at: "2026-11-03T07:04:03.235Z",
-          commit: "85e1e76",
-          commitSubject: "stage E",
+          at: "2026-11-03T05:51:28.835Z",
+          commit: "825fed9",
+          commitSubject: "stage D: fix on copy",
         },
         {
           phase: "regression-check",
@@ -101,10 +104,19 @@ const SECTIONS: ReportSectionsAsset = {
       },
       steps: [
         {
-          phase: "predictions-locked",
-          label: "Predictions locked",
+          phase: "predictions-first-locked",
+          label: "Predictions first locked",
           at: "2026-11-07T20:54:49.854Z",
+          commit: "69e28e5",
+          commitSubject: "mp stage B: locked",
           detail: "lock hash bd00527b86a1",
+        },
+        {
+          phase: "final-locks",
+          label: "Final locks",
+          at: "2026-11-07T21:27:00.235Z",
+          commit: "d81cf0a",
+          commitSubject: "mp stage B: re-lock props 2,10",
         },
         {
           phase: "execution",
@@ -163,8 +175,8 @@ describe("ReportSections — Behind the lantern (timeline)", () => {
     const timeline = screen.getByTestId(TEST_IDS.timeline);
     // The six phases render in order.
     for (const phase of [
-      "predictions-locked",
-      "lock-commit",
+      "predictions-first-locked",
+      "final-locks",
       "execution",
       "replay-reproduced",
       "fix",
@@ -178,6 +190,38 @@ describe("ReportSections — Behind the lantern (timeline)", () => {
     });
     expect(lockCommitLink.getAttribute("href")).toBe(
       `${GITHUB_COMMIT_BASE}00191a6`,
+    );
+  });
+
+  it("shows both the first-lock and the final-lock steps with their own commits", () => {
+    render(<ReportSections sections={SECTIONS} targetId="writing-tracker" />);
+    const first = screen.getByTestId(
+      TEST_IDS.timelineStep("predictions-first-locked"),
+    );
+    const final = screen.getByTestId(TEST_IDS.timelineStep("final-locks"));
+    // First lock: earliest lockedAt + the commit that first added locks.
+    expect(first.textContent).toMatch(/Predictions first locked/);
+    expect(within(first).getByRole("link").getAttribute("href")).toBe(
+      `${GITHUB_COMMIT_BASE}00191a6`,
+    );
+    // Final locks: latest active lockedAt + the commit that last changed locks/.
+    expect(final.textContent).toMatch(/Final locks/);
+    expect(within(final).getByRole("link").getAttribute("href")).toBe(
+      `${GITHUB_COMMIT_BASE}be4c190`,
+    );
+  });
+
+  it("points the fix step and the regression step to DIFFERENT commits", () => {
+    render(<ReportSections sections={SECTIONS} targetId="writing-tracker" />);
+    const fix = screen.getByTestId(TEST_IDS.timelineStep("fix"));
+    const regression = screen.getByTestId(
+      TEST_IDS.timelineStep("regression-check"),
+    );
+    expect(within(fix).getByRole("link").getAttribute("href")).toBe(
+      `${GITHUB_COMMIT_BASE}825fed9`,
+    );
+    expect(within(regression).getByRole("link").getAttribute("href")).toBe(
+      `${GITHUB_COMMIT_BASE}85e1e76`,
     );
   });
 
@@ -260,16 +304,27 @@ describe("ReportSections — Behind the lantern (timeline)", () => {
     expect(times[0].getAttribute("datetime")).toBe("2026-11-03T05:21:22.398Z");
     // … while the DISPLAYED text is normalized to one UTC format.
     expect(times[0].textContent).toBe("2026-11-03 05:21:22 UTC");
-    // A git commit date with a +09:00 offset (lock-commit step) also displays
-    // as UTC, so the steps read in the correct order at a glance.
-    const lockCommitTime = times.find(
-      (t) => t.getAttribute("datetime") === "2026-11-03T14:23:15+09:00",
-    );
-    expect(lockCommitTime?.textContent).toBe("2026-11-03 05:23:15 UTC");
-    // Every displayed time ends in "UTC".
+    // Every displayed time ends in "UTC" so the steps read in order at a glance.
     for (const t of times) {
       expect(t.textContent).toMatch(/ UTC$/);
     }
+  });
+});
+
+describe("formatUtc", () => {
+  it("normalizes a UTC Z timestamp", () => {
+    expect(formatUtc("2026-11-03T05:21:22.398Z")).toBe("2026-11-03 05:21:22 UTC");
+  });
+
+  it("converts a +09:00 offset to UTC so ordering reads correctly", () => {
+    // 14:23:15 +09:00 is 05:23:15 UTC.
+    expect(formatUtc("2026-11-03T14:23:15+09:00")).toBe(
+      "2026-11-03 05:23:15 UTC",
+    );
+  });
+
+  it("returns the input unchanged for an unparseable value", () => {
+    expect(formatUtc("not-a-date")).toBe("not-a-date");
   });
 });
 

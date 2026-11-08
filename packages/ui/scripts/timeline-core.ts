@@ -55,6 +55,13 @@ export interface TimelineReaders {
    * subject, and ISO date.
    */
   firstCommitForPath(repoRelPath: string): Promise<CommitInfo | null>;
+  /**
+   * The MOST RECENT git commit that touched a given path (the latest commit in
+   * `git log -- <path>`), or `null` when none is found. Used to find the commit
+   * that last CHANGED the `locks/` directory (the re-lock), as opposed to the
+   * one that first added it.
+   */
+  lastCommitForPath(repoRelPath: string): Promise<CommitInfo | null>;
   /** Resolve a commit-ish to its short hash + subject + date, or null. */
   resolveCommit(commitish: string): Promise<CommitInfo | null>;
 }
@@ -76,8 +83,19 @@ export interface TargetSource {
   readonly executionResultName: string;
   /** A replay result file name under results/stage-c/ (the "replay reproduced" anchor). */
   readonly replayResultName: string;
-  /** The stage-d result file that anchors "fix" + "regression check". */
+  /**
+   * The stage-d result file where the fix was FIRST applied (anchors the "fix"
+   * step). Its first-add commit is when the fix first landed — distinct from
+   * the regression result, which may be a later file/commit.
+   */
   readonly fixResultName: string;
+  /**
+   * The stage-d result file where the full regression re-run was recorded
+   * (anchors the "regression check" step). May equal {@link fixResultName} for
+   * a target that recorded the fix and regression in one file; when distinct,
+   * each step derives its commit from its OWN file's first-add commit.
+   */
+  readonly regressionResultName: string;
   /**
    * When the test-harness revisions happened relative to execution — a prose
    * fact recorded VERBATIM in this target's `locks/superseded/README.md`, which
@@ -246,46 +264,66 @@ export async function buildTargetTimeline(
   const supersededLocks = await readLocksInDir(readers, supersededDirAbs);
   const verdictMismatches = findVerdictMismatches(activeLocks, supersededLocks);
 
-  // 2. Lock commit — the git commit that ADDED the anchor lock file.
-  const lockCommit = await readers.firstCommitForPath(
+  // 1a. Predictions FIRST locked — the git commit that first ADDED the lock
+  //     directory (via the anchor lock file's first-add commit).
+  const firstLockCommit = await readers.firstCommitForPath(
     `${target.rootRel}/locks/${target.anchorLockName}`,
   );
+  // 1b. FINAL locks — the git commit that LAST changed the locks/ directory
+  //     (the most recent commit touching it; a re-lock, if any). The
+  //     locked-before-execution claim is computed from the latest active lock,
+  //     so this is the commit that commit corresponds to.
+  const finalLockCommit = await readers.lastCommitForPath(
+    `${target.rootRel}/locks/`,
+  );
 
-  // 3. Execution — capturedAt of the stage-c execution result + its add-commit.
+  // 2. Execution — capturedAt of the stage-c execution result + its add-commit.
   const executionRel = `${target.rootRel}/results/stage-c/${target.executionResultName}`;
   const executionCapturedAt = parseCapturedAt(
     await readers.readFile(join(stageCAbs, target.executionResultName)),
   );
   const executionCommit = await readers.firstCommitForPath(executionRel);
 
-  // 4. Replay reproduced — capturedAt + reproducesSameFail of the replay file.
+  // 3. Replay reproduced — capturedAt + reproducesSameFail of the replay file.
   const replayJson = await readers.readFile(
     join(stageCAbs, target.replayResultName),
   );
   const replayCapturedAt = parseCapturedAt(replayJson);
   const replayReproduced = parseReproduces(replayJson);
 
-  // 5. Fix + 6. Regression check — capturedAt of the stage-d result + add-commit.
+  // 4. Fix — the commit that FIRST applied the fix (the fix result file's
+  //    first-add commit), with that file's capturedAt. Distinct from the
+  //    regression file when the two were recorded separately.
+  const stageDAbs = join(target.rootAbs, "results", "stage-d");
   const fixRel = `${target.rootRel}/results/stage-d/${target.fixResultName}`;
-  const fixJson = await readers.readFile(
-    join(target.rootAbs, "results", "stage-d", target.fixResultName),
+  const fixCapturedAt = parseCapturedAt(
+    await readers.readFile(join(stageDAbs, target.fixResultName)),
   );
-  const fixCapturedAt = parseCapturedAt(fixJson);
   const fixCommit = await readers.firstCommitForPath(fixRel);
+
+  // 5. Regression check — the commit that first recorded the regression re-run
+  //    result (its own file's first-add commit), with that file's capturedAt.
+  const regressionRel = `${target.rootRel}/results/stage-d/${target.regressionResultName}`;
+  const regressionCapturedAt = parseCapturedAt(
+    await readers.readFile(join(stageDAbs, target.regressionResultName)),
+  );
+  const regressionCommit = await readers.firstCommitForPath(regressionRel);
 
   const steps: TimelineStep[] = [
     {
-      phase: "predictions-locked",
-      label: "Predictions locked",
+      phase: "predictions-first-locked",
+      label: "Predictions first locked",
       at: earliestLockedAt,
+      commit: firstLockCommit?.shortHash,
+      commitSubject: firstLockCommit?.subject,
       detail: lockShortHash ? `lock hash ${lockShortHash}` : undefined,
     },
     {
-      phase: "lock-commit",
-      label: "Lock committed to git",
-      at: lockCommit?.date,
-      commit: lockCommit?.shortHash,
-      commitSubject: lockCommit?.subject,
+      phase: "final-locks",
+      label: "Final locks",
+      at: latestLockedAt,
+      commit: finalLockCommit?.shortHash,
+      commitSubject: finalLockCommit?.subject,
     },
     {
       phase: "execution",
@@ -312,9 +350,9 @@ export async function buildTargetTimeline(
     {
       phase: "regression-check",
       label: "All properties re-run (regression check)",
-      at: fixCapturedAt,
-      commit: fixCommit?.shortHash,
-      commitSubject: fixCommit?.subject,
+      at: regressionCapturedAt,
+      commit: regressionCommit?.shortHash,
+      commitSubject: regressionCommit?.subject,
     },
   ];
 

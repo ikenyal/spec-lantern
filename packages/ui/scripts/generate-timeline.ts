@@ -71,6 +71,18 @@ function makeRealReaders(repoRoot: string): TimelineReaders {
       // `git log` is newest-first; the add is the LAST line.
       return parseCommitRecord(lines[lines.length - 1]);
     },
+    async lastCommitForPath(repoRelPath) {
+      // The MOST RECENT commit that touched the path (newest-first, take -1).
+      const out = await git(repoRoot, [
+        "log",
+        "-1",
+        `--format=${FORMAT}`,
+        "--",
+        repoRelPath,
+      ]);
+      if (out === null || out.length === 0) return null;
+      return parseCommitRecord(out);
+    },
     async resolveCommit(commitish) {
       const out = await git(repoRoot, [
         "log",
@@ -99,7 +111,11 @@ async function main(): Promise<void> {
       anchorLockName: "property-1.claim-monthly-order.lock.json",
       executionResultName: "property-1.claim-monthly-order.json",
       replayResultName: "replay-property-1.json",
-      fixResultName: "apply-fixes-reexecute-all.json",
+      // Stage D: the fix was FIRST applied in apply-fixes-reexecute.json
+      // (commit 825fed9); the full regression re-run was recorded separately in
+      // apply-fixes-reexecute-all.json (commit 85e1e76).
+      fixResultName: "apply-fixes-reexecute.json",
+      regressionResultName: "apply-fixes-reexecute-all.json",
       // From writing-tracker-full/locks/superseded/README.md: "The FIRST
       // Stage-C execution ... revealed that property-2 and property-3 contained
       // test-harness defects" — the 2 revisions came AFTER a first run.
@@ -115,7 +131,10 @@ async function main(): Promise<void> {
       anchorLockName: "property-1.claim-24h-to-minutes.lock.json",
       executionResultName: "execute-properties-all.json",
       replayResultName: "replay-property-1.claim-24h-to-minutes.json",
+      // MoodPlays recorded the fix + regression in one stage-d file, so the fix
+      // and regression steps share it (commit d568487).
       fixResultName: "apply-fixes-reexecute-all.json",
+      regressionResultName: "apply-fixes-reexecute-all.json",
       // From moodplays/locks/superseded/README.md: "All were caught by REVIEW,
       // before any execution (no Stage C has run)." — all 5 before any run.
       harnessRevisionTiming: "before-any-execution",

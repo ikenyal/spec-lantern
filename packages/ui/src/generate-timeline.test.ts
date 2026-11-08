@@ -45,7 +45,8 @@ const TARGET: TargetSource = {
   anchorLockName: "property-1.lock.json",
   executionResultName: "exec-all.json",
   replayResultName: "replay-1.json",
-  fixResultName: "fix-all.json",
+  fixResultName: "fix.json",
+  regressionResultName: "fix-all.json",
 };
 
 const locksDir = join(TARGET.rootAbs, "locks");
@@ -68,6 +69,7 @@ function makeReaders(opts: {
   files: Record<string, string>;
   dirs: Record<string, readonly string[]>;
   adds?: Record<string, CommitInfo>;
+  lastCommits?: Record<string, CommitInfo>;
   resolves?: Record<string, CommitInfo>;
 }): TimelineReaders {
   return {
@@ -81,6 +83,9 @@ function makeReaders(opts: {
     },
     async firstCommitForPath(repoRelPath) {
       return opts.adds?.[repoRelPath] ?? null;
+    },
+    async lastCommitForPath(repoRelPath) {
+      return opts.lastCommits?.[repoRelPath] ?? null;
     },
     async resolveCommit(commitish) {
       return opts.resolves?.[commitish] ?? null;
@@ -132,8 +137,13 @@ function standardReaders(opts?: {
       capturedAt: "2026-01-02T00:05:00.000Z",
       reproducesSameFail: true,
     }),
-    [join(stageDDir, "fix-all.json")]: JSON.stringify({
+    // The fix was FIRST applied here (its own file + commit) …
+    [join(stageDDir, "fix.json")]: JSON.stringify({
       capturedAt: "2026-01-03T00:00:00.000Z",
+    }),
+    // … and the regression re-run recorded separately, later.
+    [join(stageDDir, "fix-all.json")]: JSON.stringify({
+      capturedAt: "2026-01-04T00:00:00.000Z",
     }),
   };
 
@@ -148,9 +158,10 @@ function standardReaders(opts?: {
     dirs,
     files,
     adds: {
+      // First-add of the anchor lock -> "predictions first locked" commit.
       "rel/demo/locks/property-1.lock.json": {
         shortHash: "aaa1111",
-        subject: "lock predictions before execution",
+        subject: "lock predictions (first)",
         date: "2026-01-01T09:00:00+09:00",
       },
       "rel/demo/results/stage-c/exec-all.json": {
@@ -158,10 +169,25 @@ function standardReaders(opts?: {
         subject: "persist execution results",
         date: "2026-01-02T09:00:00+09:00",
       },
-      "rel/demo/results/stage-d/fix-all.json": {
-        shortHash: "ccc3333",
-        subject: "fix on copy, regression re-run",
+      // First-add of the FIX file -> "fix applied" commit.
+      "rel/demo/results/stage-d/fix.json": {
+        shortHash: "ddd4444",
+        subject: "fix on copy",
         date: "2026-01-03T09:00:00+09:00",
+      },
+      // First-add of the REGRESSION file -> "regression check" commit (distinct).
+      "rel/demo/results/stage-d/fix-all.json": {
+        shortHash: "eee5555",
+        subject: "regression re-run",
+        date: "2026-01-04T09:00:00+09:00",
+      },
+    },
+    lastCommits: {
+      // Last change to locks/ -> "final locks" commit (a re-lock).
+      "rel/demo/locks/": {
+        shortHash: "fff6666",
+        subject: "re-lock after harness revision",
+        date: "2026-01-01T12:00:00+09:00",
       },
     },
   });
@@ -175,8 +201,8 @@ describe("buildTargetTimeline", () => {
   it("emits the six phases in order", async () => {
     const t = await buildTargetTimeline(standardReaders(), TARGET);
     expect(t.steps.map((s) => s.phase)).toEqual([
-      "predictions-locked",
-      "lock-commit",
+      "predictions-first-locked",
+      "final-locks",
       "execution",
       "replay-reproduced",
       "fix",
@@ -184,24 +210,36 @@ describe("buildTargetTimeline", () => {
     ]);
   });
 
-  it("anchors predictions-locked at the EARLIEST lockedAt and shows the lock hash", async () => {
-    const t = await buildTargetTimeline(standardReaders(), TARGET);
-    const locked = t.steps.find((s) => s.phase === "predictions-locked")!;
-    // property-1's lockedAt is earlier than property-2's.
-    expect(locked.at).toBe("2026-01-01T00:00:00.000Z");
-    // first 12 chars of the anchor lock's contentHash.
-    expect(locked.detail).toBe("lock hash abcdef012345");
-  });
-
-  it("pulls commit hash + subject from git for lock, execution, and fix", async () => {
+  it("shows BOTH the first lock (earliest lockedAt + first add-commit) and the final locks (latest lockedAt + last locks/ commit)", async () => {
     const t = await buildTargetTimeline(standardReaders(), TARGET);
     const byPhase = Object.fromEntries(t.steps.map((s) => [s.phase, s]));
-    expect(byPhase["lock-commit"].commit).toBe("aaa1111");
-    expect(byPhase["lock-commit"].commitSubject).toMatch(/lock predictions/);
+
+    // First lock: earliest active lockedAt (property-1 @00:00) + the commit
+    // that first ADDED the locks (the anchor lock's first-add commit).
+    const first = byPhase["predictions-first-locked"];
+    expect(first.at).toBe("2026-01-01T00:00:00.000Z");
+    expect(first.commit).toBe("aaa1111");
+    expect(first.commitSubject).toMatch(/first/);
+    expect(first.detail).toBe("lock hash abcdef012345");
+
+    // Final locks: latest active lockedAt (property-2 @06:00) + the commit that
+    // LAST changed locks/ (the re-lock). The locked-before claim uses this.
+    const final = byPhase["final-locks"];
+    expect(final.at).toBe("2026-01-01T06:00:00.000Z");
+    expect(final.commit).toBe("fff6666");
+    expect(final.commitSubject).toMatch(/re-lock/);
+  });
+
+  it("derives fix and regression from their OWN first-add commits (distinct files)", async () => {
+    const t = await buildTargetTimeline(standardReaders(), TARGET);
+    const byPhase = Object.fromEntries(t.steps.map((s) => [s.phase, s]));
     expect(byPhase["execution"].commit).toBe("bbb2222");
-    expect(byPhase["fix"].commit).toBe("ccc3333");
-    // regression-check shares the fix commit (same re-execution run).
-    expect(byPhase["regression-check"].commit).toBe("ccc3333");
+    // Fix step -> first-add of fix.json (not the regression file).
+    expect(byPhase["fix"].commit).toBe("ddd4444");
+    expect(byPhase["fix"].at).toBe("2026-01-03T00:00:00.000Z");
+    // Regression step -> first-add of fix-all.json (a later, separate commit).
+    expect(byPhase["regression-check"].commit).toBe("eee5555");
+    expect(byPhase["regression-check"].at).toBe("2026-01-04T00:00:00.000Z");
   });
 
   it("reflects reproducesSameFail on the replay step", async () => {
@@ -255,6 +293,9 @@ describe("buildTargetTimeline", () => {
         [join(stageCDir, "replay-1.json")]: JSON.stringify({
           capturedAt: "2026-01-02T00:05:00.000Z",
           reproducesSameFail: false,
+        }),
+        [join(stageDDir, "fix.json")]: JSON.stringify({
+          capturedAt: "2026-01-03T00:00:00.000Z",
         }),
         [join(stageDDir, "fix-all.json")]: JSON.stringify({
           capturedAt: "2026-01-03T00:00:00.000Z",

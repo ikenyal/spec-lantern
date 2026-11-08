@@ -153,8 +153,8 @@ export function formatUtc(iso: string): string {
 
 /** The fixed ordered phases of the "Behind the lantern" timeline. */
 export type TimelinePhase =
-  | "predictions-locked"
-  | "lock-commit"
+  | "predictions-first-locked"
+  | "final-locks"
   | "execution"
   | "replay-reproduced"
   | "fix"
