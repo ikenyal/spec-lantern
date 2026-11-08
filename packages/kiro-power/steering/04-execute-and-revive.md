@@ -83,3 +83,21 @@ and at least one `FIXED` (FAIL → PASS) transition applied to the copy.
 - It never falls back to the host when the runner is unavailable.
 - It never modifies the original Target_Repo.
 - It never rewrites a locked Predicted_Result to match the Actual_Result.
+
+## Evidence discipline (learned from real runs)
+
+- **Persist every tool output verbatim** under `results/` (for example
+  `results/stage-c/<propertyId>.json`, `results/stage-d/...`). Reports and
+  summaries read only from these files, never from chat text.
+- **Replay every FAIL** with `replay_counterexample` and persist the replay.
+- **Harness defects are not bugs.** If a FAIL is caused by the test itself
+  (brittle lookup, untrimmed comparison), do not report it as a Confirmed_Bug.
+  Fix only the test, keep the predicted verdict unchanged, move the old lock to
+  `locks/superseded/` with a README (what was wrong, when relative to
+  execution, original lock time), and re-lock.
+- **Count lies by root cause.** If one defect makes several properties fail,
+  report one lie and mark the other rows as symptoms of it. State honestly
+  whether each symptom's own comment is wrong or only failed because of the
+  root cause.
+- **Re-run all properties after a fix** (not only the failing ones) so the
+  report can show STILL_PASSING vs REGRESSION.

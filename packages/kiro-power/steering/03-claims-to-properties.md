@@ -22,9 +22,35 @@ never two. Use the filename, location, tag, and termination convention from
 - the test terminates with exactly one of PASS or FAIL.
 
 Use **fast-check + Vitest**, a minimum of 100 iterations per property. Write a
-smart generator that constrains inputs to the real input space. Author the
-property to assert the *intended* behavior (e.g. "the first row is the current
-month"), so execution can expose a gap against a trusting prediction.
+smart generator that covers the WHOLE documented input space (e.g. every minute
+0-59, not a hand-picked subset). Never narrow a generator to avoid a value you
+suspect. Author the property to assert the *intended* behavior the comment
+states (e.g. "the first row is the current month").
+
+### Oracles must be independent of the code under test
+
+An oracle that restates the implementation (same formula, same branches, the
+function's own output, or a sibling function's output) passes even when the code
+is wrong. That is "read and believe" in test form, and it defeats the product.
+Build every expected value from a source the code cannot influence:
+
+- the comment's own examples ("500 m", "1.2 km", "10:00 PM"),
+- known real-world values (e.g. a known city-to-city distance with a tolerance),
+- mathematical laws (identity, symmetry, monotonicity, round-trips),
+- the answer side first: generate the intended result (e.g. hour24, minute),
+  format it into the input string, and expect the result you started from,
+- an explicit hand-written table of input -> expected output.
+
+Self-check before locking: "Could this expected value be produced by copying
+the function body?" If yes, rewrite the oracle. Never assert a value against the
+code's own output.
+
+### Do not simulate the target before locking
+
+Never copy, transcribe, or re-implement the target's functions (for example in
+`node -e`) to check whether a property will pass. That is executing the target
+outside the isolated runner, and it tunes tests to the code. If you are unsure
+whether an oracle is right, say so instead.
 
 Properties run under a pinned clock, timezone, and seed (the runner supplies the
 `ExecutionContext`). Write time-dependent assertions against the Fixed_Current_Time,
@@ -66,9 +92,12 @@ choosing. Only props-driven components get a `component_rendered` property.
 For every Correctness_Property (function or component_rendered), record a
 **Predicted_Result before execution**:
 
-1. Read the code and predict honestly: exactly one of PASS or FAIL. If a comment
-   says the code does X and the code appears to do X, predict accordingly — the
-   point of the product is to surface where that read-only prediction is wrong.
+1. Read the code and predict what you **actually believe**: exactly one of PASS
+   or FAIL. If you suspect the code does not do what its comment says, predict
+   FAIL and write one line of reasoning. Never predict strategically (for
+   example "PASS so that a mismatch is meaningful"); a prediction you do not
+   believe makes the whole report dishonest. A correct FAIL prediction is a
+   valid, useful result: it shows the bug was visible by reading.
 2. Write the Predicted_Result file (`verdict`, pre-execution `recordedAt`
    timestamp, `immutable: true`, `propertyId`) per `05-artifact-formats.md`.
 3. **Lock it.** Call the MCP prediction-lock tool over every Predicted_Result
