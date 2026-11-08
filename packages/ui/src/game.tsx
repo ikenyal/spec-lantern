@@ -281,16 +281,21 @@ function RoundView({
               counterexample, the whole block is omitted (nothing invented). */}
           {claim.howToSpot || (claim.verdict === "FAIL" && claim.counterexamplePlain) ? (
             <div className="game-reveal__spot" data-testid={GAME_TEST_IDS.howToSpot}>
-              <p className="game-reveal__spot-title">How to spot it</p>
-              {claim.howToSpot ? (
-                <p className="game-reveal__spot-text">{claim.howToSpot}</p>
-              ) : null}
+              <p className="game-reveal__spot-title">
+                {claim.verdict === "FAIL" ? "What execution proved" : "What execution showed"}
+              </p>
               {claim.verdict === "FAIL" && claim.counterexamplePlain ? (
                 <p
                   className="game-reveal__counterexample"
                   data-testid={GAME_TEST_IDS.counterexample}
                 >
                   {claim.counterexamplePlain}
+                </p>
+              ) : null}
+              {claim.howToSpot ? (
+                <p className="game-reveal__spot-text">
+                  {claim.verdict === "FAIL" ? <strong>Impact: </strong> : null}
+                  {claim.howToSpot}
                 </p>
               ) : null}
             </div>

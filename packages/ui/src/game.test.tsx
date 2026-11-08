@@ -177,7 +177,7 @@ describe("GameView rounds", () => {
     }
   });
 
-  it("shows 'How to spot it' with the verified text for a lie and a held claim (Fix 2)", () => {
+  it("shows the execution note with the verified text for a lie and a held claim (Fix 2)", () => {
     render(<GameView data={DATA} seed={SEED} />);
     fireEvent.click(screen.getByTestId(GAME_TEST_IDS.start));
     const rounds = selectRounds(DATA, SEED);
@@ -186,7 +186,7 @@ describe("GameView rounds", () => {
       fireEvent.click(screen.getByTestId(r.isLie ? GAME_TEST_IDS.trust : GAME_TEST_IDS.doubt));
       if (r.howToSpot) {
         const spot = screen.getByTestId(GAME_TEST_IDS.howToSpot).textContent ?? "";
-        expect(spot).toContain("How to spot it");
+        expect(spot).toMatch(/What execution (proved|showed)/);
         expect(spot).toContain(r.howToSpot);
         if (r.isLie && r.counterexamplePlain) {
           expect(spot).toContain(r.counterexamplePlain);
