@@ -1077,3 +1077,57 @@ body {
   font-size: 0.82rem;
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 }
+
+/* --------------------------------------------------- Try it on your repo CTA */
+.lantern-try-it {
+  margin-top: 2.5rem;
+  background: var(--charcoal-raised);
+  border: 1px solid var(--charcoal-line);
+  border-radius: 12px;
+  padding: 1.5rem 1.75rem;
+}
+.lantern-try-it__title {
+  margin: 0 0 0.5rem;
+  color: var(--amber-strong);
+}
+.lantern-try-it__lead {
+  margin: 0 0 1.25rem;
+  color: var(--ink-muted);
+}
+.lantern-try-it__subtitle {
+  margin: 1.25rem 0 0.5rem;
+  font-size: 0.95rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--amber);
+}
+.lantern-try-it__reqs,
+.lantern-try-it__steps {
+  margin: 0;
+  padding-left: 1.25rem;
+  display: grid;
+  gap: 0.4rem;
+  color: var(--ink);
+}
+.lantern-try-it code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  background: var(--charcoal-sunken);
+  border: 1px solid var(--charcoal-line);
+  border-radius: 4px;
+  padding: 0.05rem 0.35rem;
+  font-size: 0.88rem;
+}
+.lantern-try-it__link {
+  color: var(--amber);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  word-break: break-all;
+}
+.lantern-try-it__prompt {
+  margin: 0.5rem 0 0;
+  padding: 0.9rem 1.1rem;
+  background: var(--charcoal-sunken);
+  border-left: 3px solid var(--amber);
+  border-radius: 6px;
+  color: var(--ink);
+  font-style: italic;
+}

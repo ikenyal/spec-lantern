@@ -4,11 +4,18 @@ description: >-
   Resurrect abandoned "vibe-coded" TypeScript/React apps by reverse-engineering
   a Kiro spec, extracting every claim into an executable Correctness_Property,
   recording an immutable read-only prediction, then EXECUTING the properties in
-  an isolated runner and comparing predicted vs actual. Use when reviving a
-  Target_Repo, auditing AI-generated code whose comments may lie, or producing a
-  Lantern_Report of confirmed bugs with counterexamples.
+  an isolated runner and comparing predicted vs actual. Use when a user wants to
+  check whether the comments in a repo are lying about what the code does, audit
+  or verify AI-generated TypeScript/React code, find bugs that comments hide,
+  revive a Target_Repo, or produce a Lantern_Report of confirmed bugs with
+  counterexamples.
 keywords:
   - spec-lantern
+  - check the comments
+  - do the comments lie
+  - audit code
+  - verify comments
+  - find hidden bugs
   - reverse-engineer
   - property-based-testing
   - vibe-coded

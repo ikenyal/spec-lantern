@@ -142,6 +142,8 @@ export const TEST_IDS = {
   // Task 18.2 — the "no report exists" empty state (R10.7). Not keyed by a
   // property because there is no report (and so no properties) to key on.
   noReport: "lantern-no-report",
+  // "Try it on your repo" call-to-action at the bottom of the report page.
+  tryIt: "lantern-try-it",
 } as const;
 
 /* -------------------------------------------------------------------------- */
@@ -1384,6 +1386,76 @@ export function ReportSections({
 }
 
 /* -------------------------------------------------------------------------- */
+/* TryItSection                                                               */
+/* -------------------------------------------------------------------------- */
+
+/** GitHub repo URL users import the Power from. */
+const TRY_IT_POWER_REPO = "https://github.com/ikenyal/spec-lantern-power";
+
+/**
+ * The "Try it on your repo" call-to-action shown at the very bottom of the
+ * report page. It tells a visitor how to run spec-lantern on their OWN repo:
+ * the requirements, the 3-step install (Powers -> Add Custom Power -> Import
+ * power from GitHub), and one example prompt. The same content is mirrored in
+ * the root README. This is static marketing copy — it executes nothing.
+ */
+export function TryItSection(): ReactElement {
+  return (
+    <section
+      className="lantern-try-it"
+      data-testid={TEST_IDS.tryIt}
+      aria-label="Try spec-lantern on your repo"
+    >
+      <h2 className="lantern-try-it__title">Try it on your repo</h2>
+      <p className="lantern-try-it__lead">
+        spec-lantern ships as a Kiro Power. Point it at your own
+        TypeScript/React repo and it will execute every claim your comments make
+        instead of trusting them.
+      </p>
+
+      <h3 className="lantern-try-it__subtitle">Requirements</h3>
+      <ul className="lantern-try-it__reqs">
+        <li>Kiro (the AI IDE that loads Powers)</li>
+        <li>Node.js 20 or newer</li>
+        <li>
+          rootless Podman — on macOS run <code>podman machine start</code> first
+          (target code only ever runs inside Podman, never on your host)
+        </li>
+      </ul>
+
+      <h3 className="lantern-try-it__subtitle">Install (3 steps)</h3>
+      <ol className="lantern-try-it__steps">
+        <li>
+          Open <strong>Powers</strong> in Kiro.
+        </li>
+        <li>
+          Choose <strong>Add Custom Power</strong> &rarr;{" "}
+          <strong>Import power from GitHub</strong>.
+        </li>
+        <li>
+          Paste{" "}
+          <a
+            className="lantern-try-it__link"
+            href={TRY_IT_POWER_REPO}
+            rel="noreferrer noopener"
+            target="_blank"
+          >
+            {TRY_IT_POWER_REPO}
+          </a>
+          .
+        </li>
+      </ol>
+
+      <h3 className="lantern-try-it__subtitle">Then just ask</h3>
+      <blockquote className="lantern-try-it__prompt">
+        Check the comments in this repo — are any of them lying about what the
+        code does?
+      </blockquote>
+    </section>
+  );
+}
+
+/* -------------------------------------------------------------------------- */
 /* LanternReportView                                                          */
 /* -------------------------------------------------------------------------- */
 
@@ -1534,6 +1606,7 @@ export function LanternReportView({
         <ReportSections sections={sections} targetId={targetId} />
       ) : null}
       <PropertyTable comparisons={report.comparisons} />
+      <TryItSection />
     </section>
   );
 }

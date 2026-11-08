@@ -37,6 +37,7 @@ export {
   HowItStaysSafeSection,
   SameStandardSection,
   ReportSections,
+  TryItSection,
   TEST_IDS,
   getUiRenderLimitSeconds,
   formatPredicted,

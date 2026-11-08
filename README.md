@@ -74,6 +74,28 @@ This tears down the CloudFront distribution and empties/removes the bucket
 
 Every resource is tagged `Project=spec-lantern` and `Event=Kiroween2026`.
 
+## Try it on your repo
+
+spec-lantern ships as a Kiro Power. Point it at your own TypeScript/React repo
+and it will execute every claim your comments make instead of trusting them.
+
+### Requirements
+
+- **Kiro** (the AI IDE that loads Powers)
+- **Node.js 20 or newer**
+- **rootless Podman** — on macOS run `podman machine start` first (target code
+  only ever runs inside Podman, never on your host)
+
+### Install (3 steps)
+
+1. Open **Powers** in Kiro.
+2. Choose **Add Custom Power** → **Import power from GitHub**.
+3. Paste <https://github.com/ikenyal/spec-lantern-power>.
+
+### Then just ask
+
+> Check the comments in this repo — are any of them lying about what the code does?
+
 ## License
 
 [MIT](./LICENSE)
