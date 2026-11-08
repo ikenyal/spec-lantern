@@ -54,7 +54,17 @@
 
 import { spawn } from "node:child_process";
 import { createHash } from "node:crypto";
-import { access, readdir, readFile, stat } from "node:fs/promises";
+import {
+  access,
+  mkdir,
+  mkdtemp,
+  readdir,
+  readFile,
+  rm,
+  stat,
+  writeFile,
+} from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { join, relative, resolve } from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
 import type { PropertyExecutionRequest } from "@spec-lantern/types";
@@ -504,6 +514,120 @@ describe("executeProperties — the ORIGINAL Target_Repo is read-only (safety fi
       // package.json / package-lock.json were NOT rewritten by the install.
       expect(before["package.json"]).toBe(after["package.json"]);
       expect(before["package-lock.json"]).toBe(after["package-lock.json"]);
+    },
+    E2E_TIMEOUT_MS,
+  );
+});
+
+/* -------------------------------------------------------------------------- */
+/* Part 4 — a property that imports the target by a RELATIVE path, from a      */
+/*          spec root INSIDE the target, executes IN THE CONTAINER (import fix) */
+/* -------------------------------------------------------------------------- */
+
+// This part proves the import-resolution fix end-to-end in a REAL container.
+// The packaged-Power trial found property files were staged FLAT at
+// `<copy>/properties/`, breaking a property that imports the target RELATIVE to
+// its own spec location (e.g. `../../../src/utils`) — every such property
+// returned EXECUTION_ERROR. The fix keeps the property at its real spec
+// location inside the copied target so the relative import resolves.
+//
+// We build a tiny, self-contained CommonJS target (no deps to install, so the
+// install phase is fast) with a spec root INSIDE it two dirs deep, and a
+// property that imports the target's function by the relative path its real
+// location implies. A VERDICT (not EXECUTION_ERROR) proves the import resolved
+// IN THE CONTAINER. Skipped unless SPEC_LANTERN_SMOKE=1 and Podman is reachable.
+
+describe("execute_properties — relative-path import from a spec root inside the target (import fix)", () => {
+  it.skipIf(!RUN_SMOKE)(
+    "a property importing the target by a relative path resolves and yields a VERDICT (not EXECUTION_ERROR)",
+    async () => {
+      // The target source is only READ (copied out of) on the host, so tmpdir is
+      // fine; the Podman-visible working copy is made under ~/.spec-lantern.
+      const target = await mkdtemp(join(tmpdir(), "spec-lantern-relimport-"));
+      try {
+        // A minimal target: package.json (no deps) + a plain function module.
+        await writeFile(
+          join(target, "package.json"),
+          JSON.stringify(
+            { name: "rel-import-target", version: "1.0.0", private: true },
+            null,
+            2,
+          ) + "\n",
+        );
+        await mkdir(join(target, "src", "utils"), { recursive: true });
+        await writeFile(
+          join(target, "src", "utils", "math.ts"),
+          "// add two numbers\nexport function add(a: number, b: number): number {\n  return a + b;\n}\n",
+        );
+
+        // Spec root INSIDE the target, two dirs deep. A property here importing
+        // "../../../src/utils/math" resolves from
+        // <copy>/.spec-lantern/math/properties/ up three dirs to <copy>/src.
+        const specRel = ".spec-lantern/math";
+        const specRoot = join(target, specRel);
+        const claimId = "claim-add-commutes";
+        const propertyId = `property-1.${claimId}`;
+        await mkdir(join(specRoot, "properties"), { recursive: true });
+        await writeFile(
+          join(specRoot, "properties", `${propertyId}.test.ts`),
+          [
+            "// Feature: spec-lantern, Property 1: add is commutative",
+            'import { test } from "vitest";',
+            'import fc from "fast-check";',
+            // Relative import of the REAL target module from the property's real
+            // location inside the copied target — the whole point of the test.
+            'import { add } from "../../../src/utils/math";',
+            "",
+            'test("add is commutative", () => {',
+            "  fc.assert(",
+            "    fc.property(fc.integer(), fc.integer(), (a, b) => {",
+            "      return add(a, b) === add(b, a);",
+            "    }),",
+            "    { numRuns: 100 },",
+            "  );",
+            "});",
+            "",
+          ].join("\n"),
+        );
+
+        const request: PropertyExecutionRequest = {
+          targetRepoRef: target,
+          properties: [
+            {
+              id: propertyId,
+              claimId,
+              title: "add commutes",
+              statement: "add(a,b) === add(b,a)",
+              kind: "function",
+              validatesRequirements: ["R5"],
+            },
+          ],
+          phase: "initial",
+        };
+
+        // Real container run. The property should run from its in-place spec
+        // location so the relative import resolves — a VERDICT, never the
+        // EXECUTION_ERROR the flattening bug produced.
+        const result = await executeProperties(request, {
+          specRoot,
+          timeoutSeconds: 600,
+        });
+
+        expect(result.results).toHaveLength(1);
+        const actual = result.results[0];
+        expect(actual?.propertyId).toBe(propertyId);
+        // The key assertion: the import resolved (we got a real verdict), and it
+        // PASSES (add is commutative). A flattened property path would surface
+        // here as EXECUTION_ERROR ("cannot find module ../../../src/utils/math").
+        expect(actual?.outcome).toBe("VERDICT");
+        if (actual?.outcome === "VERDICT") {
+          expect(actual.verdict).toBe("PASS");
+        }
+      } finally {
+        await rm(target, { recursive: true, force: true }).catch(
+          () => undefined,
+        );
+      }
     },
     E2E_TIMEOUT_MS,
   );

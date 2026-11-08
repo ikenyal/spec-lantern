@@ -16,9 +16,15 @@ Predicted_Result. The lock is what makes the later comparison trustworthy.
 ## Execute (delegate to `execute_properties`)
 
 Call `execute_properties` with a `PropertyExecutionRequest`:
-`{ targetRepoRef, properties[], phase: "initial" }`. Read the
-`PropertyExecutionResult`: an `ActualResult[]` plus a per-property
-`ExecutionContext`. Interpret each outcome by its tag, never guessing:
+`{ targetRepoRef, properties[], phase: "initial" }`, and pass your `specRoot`
+so the server finds the property files. The server copies the target to a
+throwaway working copy and places each property file at the SAME location
+(relative to the target) it has in your spec — in place when `specRoot` is
+inside the target, or copied to a fixed path when it is outside — so the
+relative/alias imports you wrote (see `03-claims-to-properties.md`) resolve. You
+do not place files inside the copy by hand. Read the `PropertyExecutionResult`:
+an `ActualResult[]` plus a per-property `ExecutionContext`. Interpret each
+outcome by its tag, never guessing:
 
 - `VERDICT` → `verdict` is PASS or FAIL; on FAIL a `Counterexample` is attached
   (triggering input + observed output + its `ExecutionContext`).

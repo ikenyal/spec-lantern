@@ -331,15 +331,23 @@ export async function applyFixesAndReexecute(
   );
 
   try {
-    // 1b. Stage the property test files from a spec root INTO the fixed copy
-    //     (the copy is mounted in place, so the files must live inside it).
+    // 1b. Make the spec's property files available INSIDE the fixed copy at the
+    //     SAME location relative to the target they had in the spec (the copy is
+    //     mounted in place, so they must live inside it and their relative
+    //     imports must resolve). `stagePropertiesInto` decides in place vs.
+    //     copy-in from the ORIGINAL target (the copy was made from it), and
+    //     returns where the spec lives inside the copy.
+    let stagedSpecMountRel: string | undefined;
     if (options.specRoot && request.properties.length > 0) {
-      await stagePropertiesInto(
+      const staged = await stagePropertiesInto(
         applied.targetRepoCopyPath,
         options.specRoot,
+        request.targetRepoRef,
         request.properties,
         log,
       );
+      stagedSpecMountRel = staged.specMountRel;
+      log(`Property files: ${staged.importResolutionNote}`);
     }
 
     // 2. Re-execute the SAME properties against the COPY, tagged post_fix (R8.3).
@@ -359,6 +367,7 @@ export async function applyFixesAndReexecute(
     const postFixExecution = await executeProperties(postFixRequest, {
       ...options.execute,
       mountInPlace: true,
+      stagedSpecMountRel,
     });
 
     // Index the post-fix results by propertyId for pairing.

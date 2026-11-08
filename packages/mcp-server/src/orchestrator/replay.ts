@@ -244,7 +244,7 @@ export async function replayCounterexample(
   //    from a spec root into the copy. `mountInPlace` is a test-only escape hatch.
   const mountInPlace = options.mountInPlace ?? false;
   let mountPath = request.targetRepoRef;
-  let staged = false;
+  let specMountRel: string | undefined;
   let workingCopyDir: string | undefined;
   if (!mountInPlace) {
     const prepared = await prepareWorkingCopy(request.targetRepoRef, {
@@ -255,7 +255,10 @@ export async function replayCounterexample(
     });
     workingCopyDir = prepared.workingCopyDir;
     mountPath = prepared.workingCopyDir;
-    staged = options.specRoot !== undefined;
+    specMountRel = prepared.specMountRel;
+    if (prepared.importResolutionNote) {
+      log(`Property files: ${prepared.importResolutionNote}`);
+    }
   }
 
   try {
@@ -266,9 +269,10 @@ export async function replayCounterexample(
     const runnerRequest: IsolatedRunnerRequest = {
       propertyId: request.property.id,
       targetRepoPath: mountPath,
-      propertyTestFile: staged
-        ? stagedPropertyTestFileRel(request.property.id)
-        : propertyTestFileFor(request.property),
+      propertyTestFile:
+        specMountRel !== undefined
+          ? stagedPropertyTestFileRel(specMountRel, request.property.id)
+          : propertyTestFileFor(request.property),
       executionContext: request.executionContext,
       timeoutSeconds: options.timeoutSeconds,
     };

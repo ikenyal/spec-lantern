@@ -122,6 +122,18 @@ export interface ExecutePropertiesOptions {
    */
   mountInPlace?: boolean;
   /**
+   * The spec directory's location INSIDE the mount, relative to the mount root
+   * (POSIX), when the caller has ALREADY staged the spec into an in-place mount
+   * (the Revive loop). Used ONLY with `mountInPlace: true`: each property then
+   * resolves to `<stagedSpecMountRel>/properties/property-{n}.{claimId}.test.ts`
+   * so its relative imports resolve from the same location it had in the spec.
+   * Ignored when `mountInPlace` is false (the copy path computes its own
+   * `specMountRel` from `specRoot`). When omitted under `mountInPlace`, the
+   * runner resolves `<id>.test.ts` in place (the property is assumed already at
+   * the mount root).
+   */
+  stagedSpecMountRel?: string;
+  /**
    * Per-run execution timeout in seconds forwarded to the runner for each
    * property. The runner defaults it when omitted (R5.7). Dedicated timeout
    * surfacing is task 10.2; here it is only plumbed to the runner.
@@ -234,7 +246,11 @@ export async function executeProperties(
   //    copy as `targetRepoRef`, so it opts out of copying again.
   const mountInPlace = options.mountInPlace ?? false;
   let mountPath = request.targetRepoRef;
-  let staged = false;
+  // Under an in-place mount the caller may have already staged the spec and tell
+  // us where it landed; otherwise the copy branch computes this below.
+  let specMountRel: string | undefined = mountInPlace
+    ? options.stagedSpecMountRel
+    : undefined;
   let workingCopyDir: string | undefined;
   if (!mountInPlace) {
     const prepared = await prepareWorkingCopy(request.targetRepoRef, {
@@ -245,7 +261,10 @@ export async function executeProperties(
     });
     workingCopyDir = prepared.workingCopyDir;
     mountPath = prepared.workingCopyDir;
-    staged = options.specRoot !== undefined;
+    specMountRel = prepared.specMountRel;
+    if (prepared.importResolutionNote) {
+      log(`Property files: ${prepared.importResolutionNote}`);
+    }
   }
 
   try {
@@ -260,12 +279,14 @@ export async function executeProperties(
     const recordedContexts: Record<string, ExecutionContext> = {};
     for (const property of request.properties) {
       log(`Executing property ${property.id} in the runner…`);
-      // When the tool staged files from a spec root, the property lives at the
-      // canonical `properties/...test.ts` path inside the copy; otherwise the
-      // runner resolves `<id>.test.ts` in place.
-      const propertyTestFile = staged
-        ? stagedPropertyTestFileRel(property.id)
-        : propertyTestFileFor(property);
+      // When a spec root was given, the property lives at
+      // `<specMountRel>/properties/...test.ts` inside the copy (the spec's own
+      // location relative to the target, so its relative imports resolve);
+      // otherwise the runner resolves `<id>.test.ts` in place.
+      const propertyTestFile =
+        specMountRel !== undefined
+          ? stagedPropertyTestFileRel(specMountRel, property.id)
+          : propertyTestFileFor(property);
       const runnerRequest = {
         propertyId: property.id,
         targetRepoPath: mountPath,

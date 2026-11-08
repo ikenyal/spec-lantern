@@ -29,6 +29,30 @@ smart generator that covers the WHOLE documented input space (e.g. every minute
 suspect. Author the property to assert the *intended* behavior the comment
 states (e.g. "the first row is the current month").
 
+### How to import the target under test
+
+The property runs inside a COPY of the Target_Repo, from the SAME location
+(relative to the target) it has in your spec. Import the target so that location
+is honored:
+
+- **Prefer the target's `@/...` alias when it defines one** (most Vite/CRA apps
+  do — check `vite.config.*` / `tsconfig.json` `paths`). The runner preserves the
+  target's alias config, so `import { getClosingSoonInfo } from "@/utils/openingHoursParser"`
+  resolves no matter where the spec sits. This is the ONLY form that works when
+  your spec root is OUTSIDE the target (the server copies the whole spec to a
+  fixed path, changing its depth).
+- **Otherwise import relative to the property file's REAL location inside the
+  target.** When your spec root is INSIDE the target (e.g.
+  `<target>/.spec-lantern/src-utils/`), the property file keeps that path in the
+  copy, so a relative import must climb from `.../properties/` to the source —
+  e.g. from `<target>/.spec-lantern/src-utils/properties/property-1.*.test.ts`,
+  the module at `<target>/src/utils/openingHoursParser.ts` is
+  `../../../src/utils/openingHoursParser`.
+
+Do NOT assume the property file lives at the target root. The server never
+flattens property files to `<copy>/properties/`; it runs each one from its own
+spec location so these imports resolve.
+
 ### Oracles must be independent of the code under test
 
 An oracle that restates the implementation (same formula, same branches, the
