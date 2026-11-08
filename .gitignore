@@ -43,3 +43,4 @@ __pycache__/
 # TypeScript incremental build info
 *.tsbuildinfo
 packages/infra/cdk.out/
+.agents/
