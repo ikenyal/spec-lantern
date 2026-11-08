@@ -11,7 +11,8 @@
     "dev": "vite",
     "preview": "vite preview",
     "export:sample": "vite-node scripts/export-sample-report.ts",
-    "build:demo": "npm run export:sample && vite build"
+    "generate:timeline": "vite-node scripts/generate-timeline.ts",
+    "build:demo": "npm run export:sample && npm run generate:timeline && vite build"
   },
   "dependencies": {
     "@spec-lantern/types": "*",

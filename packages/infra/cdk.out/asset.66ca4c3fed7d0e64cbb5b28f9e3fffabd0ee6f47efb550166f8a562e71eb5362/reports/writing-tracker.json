@@ -1,0 +1,137 @@
+{
+  "sampleData": false,
+  "report": {
+    "comparisons": [
+      {
+        "propertyId": "property-1.claim-monthly-order",
+        "predicted": "PASS",
+        "actual": {
+          "propertyId": "property-1.claim-monthly-order",
+          "outcome": "VERDICT",
+          "verdict": "FAIL",
+          "counterexample": {
+            "propertyId": "property-1.claim-monthly-order",
+            "input": "[{\"year\":2000,\"month\":0,\"day\":1},[]]",
+            "observedOutput": "expected first row: Jan 2000, actual first row: Aug 1999: expected 'Aug 1999' to be 'Jan 2000' // Object.is equality\n---\nError: Property failed after 1 tests",
+            "executionContext": {
+              "randomSeed": 1664763492,
+              "timezone": "UTC",
+              "fixedCurrentTime": "2025-01-01T00:00:00.000Z"
+            }
+          }
+        },
+        "transition": {
+          "propertyId": "property-1.claim-monthly-order",
+          "preFixResult": "FAIL",
+          "postFixResult": "PASS",
+          "classification": "FIXED"
+        },
+        "status": "PREDICTION_MISMATCH",
+        "confirmedBug": true,
+        "display": {
+          "title": "Monthly history lists the most recent month first",
+          "claimText": "// Reverse to have most recent month first",
+          "sourceLocation": "PeriodProgressSummary.tsx:54"
+        }
+      },
+      {
+        "propertyId": "property-2.claim-active-tasks-recent",
+        "predicted": "PASS",
+        "actual": {
+          "propertyId": "property-2.claim-active-tasks-recent",
+          "outcome": "VERDICT",
+          "verdict": "PASS"
+        },
+        "transition": {
+          "propertyId": "property-2.claim-active-tasks-recent",
+          "preFixResult": "PASS",
+          "postFixResult": "PASS",
+          "classification": "STILL_PASSING"
+        },
+        "status": "MATCH",
+        "confirmedBug": false,
+        "display": {
+          "title": "Recently Active Tasks lists the most recently updated task first",
+          "claimText": "// Top 5 most recently updated tasks",
+          "sourceLocation": "MostActiveItemsList.tsx:36"
+        }
+      },
+      {
+        "propertyId": "property-3.claim-active-stages-top5",
+        "predicted": "PASS",
+        "actual": {
+          "propertyId": "property-3.claim-active-stages-top5",
+          "outcome": "VERDICT",
+          "verdict": "PASS"
+        },
+        "transition": {
+          "propertyId": "property-3.claim-active-stages-top5",
+          "preFixResult": "PASS",
+          "postFixResult": "PASS",
+          "classification": "STILL_PASSING"
+        },
+        "status": "MATCH",
+        "confirmedBug": false,
+        "display": {
+          "title": "Most Active Stages lists the highest-activity stages, capped at five",
+          "claimText": "// Top 5 most active stages",
+          "sourceLocation": "MostActiveItemsList.tsx:24"
+        }
+      }
+    ],
+    "observedDeviations": [
+      {
+        "id": "dev-monthly-order",
+        "claimId": "claim-monthly-order",
+        "claimedBehavior": "The monthly summary shows the most recent month first; the first row is the current month.",
+        "currentBehavior": "getPeriods() builds the six months as currentMonth - i for i = 0..5 (already most-recent-first), then calls periods.reverse(), which yields OLDEST month first; the first row is the oldest of the six months, not the current month."
+      },
+      {
+        "id": "dev-top5-stages-for-tasks",
+        "claimId": "claim-top5-stages-for-tasks",
+        "claimedBehavior": "Statistics loads tasks for the top 5 stages (the five most active stages).",
+        "currentBehavior": null,
+        "undeterminable": true
+      }
+    ],
+    "noConfirmedBug": false,
+    "noObservedDeviation": false,
+    "generatedAt": "2026-11-03T07:04:03.235Z"
+  },
+  "story": {
+    "propertyId": "property-1.claim-monthly-order",
+    "thesis": "AI-built apps are full of comments that lie — and AI reviewers believe them. spec-lantern makes Kiro predict, then executes, then proves.",
+    "stats": "3 comments checked · 1 lie · Kiro fooled 1/3 · fixed in 2 lines",
+    "comment": {
+      "claimText": "// Reverse to have most recent month first",
+      "sourceLocation": "PeriodProgressSummary.tsx:54"
+    },
+    "prediction": {
+      "verdict": "PASS",
+      "lockedAt": "2026-11-03T05:21:22.398Z",
+      "shortHash": "0fcb9d68"
+    },
+    "execution": {
+      "clock": "2000-01-01T00:00:00.000Z",
+      "timezone": "UTC",
+      "expectedFirstRow": "Jan 2000",
+      "actualFirstRow": "Aug 1999",
+      "monthsAsRendered": [
+        "Aug 1999",
+        "Sep 1999",
+        "Oct 1999",
+        "Nov 1999",
+        "Dec 1999",
+        "Jan 2000"
+      ],
+      "userImpact": "Users opening monthly progress see a month from half a year ago at the top; the current month is at the bottom."
+    },
+    "revive": {
+      "diff": "--- a/src/components/statistics/PeriodProgressSummary.tsx\n+++ b/src/components/statistics/PeriodProgressSummary.tsx\n@@ -51,8 +51,6 @@\n           end: monthEnd\n         });\n       }\n-      // Reverse to have most recent month first\n-      periods.reverse();\n     }\n     \n     return periods;",
+      "preFixResult": "FAIL",
+      "postFixResult": "PASS",
+      "otherClaimsStatus": "The other two checked claims (Recently Active Tasks, Most Active Stages) still pass after the fix — no regression.",
+      "reproducesSameFail": true
+    }
+  }
+}

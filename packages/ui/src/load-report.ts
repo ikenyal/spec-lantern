@@ -10,8 +10,10 @@
  */
 import {
   REPORTS_MANIFEST_PATH,
+  TIMELINE_ASSET_PATH,
   type ReportAsset,
   type ReportManifest,
+  type ReportSectionsAsset,
 } from "./report-asset.js";
 
 /** Minimal `fetch` surface this loader needs, so it is easy to test/inject. */
@@ -45,6 +47,22 @@ export async function loadReportAsset(
     throw new Error(`Failed to load report asset ${path} (status ${res.status})`);
   }
   return (await res.json()) as ReportAsset;
+}
+
+/**
+ * Fetch and parse the build-time-generated sections asset (the "Behind the
+ * lantern" timelines, the isolation diagram, and the honesty items) from
+ * {@link TIMELINE_ASSET_PATH}. Returns `null` when the asset is absent (a
+ * non-OK response) so the UI simply omits the three sections rather than
+ * failing — nothing here is synthesized.
+ */
+export async function loadSectionsAsset(
+  fetchImpl: FetchLike,
+  path: string = TIMELINE_ASSET_PATH,
+): Promise<ReportSectionsAsset | null> {
+  const res = await fetchImpl(path);
+  if (!res.ok) return null;
+  return (await res.json()) as ReportSectionsAsset;
 }
 
 /**

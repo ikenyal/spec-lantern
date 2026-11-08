@@ -33,6 +33,10 @@ export {
   CounterexampleDetail,
   TransitionDetail,
   StorySection,
+  BehindTheLanternSection,
+  HowItStaysSafeSection,
+  SameStandardSection,
+  ReportSections,
   TEST_IDS,
   getUiRenderLimitSeconds,
   formatPredicted,
@@ -54,6 +58,10 @@ export {
   type CounterexampleDetailProps,
   type TransitionDetailProps,
   type StorySectionProps,
+  type BehindTheLanternSectionProps,
+  type HowItStaysSafeSectionProps,
+  type SameStandardSectionProps,
+  type ReportSectionsProps,
 } from "./components.js";
 
 /**
@@ -66,15 +74,27 @@ export {
 export {
   REPORTS_BASE_PATH,
   REPORTS_MANIFEST_PATH,
+  TIMELINE_ASSET_PATH,
+  GITHUB_COMMIT_BASE,
   reportAssetPath,
+  commitUrl,
   type ReportAsset,
   type ReportManifest,
   type ReportManifestEntry,
   type LanternStory,
+  type ReportSectionsAsset,
+  type TargetTimeline,
+  type TimelineStep,
+  type TimelinePhase,
+  type IsolationModel,
+  type IsolationPhase,
+  type IsolationGuarantee,
+  type HonestyItem,
 } from "./report-asset.js";
 export {
   loadManifest,
   loadReportAsset,
   loadFirstReportAsset,
+  loadSectionsAsset,
   type FetchLike,
 } from "./load-report.js";

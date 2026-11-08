@@ -14,8 +14,16 @@
 import { StrictMode, useEffect, useState, type ReactElement } from "react";
 import { createRoot } from "react-dom/client";
 import { LanternReportView } from "./components.js";
-import { loadManifest, loadReportAsset } from "./load-report.js";
-import type { ReportAsset, ReportManifestEntry } from "./report-asset.js";
+import {
+  loadManifest,
+  loadReportAsset,
+  loadSectionsAsset,
+} from "./load-report.js";
+import type {
+  ReportAsset,
+  ReportManifestEntry,
+  ReportSectionsAsset,
+} from "./report-asset.js";
 import "./lantern-theme.css";
 
 type LoadState =
@@ -34,6 +42,23 @@ function DemoApp(): ReactElement {
   const [state, setState] = useState<LoadState>({ phase: "loading" });
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [asset, setAsset] = useState<ReportAsset | null>(null);
+  const [sections, setSections] = useState<ReportSectionsAsset | null>(null);
+
+  // 0. Load the build-time sections asset once (timelines + isolation +
+  //    honesty). Absent -> null, so the three sections are simply omitted.
+  useEffect(() => {
+    let cancelled = false;
+    loadSectionsAsset((input) => fetch(input))
+      .then((s) => {
+        if (!cancelled) setSections(s);
+      })
+      .catch(() => {
+        if (!cancelled) setSections(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   // 1. Load the manifest once.
   useEffect(() => {
@@ -112,6 +137,8 @@ function DemoApp(): ReactElement {
         sampleData={asset ? asset.sampleData : false}
         story={asset ? asset.story : undefined}
         targetLabel={selectedEntry?.targetLabel}
+        sections={sections ?? undefined}
+        targetId={selectedId ?? undefined}
       />
     </>
   );

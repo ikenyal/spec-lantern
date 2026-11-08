@@ -815,3 +815,238 @@ body {
     overflow: hidden;
   }
 }
+
+/* ======================================================================== */
+/* Three sections below the story, above the table                          */
+/*   1. Behind the lantern (per-target timeline)                            */
+/*   2. How it stays safe (two-phase isolation)                             */
+/*   3. We hold ourselves to the same standard (honesty items)              */
+/*                                                                          */
+/* Accessibility: links are self-describing (commit hash / file path), the  */
+/* timeline uses an ordered list + <time>, phase ordering is conveyed by    */
+/* the "then" wording and heading order (not colour/position alone), and    */
+/* all accent colour meets the AA contrast of the existing theme.           */
+/* ======================================================================== */
+
+.lantern-sections {
+  display: grid;
+  gap: 2rem;
+  margin: 2.5rem 0;
+}
+
+.lantern-sections h3 {
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: var(--ink);
+  margin: 0 0 0.75rem;
+}
+
+.lantern-sections h4 {
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: var(--ink);
+  margin: 0 0 0.4rem;
+}
+
+.lantern-sections a {
+  color: var(--amber-strong);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.lantern-sections a:hover {
+  color: var(--amber);
+}
+
+/* ------------------------------------------- 1. Behind the lantern (timeline) */
+
+.lantern-timeline {
+  background: var(--charcoal-raised);
+  border: 1px solid var(--charcoal-line);
+  border-radius: 12px;
+  padding: 1.25rem 1.5rem;
+}
+
+.lantern-timeline__locked-before {
+  margin: 0 0 1rem;
+  padding: 0.6rem 0.9rem;
+  background: var(--amber-dim);
+  border: 1px solid var(--amber);
+  border-radius: 8px;
+  color: var(--ink);
+  font-size: 0.92rem;
+}
+
+.lantern-timeline__locked-icon {
+  margin-right: 0.4rem;
+}
+
+.lantern-timeline__steps {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0;
+}
+
+.lantern-timeline__step {
+  position: relative;
+  padding: 0 0 1.1rem 1.6rem;
+  border-left: 2px solid var(--charcoal-line);
+}
+
+.lantern-timeline__step:last-child {
+  padding-bottom: 0;
+  border-left-color: transparent;
+}
+
+.lantern-timeline__dot {
+  position: absolute;
+  left: -7px;
+  top: 0.2rem;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--amber);
+  border: 2px solid var(--charcoal-raised);
+}
+
+.lantern-timeline__step-body {
+  display: grid;
+  gap: 0.15rem;
+}
+
+.lantern-timeline__step-label {
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.lantern-timeline__step-time {
+  font-size: 0.8rem;
+  color: var(--ink-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.lantern-timeline__step-detail {
+  font-size: 0.82rem;
+  color: var(--ink-muted);
+}
+
+.lantern-timeline__commit {
+  font-size: 0.82rem;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+
+.lantern-timeline__commit-subject {
+  font-family: ui-sans-serif, system-ui, sans-serif;
+  color: var(--ink-muted);
+}
+
+/* -------------------------------------------- 2. How it stays safe (isolation) */
+
+.lantern-isolation {
+  background: var(--charcoal-raised);
+  border: 1px solid var(--charcoal-line);
+  border-radius: 12px;
+  padding: 1.25rem 1.5rem;
+}
+
+.lantern-isolation__intro {
+  margin: 0 0 1rem;
+  color: var(--ink-muted);
+  font-size: 0.92rem;
+}
+
+.lantern-isolation__phases {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+  align-items: stretch;
+}
+
+.lantern-isolation__phase-wrap {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  flex: 1 1 320px;
+}
+
+.lantern-isolation__arrow {
+  color: var(--amber);
+  font-weight: 700;
+  font-size: 0.85rem;
+  white-space: nowrap;
+}
+
+.lantern-isolation__phase {
+  flex: 1;
+  background: var(--charcoal-sunken);
+  border: 1px solid var(--charcoal-line);
+  border-radius: 10px;
+  padding: 0.9rem 1rem;
+}
+
+.lantern-isolation__phase-summary {
+  margin: 0 0 0.6rem;
+  font-size: 0.86rem;
+  color: var(--ink-muted);
+}
+
+.lantern-isolation__cross {
+  margin-top: 1.25rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--charcoal-line);
+}
+
+.lantern-isolation__guarantees {
+  margin: 0;
+  padding-left: 1.1rem;
+  display: grid;
+  gap: 0.35rem;
+}
+
+.lantern-isolation__guarantee {
+  font-size: 0.86rem;
+  color: var(--ink);
+}
+
+/* --------------------------------------- 3. We hold ourselves to the standard */
+
+.lantern-honesty {
+  background: var(--charcoal-raised);
+  border: 1px solid var(--charcoal-line);
+  border-radius: 12px;
+  padding: 1.25rem 1.5rem;
+}
+
+.lantern-honesty__items {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 1rem;
+}
+
+.lantern-honesty__item {
+  background: var(--charcoal-sunken);
+  border: 1px solid var(--charcoal-line);
+  border-radius: 10px;
+  padding: 0.9rem 1rem;
+}
+
+.lantern-honesty__item-title {
+  margin: 0 0 0.3rem;
+  font-weight: 700;
+  color: var(--ink);
+}
+
+.lantern-honesty__item-body {
+  margin: 0 0 0.5rem;
+  font-size: 0.9rem;
+  color: var(--ink-muted);
+}
+
+.lantern-honesty__link {
+  font-size: 0.82rem;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}

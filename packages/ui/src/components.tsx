@@ -70,7 +70,13 @@ import {
   type PropertyComparison,
   type Verdict,
 } from "@spec-lantern/types";
-import type { LanternStory } from "./report-asset.js";
+import type {
+  HonestyItem,
+  IsolationModel,
+  LanternStory,
+  ReportSectionsAsset,
+  TargetTimeline,
+} from "./report-asset.js";
 
 /* -------------------------------------------------------------------------- */
 /* data-testid conventions                                                    */
@@ -120,6 +126,15 @@ export const TEST_IDS = {
   storyDiff: "lantern-story-diff",
   storySelection: "lantern-story-selection",
   storyCredit: "lantern-story-credit",
+  // Three sections below the story, above the table (shared across targets).
+  sections: "lantern-sections",
+  timeline: "lantern-timeline",
+  timelineStep: (phase: string) => `lantern-timeline-step-${phase}`,
+  timelineLockedBefore: "lantern-timeline-locked-before",
+  isolation: "lantern-isolation",
+  isolationPhase: (id: string) => `lantern-isolation-phase-${id}`,
+  honesty: "lantern-honesty",
+  honestyItem: (n: number) => `lantern-honesty-item-${n}`,
   // Task 18.2 — the "no report exists" empty state (R10.7). Not keyed by a
   // property because there is no report (and so no properties) to key on.
   noReport: "lantern-no-report",
@@ -992,6 +1007,314 @@ export function StorySection({
 }
 
 /* -------------------------------------------------------------------------- */
+/* Behind the lantern — per-target timeline (section 1)                        */
+/* -------------------------------------------------------------------------- */
+
+/** Props for {@link BehindTheLanternSection}. */
+export interface BehindTheLanternSectionProps {
+  /** The per-target timeline to render (one target's steps). */
+  timeline: TargetTimeline;
+  /** Base URL for commit links (e.g. ".../commit/"). */
+  commitBase: string;
+}
+
+/**
+ * Section 1 — "Behind the lantern": the ordered timeline for ONE target,
+ * predictions locked → lock commit → execution → replay reproduced → fix →
+ * regression check. Commit short hashes link to the exact commit on GitHub.
+ *
+ * The point it makes visible: the prediction lock timestamp PRECEDES the
+ * execution timestamp — predictions were committed to git before any execution.
+ * That flag (`predictionsLockedBeforeExecution`) is computed by the generator
+ * from the real timestamps, and shown here as a callout.
+ *
+ * Accessibility: an ordered `<ol>` conveys sequence; each step's timestamp is a
+ * `<time>` with a machine-readable `dateTime`; commit links carry descriptive
+ * text (the hash + subject), never "click here". The "locked before execution"
+ * callout is text, not colour alone.
+ */
+export function BehindTheLanternSection({
+  timeline,
+  commitBase,
+}: BehindTheLanternSectionProps): ReactElement {
+  const linkFor = (hash: string): string => `${commitBase}${hash}`;
+
+  return (
+    <section
+      className="lantern-timeline"
+      data-testid={TEST_IDS.timeline}
+      aria-labelledby={`timeline-heading-${timeline.id}`}
+    >
+      <h3
+        className="lantern-timeline__heading"
+        id={`timeline-heading-${timeline.id}`}
+      >
+        Behind the lantern · {timeline.label}
+      </h3>
+
+      {timeline.predictionsLockedBeforeExecution ? (
+        <p
+          className="lantern-timeline__locked-before"
+          data-testid={TEST_IDS.timelineLockedBefore}
+        >
+          <span className="lantern-timeline__locked-icon" aria-hidden="true">
+            🔒
+          </span>
+          Predictions were committed to git <strong>before</strong> any
+          execution.
+        </p>
+      ) : null}
+
+      <ol className="lantern-timeline__steps">
+        {timeline.steps.map((step) => (
+          <li
+            key={step.phase}
+            className="lantern-timeline__step"
+            data-testid={TEST_IDS.timelineStep(step.phase)}
+            data-phase={step.phase}
+          >
+            <span className="lantern-timeline__dot" aria-hidden="true" />
+            <div className="lantern-timeline__step-body">
+              <span className="lantern-timeline__step-label">{step.label}</span>
+              {step.at ? (
+                <time
+                  className="lantern-timeline__step-time"
+                  dateTime={step.at}
+                >
+                  {step.at}
+                </time>
+              ) : null}
+              {step.detail ? (
+                <span className="lantern-timeline__step-detail">
+                  {step.detail}
+                </span>
+              ) : null}
+              {step.commit ? (
+                <a
+                  className="lantern-timeline__commit"
+                  href={linkFor(step.commit)}
+                  target="_blank"
+                  rel="noreferrer noopener"
+                >
+                  commit {step.commit}
+                  {step.commitSubject ? (
+                    <span className="lantern-timeline__commit-subject">
+                      {" "}
+                      — {step.commitSubject}
+                    </span>
+                  ) : null}
+                </a>
+              ) : null}
+            </div>
+          </li>
+        ))}
+      </ol>
+    </section>
+  );
+}
+
+/* -------------------------------------------------------------------------- */
+/* How it stays safe — two-phase isolation diagram (section 2)                 */
+/* -------------------------------------------------------------------------- */
+
+/** Props for {@link HowItStaysSafeSection}. */
+export interface HowItStaysSafeSectionProps {
+  /** The two-phase isolation model (phases + cross-cutting guarantees). */
+  isolation: IsolationModel;
+}
+
+/**
+ * Section 2 — "How it stays safe": a small diagram of the two-phase isolation.
+ * Each phase is a card listing the guarantees it enforces; cross-cutting
+ * guarantees (Safety Gate, no host fallback, throwaway copy) follow. Every line
+ * describes what the runner source actually does and is generated with a source
+ * file reference (not shown as a link here, but carried in the data for audit).
+ *
+ * Accessibility: phases are a list of regions with headings; the arrow between
+ * phases is `aria-hidden` decoration, and the ordering is also conveyed by the
+ * "then" wording and the heading order, never by position alone.
+ */
+export function HowItStaysSafeSection({
+  isolation,
+}: HowItStaysSafeSectionProps): ReactElement {
+  return (
+    <section
+      className="lantern-isolation"
+      data-testid={TEST_IDS.isolation}
+      aria-labelledby="isolation-heading"
+    >
+      <h3 className="lantern-isolation__heading" id="isolation-heading">
+        How it stays safe
+      </h3>
+      <p className="lantern-isolation__intro">
+        Target code runs only inside a two-phase isolated runner — never on the
+        host.
+      </p>
+
+      <div className="lantern-isolation__phases">
+        {isolation.phases.map((phase, i) => (
+          <div key={phase.id} className="lantern-isolation__phase-wrap">
+            {i > 0 ? (
+              <span
+                className="lantern-isolation__arrow"
+                aria-hidden="true"
+              >
+                then →
+              </span>
+            ) : null}
+            <div
+              className="lantern-isolation__phase"
+              data-testid={TEST_IDS.isolationPhase(phase.id)}
+              data-phase={phase.id}
+            >
+              <h4 className="lantern-isolation__phase-title">{phase.title}</h4>
+              <p className="lantern-isolation__phase-summary">
+                {phase.summary}
+              </p>
+              <ul className="lantern-isolation__guarantees">
+                {phase.guarantees.map((g) => (
+                  <li key={g.text} className="lantern-isolation__guarantee">
+                    {g.text}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      <div className="lantern-isolation__cross">
+        <h4 className="lantern-isolation__cross-title">
+          Across both phases
+        </h4>
+        <ul className="lantern-isolation__guarantees">
+          {isolation.crossCutting.map((g) => (
+            <li key={g.text} className="lantern-isolation__guarantee">
+              {g.text}
+            </li>
+          ))}
+        </ul>
+      </div>
+    </section>
+  );
+}
+
+/* -------------------------------------------------------------------------- */
+/* We hold ourselves to the same standard (section 3)                          */
+/* -------------------------------------------------------------------------- */
+
+/** Props for {@link SameStandardSection}. */
+export interface SameStandardSectionProps {
+  /** The self-accountability items (each links to its commit or file). */
+  items: readonly HonestyItem[];
+  /**
+   * Base URL for GitHub blob links so a repo-relative file path resolves to a
+   * viewable source link. A commit `href` (already absolute) is used as-is.
+   */
+  fileBase?: string;
+}
+
+/** Default GitHub blob base for linking a repo-relative file path. */
+const DEFAULT_FILE_BASE =
+  "https://github.com/ikenyal/spec-lantern/blob/main/";
+
+/**
+ * Section 3 — "We hold ourselves to the same standard": the episodes where
+ * spec-lantern applied its own discipline to itself (the Safety Gate bypass its
+ * property test caught, the writing-tracker harness defects it did NOT report
+ * as bugs, and the MoodPlays tautological oracles it rewrote before executing).
+ * Each item links to its commit (absolute URL) or its file (repo-relative path
+ * resolved against a GitHub blob base).
+ *
+ * Accessibility: each item's link text is the commit hash or file path, so the
+ * link is self-describing out of context.
+ */
+export function SameStandardSection({
+  items,
+  fileBase = DEFAULT_FILE_BASE,
+}: SameStandardSectionProps): ReactElement {
+  const hrefFor = (item: HonestyItem): string =>
+    /^https?:\/\//.test(item.href) ? item.href : `${fileBase}${item.href}`;
+
+  return (
+    <section
+      className="lantern-honesty"
+      data-testid={TEST_IDS.honesty}
+      aria-labelledby="honesty-heading"
+    >
+      <h3 className="lantern-honesty__heading" id="honesty-heading">
+        We hold ourselves to the same standard
+      </h3>
+      <ul className="lantern-honesty__items">
+        {items.map((item, i) => (
+          <li
+            key={item.title}
+            className="lantern-honesty__item"
+            data-testid={TEST_IDS.honestyItem(i)}
+          >
+            <p className="lantern-honesty__item-title">{item.title}</p>
+            <p className="lantern-honesty__item-body">{item.body}</p>
+            <a
+              className="lantern-honesty__link"
+              href={hrefFor(item)}
+              target="_blank"
+              rel="noreferrer noopener"
+            >
+              {item.linkLabel}
+            </a>
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+}
+
+/* -------------------------------------------------------------------------- */
+/* ReportSections — the three sections, in order                               */
+/* -------------------------------------------------------------------------- */
+
+/** Props for {@link ReportSections}. */
+export interface ReportSectionsProps {
+  /** The build-time-generated sections asset. */
+  sections: ReportSectionsAsset;
+  /**
+   * The id of the currently-shown target, so the per-target timeline renders
+   * the matching one. When no timeline matches, the timeline is omitted (the
+   * other two shared sections still render).
+   */
+  targetId?: string;
+}
+
+/**
+ * Render the three sections — the per-target "Behind the lantern" timeline, the
+ * shared "How it stays safe" isolation diagram, and the shared "We hold
+ * ourselves to the same standard" items — in order. Shown between the story and
+ * the property table. The isolation and honesty sections are shared across
+ * targets; only the timeline is selected by `targetId`.
+ */
+export function ReportSections({
+  sections,
+  targetId,
+}: ReportSectionsProps): ReactElement {
+  const timeline =
+    sections.timelines.find((t) => t.id === targetId) ??
+    sections.timelines[0];
+
+  return (
+    <div className="lantern-sections" data-testid={TEST_IDS.sections}>
+      {timeline ? (
+        <BehindTheLanternSection
+          timeline={timeline}
+          commitBase={sections.commitBase}
+        />
+      ) : null}
+      <HowItStaysSafeSection isolation={sections.isolation} />
+      <SameStandardSection items={sections.honesty} />
+    </div>
+  );
+}
+
+/* -------------------------------------------------------------------------- */
 /* LanternReportView                                                          */
 /* -------------------------------------------------------------------------- */
 
@@ -1029,6 +1352,19 @@ export interface LanternReportViewProps {
    * renders unchanged; the demo's target switcher passes each report's label.
    */
   targetLabel?: string;
+  /**
+   * The build-time-generated {@link ReportSectionsAsset} (the "Behind the
+   * lantern" timelines, the isolation diagram, and the honesty items). When
+   * present, the three sections render BELOW the story and ABOVE the table.
+   * Omitted (the default) leaves the layout unchanged, so existing tests and
+   * any report without the asset are unaffected.
+   */
+  sections?: ReportSectionsAsset;
+  /**
+   * The id of the currently-shown target (matches a timeline id), so the
+   * per-target timeline in {@link ReportSections} renders the matching one.
+   */
+  targetId?: string;
 }
 
 /**
@@ -1045,6 +1381,8 @@ export function LanternReportView({
   sampleData = false,
   story,
   targetLabel = "writing-tracker (abandoned Lovable app)",
+  sections,
+  targetId,
 }: LanternReportViewProps): ReactElement {
   // R10.7: no Lantern_Report available -> explicit "no report" message.
   if (report === null || report === undefined) {
@@ -1122,6 +1460,9 @@ export function LanternReportView({
           lieCount={countLies(report.comparisons)}
           checkedCount={report.comparisons.length}
         />
+      ) : null}
+      {sections ? (
+        <ReportSections sections={sections} targetId={targetId} />
       ) : null}
       <PropertyTable comparisons={report.comparisons} />
     </section>
