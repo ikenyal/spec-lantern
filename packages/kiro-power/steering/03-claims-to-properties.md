@@ -18,6 +18,8 @@ never two. Use the filename, location, tag, and termination convention from
 `05-artifact-formats.md`:
 
 - filename `property-{n}.{claimId}.test.ts` under `properties/`,
+- the claim's comment quoted verbatim (comment text only, no code) with its exact
+  `file:line`,
 - an in-file tag comment `Feature: spec-lantern, Property {n}: {property_text}`,
 - the test terminates with exactly one of PASS or FAIL.
 
@@ -43,7 +45,15 @@ Build every expected value from a source the code cannot influence:
 
 Self-check before locking: "Could this expected value be produced by copying
 the function body?" If yes, rewrite the oracle. Never assert a value against the
-code's own output.
+code's own output. Copying also includes:
+
+- transcribing the source's data or constants into an "expected" table (for
+  example copying a config array, including entries no comment mentions); build
+  the table only from what the comments say,
+- re-expressing the same branching for random inputs (`x < 1 ? ... : ...`) even
+  if fixed comment examples are also checked,
+- escape hatches such as "if the result is null, accept it" that let the very
+  defect under test pass.
 
 ### Do not simulate the target before locking
 
