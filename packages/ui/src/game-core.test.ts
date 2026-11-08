@@ -4,20 +4,25 @@
  *
  * The generator joins each target's assembled Lantern_Report with the LOCKED
  * predictions (`locks/*.lock.json`), the EXECUTED verdicts
- * (`results/stage-c/*.json`), and the committed source excerpts, verifying
- * agreement at every join and re-checking the excerpt hash against the sandbox
- * source. These tests drive the PURE core with injected in-memory readers (no
- * filesystem), so the data-fidelity guarantees are asserted deterministically:
+ * (`results/stage-c/*.json`), the claim descriptions (`claims.json`), and the
+ * committed source excerpts (now MULTI-SEGMENT), verifying agreement at every
+ * join and re-checking the excerpt hash against the sandbox source. These tests
+ * drive the PURE core with injected in-memory readers (no filesystem), so the
+ * data-fidelity guarantees are asserted deterministically:
  *
  *   - a claim's verdict/prediction come from the stage-c result / lock file;
  *   - a report row whose predicted disagrees with its lock, or whose actual
- *     disagrees with stage-c, THROWS (the asset can never drift);
+ *     disagrees with stage-c, THROWS;
  *   - an excerpt whose stored hash disagrees with the sandbox source THROWS,
  *     but an ABSENT sandbox source (clean checkout) skips the check;
+ *   - the claim description comes VERBATIM from claims.json;
+ *   - the SAME-CLAIM check fails the build when the claim line is not inside a
+ *     segment or not referenced by the claim's commentRef;
+ *   - "How to spot it" is the report story wording (lie) / a factual run line
+ *     (held), omitted when unavailable; held omits the count when unrecorded;
  *   - `isLie` is the Confirmed_Bug-and-not-symptom rows exactly;
- *   - a symptom FAIL row gets a rootCauseNote and is NOT a lie;
- *   - rows with no excerpt / no VERDICT are omitted;
- *   - assembly requires exactly two lies and at least four PASS claims.
+ *   - assembly requires exactly two lies and >= four non-overlapping PASS
+ *     claims, excluding held claims that overlap a lie's excerpt.
  */
 import { describe, it, expect } from "vitest";
 import { createHash } from "node:crypto";
@@ -37,7 +42,12 @@ import {
 
 const ROOT = "/abs/target";
 const SRC = "sandbox/t/file.ts";
-const SRC_BYTES = Buffer.from("line1\nline2\nline3\n", "utf8");
+// A 120-line source stand-in so any excerpt range resolves; the exact bytes
+// matter only for the SHA-256 the generator re-verifies.
+const SRC_BYTES = Buffer.from(
+  Array.from({ length: 120 }, (_, i) => `line${i + 1}`).join("\n") + "\n",
+  "utf8",
+);
 const SRC_HASH = createHash("sha256").update(SRC_BYTES).digest("hex");
 
 function comparison(
@@ -53,12 +63,16 @@ function comparison(
 }
 
 const STORY: LanternStory = {
-  propertyId: "p1",
+  propertyId: "property-1.claim-lie",
   thesis: "t",
   stats: "s",
-  comment: { claimText: "c", sourceLocation: "f:1" },
+  comment: { claimText: "c", sourceLocation: "f:2" },
   prediction: { verdict: "PASS", lockedAt: "x", shortHash: "y" },
-  execution: { clock: "c", timezone: "UTC", userImpact: "u" },
+  execution: {
+    clock: "c",
+    timezone: "UTC",
+    userImpact: "Users see the wrong thing at the top.",
+  },
   revive: {
     diff: "d",
     preFixResult: "FAIL",
@@ -69,35 +83,52 @@ const STORY: LanternStory = {
   credit: "Demo by someone (MIT).",
 };
 
-/** Build the on-disk file map for one property's lock + stage-c + excerpt. */
 function lockFile(propertyId: string, verdict: string): string {
   return JSON.stringify({ propertyId, verdict, lockedAt: "2026-01-01T00:00:00.000Z" });
 }
-function stageCFile(propertyId: string, verdict: string): string {
+function stageCFile(
+  propertyId: string,
+  verdict: string,
+  extra: Record<string, unknown> = {},
+): string {
   return JSON.stringify({
-    actualResult: { propertyId, outcome: "VERDICT", verdict },
+    actualResult: { propertyId, outcome: "VERDICT", verdict, ...extra },
   });
 }
 
-/** Per-property excerpt overrides (file, range, claim line). */
-interface ExcerptSpec {
-  readonly sourceFile?: string;
-  readonly startLine?: number;
-  readonly endLine?: number;
-  readonly claimLine?: number;
-  readonly claimText?: string;
+/** The claim id is the propertyId suffix after the first dot. */
+function claimIdOf(propertyId: string): string {
+  const dot = propertyId.indexOf(".");
+  return dot === -1 ? propertyId : propertyId.slice(dot + 1);
 }
 
-/** An excerpt entry with a code slice + the sandbox file hash. */
+/** Per-property excerpt overrides. */
+interface ExcerptSpec {
+  readonly sourceFile?: string;
+  readonly claimLine?: number;
+  readonly claimText?: string;
+  readonly segments?: readonly { startLine: number; endLine: number }[];
+}
+
+/** Build an excerpt entry (segments with synthetic code) + the file hash. */
 function excerpt(propertyId: string, spec: ExcerptSpec = {}) {
+  const segments = (spec.segments ?? [{ startLine: 1, endLine: 3 }]).map(
+    (s) => ({
+      startLine: s.startLine,
+      endLine: s.endLine,
+      code: Array.from(
+        { length: s.endLine - s.startLine + 1 },
+        (_, i) => `line${s.startLine + i}`,
+      ).join("\n"),
+    }),
+  );
+  const claimLine = spec.claimLine ?? 2;
   return {
     propertyId,
     sourceFile: spec.sourceFile ?? SRC,
-    startLine: spec.startLine ?? 1,
-    endLine: spec.endLine ?? 3,
-    claimLine: spec.claimLine ?? 2,
-    claimText: spec.claimText ?? "line2",
-    code: "line1\nline2\nline3",
+    claimLine,
+    claimText: spec.claimText ?? `line${claimLine}`,
+    segments,
     fileSha256: SRC_HASH,
   };
 }
@@ -107,11 +138,16 @@ interface FixtureOpts {
   readonly locks: Record<string, string>;
   readonly stageC: Record<string, string>;
   readonly excerptPropertyIds: readonly string[];
-  /** Optional per-property excerpt overrides (range / file / claim line). */
   readonly excerptSpecs?: Record<string, ExcerptSpec>;
-  /** When false, the sandbox source is absent (readSourceBytes -> null). */
+  /**
+   * Per-claim-id commentRef (defaults to a ref that includes the excerpt's
+   * claim line so the same-claim check passes). Set to override/omit.
+   */
+  readonly commentRefs?: Record<string, string>;
+  /** Per-claim-id description (defaults to "desc for <id>"). */
+  readonly descriptions?: Record<string, string>;
+  readonly story?: LanternStory;
   readonly sandboxPresent?: boolean;
-  /** Override the stored excerpt hash to force a drift. */
   readonly excerptHashOverride?: string;
 }
 
@@ -133,6 +169,20 @@ function makeTarget(opts: FixtureOpts): {
       : e;
   });
   files[join(ROOT, "game", "source-excerpts.json")] = JSON.stringify({ excerpts });
+
+  // claims.json: one entry per excerpted property, keyed by claim id. The
+  // commentRef defaults to referencing the excerpt's claim line (so the
+  // same-claim check passes) unless overridden.
+  const claims = opts.excerptPropertyIds.map((pid) => {
+    const id = claimIdOf(pid);
+    const line = opts.excerptSpecs?.[pid]?.claimLine ?? 2;
+    return {
+      id,
+      description: opts.descriptions?.[id] ?? `desc for ${id}`,
+      commentRef: opts.commentRefs?.[id] ?? `L${line} // ${id}`,
+    };
+  });
+  files[join(ROOT, "claims.json")] = JSON.stringify({ claims });
 
   const readers: GameReaders = {
     async readFile(path) {
@@ -159,54 +209,75 @@ function makeTarget(opts: FixtureOpts): {
     rootAbs: ROOT,
     repoRootAbs: "/abs",
     report,
-    story: STORY,
+    story: opts.story ?? STORY,
   };
   return { readers, target };
 }
 
 /* -------------------------------------------------------------------------- */
-/* Tests                                                                      */
+/* buildTargetClaims                                                          */
 /* -------------------------------------------------------------------------- */
 
 describe("buildTargetClaims", () => {
-  it("joins report + lock + stage-c + excerpt into a PASS claim", async () => {
+  it("joins report + lock + stage-c + claims.json + excerpt into a PASS claim", async () => {
     const { readers, target } = makeTarget({
       comparisons: [
         comparison({
-          propertyId: "p1",
+          propertyId: "property-7.claim-held",
           display: { claimText: "// c", sourceLocation: "file.ts:2" },
         }),
       ],
-      locks: { p1: lockFile("p1", "PASS") },
-      stageC: { p1: stageCFile("p1", "PASS") },
-      excerptPropertyIds: ["p1"],
+      locks: { "property-7.claim-held": lockFile("property-7.claim-held", "PASS") },
+      stageC: { "property-7.claim-held": stageCFile("property-7.claim-held", "PASS") },
+      excerptPropertyIds: ["property-7.claim-held"],
+      descriptions: { "claim-held": "A held claim's one-sentence description." },
     });
     const claims = await buildTargetClaims(readers, target);
     expect(claims).toHaveLength(1);
     expect(claims[0]).toMatchObject({
-      propertyId: "p1",
+      propertyId: "property-7.claim-held",
+      claimId: "claim-held",
       claimText: "// c",
       sourceLocation: "file.ts:2",
-      code: "line1\nline2\nline3",
+      description: "A held claim's one-sentence description.",
       verdict: "PASS",
       kiroPrediction: "PASS",
       isLie: false,
     });
+    expect(claims[0].segments).toHaveLength(1);
     expect(claims[0].counterexamplePlain).toBeUndefined();
   });
 
-  it("marks a Confirmed_Bug (non-symptom) FAIL row as a lie with a counterexample", async () => {
+  it("carries the claims.json description verbatim", async () => {
+    const desc = "A 24-hour time parses to minutes since midnight.";
     const { readers, target } = makeTarget({
       comparisons: [
         comparison({
-          propertyId: "p1",
+          propertyId: "property-2.claim-x",
+          display: { claimText: "// c", sourceLocation: "file.ts:2" },
+        }),
+      ],
+      locks: { "property-2.claim-x": lockFile("property-2.claim-x", "PASS") },
+      stageC: { "property-2.claim-x": stageCFile("property-2.claim-x", "PASS") },
+      excerptPropertyIds: ["property-2.claim-x"],
+      descriptions: { "claim-x": desc },
+    });
+    const [claim] = await buildTargetClaims(readers, target);
+    expect(claim.description).toBe(desc);
+  });
+
+  it("marks a Confirmed_Bug (non-symptom) FAIL row as a lie, with story 'how to spot' + counterexample", async () => {
+    const { readers, target } = makeTarget({
+      comparisons: [
+        comparison({
+          propertyId: "property-1.claim-lie",
           predicted: "PASS",
           actual: {
-            propertyId: "p1",
+            propertyId: "property-1.claim-lie",
             outcome: "VERDICT",
             verdict: "FAIL",
             counterexample: {
-              propertyId: "p1",
+              propertyId: "property-1.claim-lie",
               input: '[{"x":1}]',
               observedOutput: "expected 'A' to be 'B'",
             },
@@ -220,25 +291,54 @@ describe("buildTargetClaims", () => {
           },
         }),
       ],
-      locks: { p1: lockFile("p1", "PASS") },
-      stageC: { p1: stageCFile("p1", "FAIL") },
-      excerptPropertyIds: ["p1"],
+      locks: { "property-1.claim-lie": lockFile("property-1.claim-lie", "PASS") },
+      stageC: { "property-1.claim-lie": stageCFile("property-1.claim-lie", "FAIL") },
+      excerptPropertyIds: ["property-1.claim-lie"],
+      story: STORY, // story.propertyId === "property-1.claim-lie"
     });
     const [claim] = await buildTargetClaims(readers, target);
     expect(claim.isLie).toBe(true);
     expect(claim.verdict).toBe("FAIL");
-    expect(claim.counterexamplePlain).toBe(
-      "Expected A; execution produced B.",
-    );
+    // "How to spot it" for a lie is the report story's user-impact wording.
+    expect(claim.howToSpot).toBe("Users see the wrong thing at the top.");
+    expect(claim.counterexamplePlain).toBe("Expected A; execution produced B.");
     expect(claim.rootCauseNote).toBeUndefined();
+  });
+
+  it("gives a held claim a factual 'how to spot' line, with the run count when recorded", async () => {
+    // Without a recorded count -> no number.
+    const noCount = makeTarget({
+      comparisons: [comparison({ propertyId: "property-3.claim-a", display: { claimText: "// a", sourceLocation: "file.ts:2" } })],
+      locks: { "property-3.claim-a": lockFile("property-3.claim-a", "PASS") },
+      stageC: { "property-3.claim-a": stageCFile("property-3.claim-a", "PASS") },
+      excerptPropertyIds: ["property-3.claim-a"],
+    });
+    const [a] = await buildTargetClaims(noCount.readers, noCount.target);
+    expect(a.howToSpot).toBe(
+      "Execution ran generated inputs and every one matched the comment, so the claim held.",
+    );
+
+    // With a recorded numRuns -> includes the number.
+    const withCount = makeTarget({
+      comparisons: [comparison({ propertyId: "property-3.claim-a", display: { claimText: "// a", sourceLocation: "file.ts:2" } })],
+      locks: { "property-3.claim-a": lockFile("property-3.claim-a", "PASS") },
+      stageC: {
+        "property-3.claim-a": stageCFile("property-3.claim-a", "PASS", { numRuns: 100 }),
+      },
+      excerptPropertyIds: ["property-3.claim-a"],
+    });
+    const [b] = await buildTargetClaims(withCount.readers, withCount.target);
+    expect(b.howToSpot).toBe(
+      "Execution ran 100 generated inputs and every one matched the comment, so the claim held.",
+    );
   });
 
   it("treats a symptom FAIL row as NOT a lie and attaches a root-cause note", async () => {
     const { readers, target } = makeTarget({
       comparisons: [
         comparison({
-          propertyId: "p1",
-          actual: { propertyId: "p1", outcome: "VERDICT", verdict: "FAIL" },
+          propertyId: "property-6.claim-symptom",
+          actual: { propertyId: "property-6.claim-symptom", outcome: "VERDICT", verdict: "FAIL" },
           status: "PREDICTION_MISMATCH",
           confirmedBug: true,
           display: {
@@ -248,59 +348,126 @@ describe("buildTargetClaims", () => {
           },
         }),
       ],
-      locks: { p1: lockFile("p1", "PASS") },
-      stageC: { p1: stageCFile("p1", "FAIL") },
-      excerptPropertyIds: ["p1"],
+      locks: { "property-6.claim-symptom": lockFile("property-6.claim-symptom", "PASS") },
+      stageC: { "property-6.claim-symptom": stageCFile("property-6.claim-symptom", "FAIL") },
+      excerptPropertyIds: ["property-6.claim-symptom"],
     });
     const [claim] = await buildTargetClaims(readers, target);
     expect(claim.isLie).toBe(false);
     expect(claim.rootCauseNote).toContain("24h-detection bug");
   });
 
-  it("omits rows that have no committed excerpt", async () => {
+  it("supports a multi-segment excerpt and highlights the claim line inside its segment", async () => {
     const { readers, target } = makeTarget({
       comparisons: [
         comparison({
-          propertyId: "p1",
-          display: { claimText: "// c", sourceLocation: "file.ts:2" },
+          propertyId: "property-1.claim-multi",
+          display: { claimText: "// at line 17", sourceLocation: "file.ts:17" },
         }),
       ],
-      locks: { p1: lockFile("p1", "PASS") },
-      stageC: { p1: stageCFile("p1", "PASS") },
-      excerptPropertyIds: [], // no excerpt for p1
+      locks: { "property-1.claim-multi": lockFile("property-1.claim-multi", "PASS") },
+      stageC: { "property-1.claim-multi": stageCFile("property-1.claim-multi", "PASS") },
+      excerptPropertyIds: ["property-1.claim-multi"],
+      excerptSpecs: {
+        "property-1.claim-multi": {
+          claimLine: 17,
+          segments: [
+            { startLine: 14, endLine: 23 },
+            { startLine: 48, endLine: 54 },
+          ],
+        },
+      },
+      commentRefs: { "claim-multi": "L12 foo ; L17 // at line 17" },
     });
-    expect(await buildTargetClaims(readers, target)).toHaveLength(0);
+    const [claim] = await buildTargetClaims(readers, target);
+    expect(claim.segments.map((s) => [s.startLine, s.endLine])).toEqual([
+      [14, 23],
+      [48, 54],
+    ]);
+    expect(claim.claimLine).toBe(17);
+    expect(claim.sourceLocation).toBe("file.ts:17");
   });
 
-  it("omits non-VERDICT rows", async () => {
+  it("throws when the claim line is not inside any excerpt segment (Fix 3 same-claim check)", async () => {
     const { readers, target } = makeTarget({
       comparisons: [
         comparison({
-          propertyId: "p1",
-          actual: { propertyId: "p1", outcome: "NOT_EXECUTED" },
-          status: "NOT_EXECUTED",
+          propertyId: "property-1.claim-x",
+          display: { claimText: "// c", sourceLocation: "file.ts:99" },
+        }),
+      ],
+      locks: { "property-1.claim-x": lockFile("property-1.claim-x", "PASS") },
+      stageC: { "property-1.claim-x": stageCFile("property-1.claim-x", "PASS") },
+      excerptPropertyIds: ["property-1.claim-x"],
+      excerptSpecs: {
+        "property-1.claim-x": { claimLine: 99, segments: [{ startLine: 14, endLine: 23 }] },
+      },
+      commentRefs: { "claim-x": "L99 // c" },
+    });
+    await expect(buildTargetClaims(readers, target)).rejects.toThrow(
+      /claim line 99 .* not inside any excerpt segment/,
+    );
+  });
+
+  it("throws when the claim line is not referenced by the claim's commentRef (Fix 3 same-claim check)", async () => {
+    const { readers, target } = makeTarget({
+      comparisons: [
+        comparison({
+          propertyId: "property-1.claim-x",
+          display: { claimText: "// c", sourceLocation: "file.ts:20" },
+        }),
+      ],
+      locks: { "property-1.claim-x": lockFile("property-1.claim-x", "PASS") },
+      stageC: { "property-1.claim-x": stageCFile("property-1.claim-x", "PASS") },
+      excerptPropertyIds: ["property-1.claim-x"],
+      excerptSpecs: {
+        "property-1.claim-x": { claimLine: 20, segments: [{ startLine: 14, endLine: 23 }] },
+      },
+      // commentRef points at L14/L17, NOT the claim line 20 -> mismatch.
+      commentRefs: { "claim-x": "L14 foo ; L17 bar" },
+    });
+    await expect(buildTargetClaims(readers, target)).rejects.toThrow(
+      /not referenced by claim claim-x's commentRef/,
+    );
+  });
+
+  it("throws when there is no claims.json entry for the claim id", async () => {
+    const { readers, target } = makeTarget({
+      comparisons: [
+        comparison({
+          propertyId: "property-1.claim-x",
           display: { claimText: "// c", sourceLocation: "file.ts:2" },
         }),
       ],
-      locks: { p1: lockFile("p1", "PASS") },
-      stageC: { p1: stageCFile("p1", "PASS") },
-      excerptPropertyIds: ["p1"],
+      locks: { "property-1.claim-x": lockFile("property-1.claim-x", "PASS") },
+      stageC: { "property-1.claim-x": stageCFile("property-1.claim-x", "PASS") },
+      excerptPropertyIds: ["property-1.claim-x"],
     });
-    expect(await buildTargetClaims(readers, target)).toHaveLength(0);
+    // Remove the claims.json entry by swapping in an empty claims file.
+    const brokenReaders: GameReaders = {
+      ...readers,
+      async readFile(path) {
+        if (path.endsWith("claims.json")) return JSON.stringify({ claims: [] });
+        return readers.readFile(path);
+      },
+    };
+    await expect(buildTargetClaims(brokenReaders, target)).rejects.toThrow(
+      /no claims.json entry for claim-x/,
+    );
   });
 
   it("throws when the report predicted disagrees with the lock", async () => {
     const { readers, target } = makeTarget({
       comparisons: [
         comparison({
-          propertyId: "p1",
-          predicted: "FAIL", // report says FAIL …
+          propertyId: "property-1.claim-x",
+          predicted: "FAIL",
           display: { claimText: "// c", sourceLocation: "file.ts:2" },
         }),
       ],
-      locks: { p1: lockFile("p1", "PASS") }, // … lock says PASS
-      stageC: { p1: stageCFile("p1", "PASS") },
-      excerptPropertyIds: ["p1"],
+      locks: { "property-1.claim-x": lockFile("property-1.claim-x", "PASS") },
+      stageC: { "property-1.claim-x": stageCFile("property-1.claim-x", "PASS") },
+      excerptPropertyIds: ["property-1.claim-x"],
     });
     await expect(buildTargetClaims(readers, target)).rejects.toThrow(
       /prediction mismatch/,
@@ -311,14 +478,14 @@ describe("buildTargetClaims", () => {
     const { readers, target } = makeTarget({
       comparisons: [
         comparison({
-          propertyId: "p1",
-          actual: { propertyId: "p1", outcome: "VERDICT", verdict: "PASS" },
+          propertyId: "property-1.claim-x",
+          actual: { propertyId: "property-1.claim-x", outcome: "VERDICT", verdict: "PASS" },
           display: { claimText: "// c", sourceLocation: "file.ts:2" },
         }),
       ],
-      locks: { p1: lockFile("p1", "PASS") },
-      stageC: { p1: stageCFile("p1", "FAIL") }, // stage-c disagrees
-      excerptPropertyIds: ["p1"],
+      locks: { "property-1.claim-x": lockFile("property-1.claim-x", "PASS") },
+      stageC: { "property-1.claim-x": stageCFile("property-1.claim-x", "FAIL") },
+      excerptPropertyIds: ["property-1.claim-x"],
     });
     await expect(buildTargetClaims(readers, target)).rejects.toThrow(
       /verdict mismatch/,
@@ -329,13 +496,13 @@ describe("buildTargetClaims", () => {
     const { readers, target } = makeTarget({
       comparisons: [
         comparison({
-          propertyId: "p1",
+          propertyId: "property-1.claim-x",
           display: { claimText: "// c", sourceLocation: "file.ts:2" },
         }),
       ],
-      locks: { p1: lockFile("p1", "PASS") },
-      stageC: { p1: stageCFile("p1", "PASS") },
-      excerptPropertyIds: ["p1"],
+      locks: { "property-1.claim-x": lockFile("property-1.claim-x", "PASS") },
+      stageC: { "property-1.claim-x": stageCFile("property-1.claim-x", "PASS") },
+      excerptPropertyIds: ["property-1.claim-x"],
       excerptHashOverride: "deadbeef",
       sandboxPresent: true,
     });
@@ -348,108 +515,24 @@ describe("buildTargetClaims", () => {
     const { readers, target } = makeTarget({
       comparisons: [
         comparison({
-          propertyId: "p1",
+          propertyId: "property-1.claim-x",
           display: { claimText: "// c", sourceLocation: "file.ts:2" },
         }),
       ],
-      locks: { p1: lockFile("p1", "PASS") },
-      stageC: { p1: stageCFile("p1", "PASS") },
-      excerptPropertyIds: ["p1"],
-      excerptHashOverride: "deadbeef", // would drift, but sandbox absent
+      locks: { "property-1.claim-x": lockFile("property-1.claim-x", "PASS") },
+      stageC: { "property-1.claim-x": stageCFile("property-1.claim-x", "PASS") },
+      excerptPropertyIds: ["property-1.claim-x"],
+      excerptHashOverride: "deadbeef",
       sandboxPresent: false,
     });
     const claims = await buildTargetClaims(readers, target);
     expect(claims).toHaveLength(1);
   });
-
-  it("throws when the excerpt's claim line is outside its own range (Fix 2)", async () => {
-    const { readers, target } = makeTarget({
-      comparisons: [
-        comparison({
-          propertyId: "p1",
-          display: { claimText: "// c", sourceLocation: "file.ts:99" },
-        }),
-      ],
-      locks: { p1: lockFile("p1", "PASS") },
-      stageC: { p1: stageCFile("p1", "PASS") },
-      excerptPropertyIds: ["p1"],
-      // excerpt covers lines 10-12 but the claim line is 99 -> out of range.
-      excerptSpecs: { p1: { startLine: 10, endLine: 12, claimLine: 99 } },
-      sandboxPresent: false,
-    });
-    await expect(buildTargetClaims(readers, target)).rejects.toThrow(
-      /claim line 99 .* outside its excerpt range \[10, 12\]/,
-    );
-  });
-
-  it("falls back to the story comment when the report claim line is outside the excerpt (Fix 2)", async () => {
-    // Report headlines a comment at :17 (outside the excerpt L48-61); the story
-    // (about p1) quotes the root-cause comment at :51, which IS inside. The
-    // game must show the story comment, consistent with the report story.
-    const story: LanternStory = {
-      ...STORY,
-      propertyId: "p1",
-      comment: {
-        claimText: "// Check for 24 hours",
-        sourceLocation: "openingHoursParser.ts:51",
-      },
-    };
-    const { readers } = makeTarget({
-      comparisons: [
-        comparison({
-          propertyId: "p1",
-          actual: { propertyId: "p1", outcome: "VERDICT", verdict: "FAIL" },
-          confirmedBug: true,
-          display: {
-            claimText: '// Handle 24-hour format (e.g., "22:00")',
-            sourceLocation: "openingHoursParser.ts:17",
-          },
-        }),
-      ],
-      locks: { p1: lockFile("p1", "PASS") },
-      stageC: { p1: stageCFile("p1", "FAIL") },
-      excerptPropertyIds: ["p1"],
-      excerptSpecs: {
-        p1: {
-          sourceFile: "sandbox/moodplays/src/utils/openingHoursParser.ts",
-          startLine: 48,
-          endLine: 61,
-          claimLine: 51,
-          claimText: "  // Check for 24 hours",
-        },
-      },
-      sandboxPresent: false,
-    });
-    const targetWithStory: GameTargetSource = {
-      id: "demo",
-      label: "Demo",
-      rootAbs: ROOT,
-      repoRootAbs: "/abs",
-      report: {
-        comparisons: [
-          comparison({
-            propertyId: "p1",
-            actual: { propertyId: "p1", outcome: "VERDICT", verdict: "FAIL" },
-            confirmedBug: true,
-            display: {
-              claimText: '// Handle 24-hour format (e.g., "22:00")',
-              sourceLocation: "openingHoursParser.ts:17",
-            },
-          }),
-        ],
-        observedDeviations: [],
-        noConfirmedBug: false,
-        noObservedDeviation: true,
-        generatedAt: "2026-01-01T00:00:00.000Z",
-      },
-      story,
-    };
-    const [claim] = await buildTargetClaims(readers, targetWithStory);
-    expect(claim.claimText).toBe("// Check for 24 hours");
-    expect(claim.sourceLocation).toBe("openingHoursParser.ts:51");
-    expect(claim.claimLine).toBe(51);
-  });
 });
+
+/* -------------------------------------------------------------------------- */
+/* buildGameData                                                              */
+/* -------------------------------------------------------------------------- */
 
 describe("buildGameData", () => {
   function target(opts: FixtureOpts): GameTargetSource {
@@ -459,20 +542,27 @@ describe("buildGameData", () => {
     return makeTarget(opts).readers;
   }
 
+  /** A held PASS row + its excerpt spec (disjoint range) in one file. */
+  function heldRow(pid: string, line: number): PropertyComparison {
+    return comparison({
+      propertyId: pid,
+      display: { claimText: `// ${pid}`, sourceLocation: `x:${line}` },
+    });
+  }
+
   it("requires exactly two lies across targets", async () => {
-    // One target with a single lie -> only 1 lie total -> throw.
     const opts: FixtureOpts = {
       comparisons: [
         comparison({
-          propertyId: "p1",
-          actual: { propertyId: "p1", outcome: "VERDICT", verdict: "FAIL" },
+          propertyId: "property-1.claim-lie",
+          actual: { propertyId: "property-1.claim-lie", outcome: "VERDICT", verdict: "FAIL" },
           confirmedBug: true,
           display: { claimText: "// lie", sourceLocation: "f:2" },
         }),
       ],
-      locks: { p1: lockFile("p1", "PASS") },
-      stageC: { p1: stageCFile("p1", "FAIL") },
-      excerptPropertyIds: ["p1"],
+      locks: { "property-1.claim-lie": lockFile("property-1.claim-lie", "PASS") },
+      stageC: { "property-1.claim-lie": stageCFile("property-1.claim-lie", "FAIL") },
+      excerptPropertyIds: ["property-1.claim-lie"],
       sandboxPresent: false,
     };
     await expect(
@@ -480,9 +570,8 @@ describe("buildGameData", () => {
     ).rejects.toThrow(/exactly 2 lie claims/);
   });
 
-  it("requires at least four held claims", async () => {
-    // Two lies, zero PASS in a single target -> not enough held -> throw.
-    const lieRow = (pid: string): PropertyComparison =>
+  it("requires at least four non-overlapping held claims", async () => {
+    const lie = (pid: string): PropertyComparison =>
       comparison({
         propertyId: pid,
         actual: { propertyId: pid, outcome: "VERDICT", verdict: "FAIL" },
@@ -490,10 +579,16 @@ describe("buildGameData", () => {
         display: { claimText: "// lie", sourceLocation: "f:2" },
       });
     const opts: FixtureOpts = {
-      comparisons: [lieRow("p1"), lieRow("p2")],
-      locks: { p1: lockFile("p1", "PASS"), p2: lockFile("p2", "PASS") },
-      stageC: { p1: stageCFile("p1", "FAIL"), p2: stageCFile("p2", "FAIL") },
-      excerptPropertyIds: ["p1", "p2"],
+      comparisons: [lie("property-1.claim-lie"), lie("property-2.claim-lie2")],
+      locks: {
+        "property-1.claim-lie": lockFile("property-1.claim-lie", "PASS"),
+        "property-2.claim-lie2": lockFile("property-2.claim-lie2", "PASS"),
+      },
+      stageC: {
+        "property-1.claim-lie": stageCFile("property-1.claim-lie", "FAIL"),
+        "property-2.claim-lie2": stageCFile("property-2.claim-lie2", "FAIL"),
+      },
+      excerptPropertyIds: ["property-1.claim-lie", "property-2.claim-lie2"],
       sandboxPresent: false,
     };
     await expect(
@@ -502,40 +597,41 @@ describe("buildGameData", () => {
   });
 
   it("assembles a valid pool (2 lies + >= 4 held) with credits", async () => {
-    const passRows = ["p3", "p4", "p5", "p6"].map((pid) =>
-      comparison({
-        propertyId: pid,
-        display: { claimText: `// ${pid}`, sourceLocation: `f:${pid}` },
-      }),
-    );
-    const lieRow = comparison({
-      propertyId: "p1",
-      actual: { propertyId: "p1", outcome: "VERDICT", verdict: "FAIL" },
-      confirmedBug: true,
-      display: {
-        claimText: "// lie",
-        sourceLocation: "f:2",
-        evidence: { expected: "A", actual: "B" },
+    const lie = comparison({
+      propertyId: "property-1.claim-lie",
+      actual: {
+        propertyId: "property-1.claim-lie",
+        outcome: "VERDICT",
+        verdict: "FAIL",
+        counterexample: { propertyId: "property-1.claim-lie", input: "[]", observedOutput: "expected 'A' to be 'B'" },
       },
+      confirmedBug: true,
+      display: { claimText: "// lie", sourceLocation: "f:2", evidence: { expected: "A", actual: "B" } },
     });
-    const lieRow2 = { ...lieRow, propertyId: "p2" } as PropertyComparison;
-
-    const allPids = ["p1", "p2", "p3", "p4", "p5", "p6"];
-    // Give every claim its OWN non-overlapping excerpt range so no held claim
-    // is excluded by the fairness overlap check.
+    const lie2 = comparison({
+      propertyId: "property-2.claim-lie2",
+      actual: { propertyId: "property-2.claim-lie2", outcome: "VERDICT", verdict: "FAIL" },
+      confirmedBug: true,
+      display: { claimText: "// lie2", sourceLocation: "f:2" },
+    });
+    const held = ["property-3.claim-h1", "property-4.claim-h2", "property-5.claim-h3", "property-6.claim-h4"].map(
+      (pid, i) => heldRow(pid, i * 10 + 2),
+    );
+    const comparisons = [lie, lie2, ...held];
+    const allPids = comparisons.map((c) => c.propertyId);
     const excerptSpecs: Record<string, ExcerptSpec> = Object.fromEntries(
       allPids.map((p, i) => [
         p,
-        { startLine: i * 10 + 1, endLine: i * 10 + 3, claimLine: i * 10 + 2 },
+        { startLine: i * 10 + 1, endLine: i * 10 + 3, claimLine: i * 10 + 2, segments: [{ startLine: i * 10 + 1, endLine: i * 10 + 3 }] },
       ]),
     );
     const opts: FixtureOpts = {
-      comparisons: [lieRow, lieRow2, ...passRows],
+      comparisons,
       locks: Object.fromEntries(allPids.map((p) => [p, lockFile(p, "PASS")])),
       stageC: Object.fromEntries(
         allPids.map((p) => [
           p,
-          stageCFile(p, p === "p1" || p === "p2" ? "FAIL" : "PASS"),
+          stageCFile(p, p.startsWith("property-1.") || p.startsWith("property-2.") ? "FAIL" : "PASS"),
         ]),
       ),
       excerptPropertyIds: allPids,
@@ -550,51 +646,38 @@ describe("buildGameData", () => {
     ]);
   });
 
-  it("excludes a held claim whose excerpt overlaps a lie's excerpt in the same file (Fix 3)", async () => {
+  it("excludes a held claim whose excerpt overlaps a lie's excerpt in the same file (Fix 3 fairness)", async () => {
     const SAME = "sandbox/t/opening.ts";
-    // p1 lie covers L48-61. "overlap" (held) covers L53-54 — inside the lie's
-    // span, so it would SHOW the buggy line and must be excluded. The other
-    // held claims sit in disjoint ranges and survive.
-    const lieRow = comparison({
-      propertyId: "p1",
-      actual: { propertyId: "p1", outcome: "VERDICT", verdict: "FAIL" },
+    const lie = comparison({
+      propertyId: "property-1.claim-lie",
+      actual: { propertyId: "property-1.claim-lie", outcome: "VERDICT", verdict: "FAIL" },
       confirmedBug: true,
       display: { claimText: "// lie", sourceLocation: `${SAME}:51` },
     });
-    const lieRow2 = comparison({
-      propertyId: "p2",
-      actual: { propertyId: "p2", outcome: "VERDICT", verdict: "FAIL" },
+    const lie2 = comparison({
+      propertyId: "property-2.claim-lie2",
+      actual: { propertyId: "property-2.claim-lie2", outcome: "VERDICT", verdict: "FAIL" },
       confirmedBug: true,
       display: { claimText: "// lie2", sourceLocation: "sandbox/t/other.ts:5" },
     });
-    const held = (pid: string, line: number) =>
-      comparison({
-        propertyId: pid,
-        display: { claimText: `// ${pid}`, sourceLocation: `x:${line}` },
-      });
     const comparisons = [
-      lieRow,
-      lieRow2,
-      held("overlap", 53),
-      held("h1", 70),
-      held("h2", 80),
-      held("h3", 90),
-      held("h4", 100),
+      lie,
+      lie2,
+      heldRow("property-3.claim-overlap", 53),
+      heldRow("property-4.claim-h1", 70),
+      heldRow("property-5.claim-h2", 80),
+      heldRow("property-6.claim-h3", 90),
+      heldRow("property-7.claim-h4", 100),
     ];
     const allPids = comparisons.map((c) => c.propertyId);
     const excerptSpecs: Record<string, ExcerptSpec> = {
-      p1: { sourceFile: SAME, startLine: 48, endLine: 61, claimLine: 51 },
-      p2: {
-        sourceFile: "sandbox/t/other.ts",
-        startLine: 1,
-        endLine: 8,
-        claimLine: 5,
-      },
-      overlap: { sourceFile: SAME, startLine: 53, endLine: 54, claimLine: 53 },
-      h1: { sourceFile: SAME, startLine: 70, endLine: 72, claimLine: 70 },
-      h2: { sourceFile: SAME, startLine: 80, endLine: 82, claimLine: 80 },
-      h3: { sourceFile: SAME, startLine: 90, endLine: 92, claimLine: 90 },
-      h4: { sourceFile: SAME, startLine: 100, endLine: 102, claimLine: 100 },
+      "property-1.claim-lie": { sourceFile: SAME, claimLine: 51, segments: [{ startLine: 48, endLine: 54 }] },
+      "property-2.claim-lie2": { sourceFile: "sandbox/t/other.ts", claimLine: 5, segments: [{ startLine: 1, endLine: 8 }] },
+      "property-3.claim-overlap": { sourceFile: SAME, claimLine: 53, segments: [{ startLine: 53, endLine: 54 }] },
+      "property-4.claim-h1": { sourceFile: SAME, claimLine: 70, segments: [{ startLine: 70, endLine: 72 }] },
+      "property-5.claim-h2": { sourceFile: SAME, claimLine: 80, segments: [{ startLine: 80, endLine: 82 }] },
+      "property-6.claim-h3": { sourceFile: SAME, claimLine: 90, segments: [{ startLine: 90, endLine: 92 }] },
+      "property-7.claim-h4": { sourceFile: SAME, claimLine: 100, segments: [{ startLine: 100, endLine: 102 }] },
     };
     const opts: FixtureOpts = {
       comparisons,
@@ -602,7 +685,7 @@ describe("buildGameData", () => {
       stageC: Object.fromEntries(
         allPids.map((p) => [
           p,
-          stageCFile(p, p === "p1" || p === "p2" ? "FAIL" : "PASS"),
+          stageCFile(p, p.startsWith("property-1.") || p.startsWith("property-2.") ? "FAIL" : "PASS"),
         ]),
       ),
       excerptPropertyIds: allPids,
@@ -610,9 +693,9 @@ describe("buildGameData", () => {
       sandboxPresent: false,
     };
     const data = await buildGameData(readers(opts), [target(opts)]);
-    const ids = data.claims.map((c) => c.propertyId);
-    expect(ids).not.toContain("overlap"); // excluded by the overlap check
-    expect(ids).toContain("p1"); // the lie itself is kept
+    const ids = data.claims.map((c) => c.claimId);
+    expect(ids).not.toContain("claim-overlap");
+    expect(ids).toContain("claim-lie");
     expect(data.claims.filter((c) => c.verdict === "PASS" && !c.isLie)).toHaveLength(4);
   });
 });

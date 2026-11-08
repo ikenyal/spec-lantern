@@ -3,101 +3,146 @@
     {
       "propertyId": "property-1.claim-24h-to-minutes",
       "sourceFile": "sandbox/moodplays/src/utils/openingHoursParser.ts",
-      "startLine": 48,
-      "endLine": 61,
-      "claimLine": 51,
-      "claimText": "  // Check for 24 hours\r",
-      "code": "function extractClosingTime(openingHours: string): string | null {\r\n  if (!openingHours) return null;\r\n  \r\n  // Check for 24 hours\r\n  if (openingHours.toLowerCase().includes('24')) {\r\n    return null; // Open 24 hours, never closing\r\n  }\r\n  \r\n  // Try to extract closing time from various formats\r\n  // Format: \"HH:MM AM - HH:MM PM\" or \"HH:MM - HH:MM\"\r\n  const rangeMatch = openingHours.match(/[-–]\\s*(\\d{1,2}:\\d{2}(?:\\s*(?:AM|PM))?)/i);\r\n  if (rangeMatch) {\r\n    return rangeMatch[1].trim();\r\n  }\r",
+      "claimLine": 17,
+      "claimText": "  // Handle 24-hour format (e.g., \"22:00\")\r",
+      "segments": [
+        {
+          "startLine": 14,
+          "endLine": 23,
+          "code": "function parseTimeToMinutes(timeStr: string): number | null {\r\n  if (!timeStr) return null;\r\n  \r\n  // Handle 24-hour format (e.g., \"22:00\")\r\n  const match24 = timeStr.match(/^(\\d{1,2}):(\\d{2})$/);\r\n  if (match24) {\r\n    const hours = parseInt(match24[1], 10);\r\n    const minutes = parseInt(match24[2], 10);\r\n    return hours * 60 + minutes;\r\n  }\r"
+        },
+        {
+          "startLine": 48,
+          "endLine": 54,
+          "code": "function extractClosingTime(openingHours: string): string | null {\r\n  if (!openingHours) return null;\r\n  \r\n  // Check for 24 hours\r\n  if (openingHours.toLowerCase().includes('24')) {\r\n    return null; // Open 24 hours, never closing\r\n  }\r"
+        }
+      ],
       "fileSha256": "05ba3020a91f935cdca3970805f55a5d86c500759552a2b059b6bb792b5ca96e"
     },
     {
       "propertyId": "property-2.claim-12h-to-minutes",
       "sourceFile": "sandbox/moodplays/src/utils/openingHoursParser.ts",
-      "startLine": 25,
-      "endLine": 37,
       "claimLine": 25,
       "claimText": "  // Handle 12-hour format (e.g., \"10:00 PM\")\r",
-      "code": "  // Handle 12-hour format (e.g., \"10:00 PM\")\r\n  const match12 = timeStr.match(/^(\\d{1,2}):(\\d{2})\\s*(AM|PM)$/i);\r\n  if (match12) {\r\n    let hours = parseInt(match12[1], 10);\r\n    const minutes = parseInt(match12[2], 10);\r\n    const period = match12[3].toUpperCase();\r\n    \r\n    if (period === 'PM' && hours !== 12) hours += 12;\r\n    if (period === 'AM' && hours === 12) hours = 0;\r\n    \r\n    return hours * 60 + minutes;\r\n  }\r\n  \r",
+      "segments": [
+        {
+          "startLine": 25,
+          "endLine": 37,
+          "code": "  // Handle 12-hour format (e.g., \"10:00 PM\")\r\n  const match12 = timeStr.match(/^(\\d{1,2}):(\\d{2})\\s*(AM|PM)$/i);\r\n  if (match12) {\r\n    let hours = parseInt(match12[1], 10);\r\n    const minutes = parseInt(match12[2], 10);\r\n    const period = match12[3].toUpperCase();\r\n    \r\n    if (period === 'PM' && hours !== 12) hours += 12;\r\n    if (period === 'AM' && hours === 12) hours = 0;\r\n    \r\n    return hours * 60 + minutes;\r\n  }\r\n  \r"
+        }
+      ],
       "fileSha256": "05ba3020a91f935cdca3970805f55a5d86c500759552a2b059b6bb792b5ca96e"
     },
     {
       "propertyId": "property-3.claim-extract-closing-formats",
       "sourceFile": "sandbox/moodplays/src/utils/openingHoursParser.ts",
-      "startLine": 55,
-      "endLine": 61,
       "claimLine": 57,
       "claimText": "  // Format: \"HH:MM AM - HH:MM PM\" or \"HH:MM - HH:MM\"\r",
-      "code": "  \r\n  // Try to extract closing time from various formats\r\n  // Format: \"HH:MM AM - HH:MM PM\" or \"HH:MM - HH:MM\"\r\n  const rangeMatch = openingHours.match(/[-–]\\s*(\\d{1,2}:\\d{2}(?:\\s*(?:AM|PM))?)/i);\r\n  if (rangeMatch) {\r\n    return rangeMatch[1].trim();\r\n  }\r",
+      "segments": [
+        {
+          "startLine": 55,
+          "endLine": 61,
+          "code": "  \r\n  // Try to extract closing time from various formats\r\n  // Format: \"HH:MM AM - HH:MM PM\" or \"HH:MM - HH:MM\"\r\n  const rangeMatch = openingHours.match(/[-–]\\s*(\\d{1,2}:\\d{2}(?:\\s*(?:AM|PM))?)/i);\r\n  if (rangeMatch) {\r\n    return rangeMatch[1].trim();\r\n  }\r"
+        }
+      ],
       "fileSha256": "05ba3020a91f935cdca3970805f55a5d86c500759552a2b059b6bb792b5ca96e"
     },
     {
       "propertyId": "property-4.claim-24h-never-closing",
       "sourceFile": "sandbox/moodplays/src/utils/openingHoursParser.ts",
-      "startLine": 48,
-      "endLine": 54,
       "claimLine": 53,
       "claimText": "    return null; // Open 24 hours, never closing\r",
-      "code": "function extractClosingTime(openingHours: string): string | null {\r\n  if (!openingHours) return null;\r\n  \r\n  // Check for 24 hours\r\n  if (openingHours.toLowerCase().includes('24')) {\r\n    return null; // Open 24 hours, never closing\r\n  }\r",
+      "segments": [
+        {
+          "startLine": 48,
+          "endLine": 54,
+          "code": "function extractClosingTime(openingHours: string): string | null {\r\n  if (!openingHours) return null;\r\n  \r\n  // Check for 24 hours\r\n  if (openingHours.toLowerCase().includes('24')) {\r\n    return null; // Open 24 hours, never closing\r\n  }\r"
+        }
+      ],
       "fileSha256": "05ba3020a91f935cdca3970805f55a5d86c500759552a2b059b6bb792b5ca96e"
     },
     {
       "propertyId": "property-5.claim-after-midnight",
       "sourceFile": "sandbox/moodplays/src/utils/openingHoursParser.ts",
-      "startLine": 90,
-      "endLine": 98,
       "claimLine": 93,
       "claimText": "  // Handle cases where closing time is after midnight (e.g., 1:00 AM)\r",
-      "code": "  const now = new Date();\r\n  const currentMinutes = now.getHours() * 60 + now.getMinutes();\r\n  \r\n  // Handle cases where closing time is after midnight (e.g., 1:00 AM)\r\n  let minutesUntilClose = closeMinutes - currentMinutes;\r\n  if (minutesUntilClose < 0) {\r\n    // Closing time might be tomorrow (past midnight)\r\n    minutesUntilClose += 24 * 60;\r\n  }\r",
+      "segments": [
+        {
+          "startLine": 90,
+          "endLine": 98,
+          "code": "  const now = new Date();\r\n  const currentMinutes = now.getHours() * 60 + now.getMinutes();\r\n  \r\n  // Handle cases where closing time is after midnight (e.g., 1:00 AM)\r\n  let minutesUntilClose = closeMinutes - currentMinutes;\r\n  if (minutesUntilClose < 0) {\r\n    // Closing time might be tomorrow (past midnight)\r\n    minutesUntilClose += 24 * 60;\r\n  }\r"
+        }
+      ],
       "fileSha256": "05ba3020a91f935cdca3970805f55a5d86c500759552a2b059b6bb792b5ca96e"
     },
     {
       "propertyId": "property-6.claim-stale-closed",
       "sourceFile": "sandbox/moodplays/src/utils/openingHoursParser.ts",
-      "startLine": 93,
-      "endLine": 103,
       "claimLine": 100,
       "claimText": "  // If more than 12 hours until close, it's probably already closed from yesterday\r",
-      "code": "  // Handle cases where closing time is after midnight (e.g., 1:00 AM)\r\n  let minutesUntilClose = closeMinutes - currentMinutes;\r\n  if (minutesUntilClose < 0) {\r\n    // Closing time might be tomorrow (past midnight)\r\n    minutesUntilClose += 24 * 60;\r\n  }\r\n  \r\n  // If more than 12 hours until close, it's probably already closed from yesterday\r\n  if (minutesUntilClose > 12 * 60) {\r\n    return { isClosingSoon: false, minutesUntilClose: null, closingTime };\r\n  }\r",
+      "segments": [
+        {
+          "startLine": 93,
+          "endLine": 103,
+          "code": "  // Handle cases where closing time is after midnight (e.g., 1:00 AM)\r\n  let minutesUntilClose = closeMinutes - currentMinutes;\r\n  if (minutesUntilClose < 0) {\r\n    // Closing time might be tomorrow (past midnight)\r\n    minutesUntilClose += 24 * 60;\r\n  }\r\n  \r\n  // If more than 12 hours until close, it's probably already closed from yesterday\r\n  if (minutesUntilClose > 12 * 60) {\r\n    return { isClosingSoon: false, minutesUntilClose: null, closingTime };\r\n  }\r"
+        }
+      ],
       "fileSha256": "05ba3020a91f935cdca3970805f55a5d86c500759552a2b059b6bb792b5ca96e"
     },
     {
       "propertyId": "property-7.claim-format-until-close",
       "sourceFile": "sandbox/moodplays/src/utils/openingHoursParser.ts",
-      "startLine": 112,
-      "endLine": 125,
       "claimLine": 113,
       "claimText": " * Format minutes until close into a human-readable string\r",
-      "code": "/**\r\n * Format minutes until close into a human-readable string\r\n */\r\nexport function formatTimeUntilClose(minutes: number): string {\r\n  if (minutes <= 0) return 'Closing now';\r\n  if (minutes < 60) return `Closes in ${minutes} min`;\r\n  \r\n  const hours = Math.floor(minutes / 60);\r\n  const remainingMinutes = minutes % 60;\r\n  \r\n  if (remainingMinutes === 0) {\r\n    return `Closes in ${hours}h`;\r\n  }\r\n  return `Closes in ${hours}h ${remainingMinutes}m`;\r",
+      "segments": [
+        {
+          "startLine": 112,
+          "endLine": 125,
+          "code": "/**\r\n * Format minutes until close into a human-readable string\r\n */\r\nexport function formatTimeUntilClose(minutes: number): string {\r\n  if (minutes <= 0) return 'Closing now';\r\n  if (minutes < 60) return `Closes in ${minutes} min`;\r\n  \r\n  const hours = Math.floor(minutes / 60);\r\n  const remainingMinutes = minutes % 60;\r\n  \r\n  if (remainingMinutes === 0) {\r\n    return `Closes in ${hours}h`;\r\n  }\r\n  return `Closes in ${hours}h ${remainingMinutes}m`;\r"
+        }
+      ],
       "fileSha256": "05ba3020a91f935cdca3970805f55a5d86c500759552a2b059b6bb792b5ca96e"
     },
     {
       "propertyId": "property-8.claim-haversine-distance",
       "sourceFile": "sandbox/moodplays/src/utils/distanceCalculator.ts",
-      "startLine": 1,
-      "endLine": 16,
       "claimLine": 2,
       "claimText": " * Calculate distance between two coordinates using the Haversine formula\r",
-      "code": "/**\r\n * Calculate distance between two coordinates using the Haversine formula\r\n * @param lat1 - Latitude of point 1\r\n * @param lon1 - Longitude of point 1\r\n * @param lat2 - Latitude of point 2\r\n * @param lon2 - Longitude of point 2\r\n * @returns Distance in kilometers\r\n */\r\nexport function calculateDistance(\r\n  lat1: number,\r\n  lon1: number,\r\n  lat2: number,\r\n  lon2: number\r\n): number {\r\n  const R = 6371; // Earth's radius in kilometers\r\n  const dLat = toRadians(lat2 - lat1);\r",
+      "segments": [
+        {
+          "startLine": 1,
+          "endLine": 16,
+          "code": "/**\r\n * Calculate distance between two coordinates using the Haversine formula\r\n * @param lat1 - Latitude of point 1\r\n * @param lon1 - Longitude of point 1\r\n * @param lat2 - Latitude of point 2\r\n * @param lon2 - Longitude of point 2\r\n * @returns Distance in kilometers\r\n */\r\nexport function calculateDistance(\r\n  lat1: number,\r\n  lon1: number,\r\n  lat2: number,\r\n  lon2: number\r\n): number {\r\n  const R = 6371; // Earth's radius in kilometers\r\n  const dLat = toRadians(lat2 - lat1);\r"
+        }
+      ],
       "fileSha256": "1f064138bc8947f5456ba3756244a54eecb2f9ba3037c406f0eba8b4dbac3037"
     },
     {
       "propertyId": "property-9.claim-format-distance",
       "sourceFile": "sandbox/moodplays/src/utils/distanceCalculator.ts",
-      "startLine": 34,
-      "endLine": 44,
       "claimLine": 36,
       "claimText": " * @returns Formatted string (e.g., \"1.2 km\" or \"500 m\")\r",
-      "code": " * Format distance for display\r\n * @param km - Distance in kilometers\r\n * @returns Formatted string (e.g., \"1.2 km\" or \"500 m\")\r\n */\r\nexport function formatDistance(km: number): string {\r\n  if (km < 1) {\r\n    return `${Math.round(km * 1000)} m`;\r\n  }\r\n  return `${km.toFixed(1)} km`;\r\n}\r\n",
+      "segments": [
+        {
+          "startLine": 34,
+          "endLine": 44,
+          "code": " * Format distance for display\r\n * @param km - Distance in kilometers\r\n * @returns Formatted string (e.g., \"1.2 km\" or \"500 m\")\r\n */\r\nexport function formatDistance(km: number): string {\r\n  if (km < 1) {\r\n    return `${Math.round(km * 1000)} m`;\r\n  }\r\n  return `${km.toFixed(1)} km`;\r\n}\r\n"
+        }
+      ],
       "fileSha256": "1f064138bc8947f5456ba3756244a54eecb2f9ba3037c406f0eba8b4dbac3037"
     },
     {
       "propertyId": "property-10.claim-mood-categories-lookup",
       "sourceFile": "sandbox/moodplays/src/utils/moodMapper.ts",
-      "startLine": 26,
-      "endLine": 31,
       "claimLine": 29,
       "claimText": "    categories: ['restaurant', 'cafe', 'bar'], // Restaurants, cafes, bars for dates\r",
-      "code": "    emoji: '❤️',\r\n    description: 'Romantic vibes',\r\n    color: 'mood-date',\r\n    categories: ['restaurant', 'cafe', 'bar'], // Restaurants, cafes, bars for dates\r\n  },\r\n  {\r",
+      "segments": [
+        {
+          "startLine": 26,
+          "endLine": 31,
+          "code": "    emoji: '❤️',\r\n    description: 'Romantic vibes',\r\n    color: 'mood-date',\r\n    categories: ['restaurant', 'cafe', 'bar'], // Restaurants, cafes, bars for dates\r\n  },\r\n  {\r"
+        }
+      ],
       "fileSha256": "4a92c771cc471c6a33f83bce8069e4c4ff4c35d1949343e34df3c419634eeccb"
     }
   ]

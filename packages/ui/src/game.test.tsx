@@ -28,14 +28,14 @@ function claim(
 ): GameClaim {
   return {
     propertyId,
+    claimId: `claim-${propertyId}`,
     targetId: "demo",
     targetLabel: "Demo",
     claimText: `// claim ${propertyId}`,
-    sourceLocation: `file.ts:${propertyId}`,
-    code: "lineA\nlineB\nlineC",
+    description: `Description of ${propertyId}.`,
+    sourceLocation: `file.ts:11`,
+    segments: [{ startLine: 10, endLine: 12, code: "lineA\nlineB\nlineC" }],
     sourceFile: "sandbox/demo/file.ts",
-    startLine: 10,
-    endLine: 12,
     claimLine: 11,
     verdict,
     kiroPrediction,
@@ -49,11 +49,15 @@ const DATA: GameData = {
   claims: [
     claim("lie1", "FAIL", "PASS", true, {
       counterexamplePlain: "Expected X; execution produced Y.",
+      howToSpot: "The top row is wrong half the year.",
     }),
     claim("lie2", "FAIL", "PASS", true, {
       counterexamplePlain: "Expected A; execution produced B.",
+      howToSpot: "The close time is dropped.",
     }),
-    claim("h1", "PASS", "PASS", false),
+    claim("h1", "PASS", "PASS", false, {
+      howToSpot: "Execution ran generated inputs and every one matched the comment, so the claim held.",
+    }),
     claim("h2", "PASS", "PASS", false),
     claim("h3", "PASS", "PASS", false),
     claim("h4", "PASS", "PASS", false),
@@ -108,17 +112,93 @@ describe("GameView rounds", () => {
       first.claimText,
     );
 
+    // Fix 1: the claim description (verbatim) under the comment, then the
+    // question "Is that true?".
+    const desc = screen.getByTestId(GAME_TEST_IDS.description).textContent ?? "";
+    expect(desc).toContain("The comment claims:");
+    expect(desc).toContain(first.description);
+    expect(screen.getByTestId(GAME_TEST_IDS.question).textContent).toContain(
+      "Is that true?",
+    );
+
     const code = screen.getByTestId(GAME_TEST_IDS.code);
     // line numbers are the real source lines 10..12
     expect(code.textContent).toContain("10");
     expect(code.textContent).toContain("12");
-    // the highlighted line is claimLine (11) -> offset 1 -> "lineB"
+    // the highlighted line is claimLine (11) -> "lineB"
     const highlighted = code.querySelector('[data-claim-line="true"]');
     expect(highlighted).not.toBeNull();
     expect(highlighted?.textContent).toContain("lineB");
 
     expect(screen.getByTestId(GAME_TEST_IDS.trust)).toBeTruthy();
     expect(screen.getByTestId(GAME_TEST_IDS.doubt)).toBeTruthy();
+  });
+
+  it("renders a multi-segment excerpt with a visible line gap and highlights the claim line in its segment", () => {
+    const multi: GameData = {
+      generatedAt: "x",
+      claims: [
+        claim("lie1", "FAIL", "PASS", true, {
+          claimLine: 17,
+          sourceLocation: "file.ts:17",
+          segments: [
+            { startLine: 14, endLine: 18, code: "l14\nl15\nl16\nl17\nl18" },
+            { startLine: 48, endLine: 50, code: "l48\nl49\nl50" },
+          ],
+        }),
+        claim("lie2", "FAIL", "PASS", true),
+        claim("h1", "PASS", "PASS", false),
+        claim("h2", "PASS", "PASS", false),
+        claim("h3", "PASS", "PASS", false),
+        claim("h4", "PASS", "PASS", false),
+      ],
+      credits: [],
+    };
+    render(<GameView data={multi} seed={SEED} />);
+    fireEvent.click(screen.getByTestId(GAME_TEST_IDS.start));
+    const rounds = selectRounds(multi, SEED);
+    // Advance to the multi-segment claim (lie1).
+    for (let i = 0; i < rounds.length; i++) {
+      if (rounds[i].propertyId === "lie1") {
+        const code = screen.getByTestId(GAME_TEST_IDS.code);
+        // both segments present and the gap marker between them
+        expect(code.textContent).toContain("l17");
+        expect(code.textContent).toContain("l48");
+        expect(code.textContent).toContain("omitted");
+        const gap = code.querySelector(".game-code__gap");
+        expect(gap).not.toBeNull();
+        // claim line 17 is highlighted (in the first segment)
+        const hi = code.querySelector('[data-claim-line="true"]');
+        expect(hi?.textContent).toContain("l17");
+        break;
+      }
+      fireEvent.click(screen.getByTestId(GAME_TEST_IDS.doubt));
+      fireEvent.click(screen.getByTestId(GAME_TEST_IDS.next));
+    }
+  });
+
+  it("shows 'How to spot it' with the verified text for a lie and a held claim (Fix 2)", () => {
+    render(<GameView data={DATA} seed={SEED} />);
+    fireEvent.click(screen.getByTestId(GAME_TEST_IDS.start));
+    const rounds = selectRounds(DATA, SEED);
+    for (let i = 0; i < rounds.length; i++) {
+      const r = rounds[i];
+      fireEvent.click(screen.getByTestId(r.isLie ? GAME_TEST_IDS.trust : GAME_TEST_IDS.doubt));
+      if (r.howToSpot) {
+        const spot = screen.getByTestId(GAME_TEST_IDS.howToSpot).textContent ?? "";
+        expect(spot).toContain("How to spot it");
+        expect(spot).toContain(r.howToSpot);
+        if (r.isLie && r.counterexamplePlain) {
+          expect(spot).toContain(r.counterexamplePlain);
+        }
+      } else {
+        // No verified text -> the block is omitted (unless a counterexample).
+        if (!r.counterexamplePlain) {
+          expect(screen.queryByTestId(GAME_TEST_IDS.howToSpot)).toBeNull();
+        }
+      }
+      fireEvent.click(screen.getByTestId(GAME_TEST_IDS.next));
+    }
   });
 
   it("reveals the executed verdict, the player's result, and Kiro's locked prediction", () => {

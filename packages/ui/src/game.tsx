@@ -53,10 +53,13 @@ export const GAME_TEST_IDS = {
   round: "game-round",
   code: "game-code",
   claim: "game-claim",
+  description: "game-description",
+  question: "game-question",
   trust: "game-choice-trust",
   doubt: "game-choice-doubt",
   reveal: "game-reveal",
   verdict: "game-verdict",
+  howToSpot: "game-how-to-spot",
   counterexample: "game-counterexample",
   rootCause: "game-root-cause",
   kiroPick: "game-kiro-pick",
@@ -71,8 +74,8 @@ export const GAME_TEST_IDS = {
   loadError: "game-load-error",
 } as const;
 
-/** Split an excerpt into display lines, stripping the CRLF carriage returns. */
-function excerptLines(code: string): string[] {
+/** Split a segment's code into display lines, stripping CRLF carriage returns. */
+function segmentLines(code: string): string[] {
   return code.split("\n").map((l) => l.replace(/\r$/, ""));
 }
 
@@ -86,12 +89,12 @@ interface CodeExcerptProps {
 
 /**
  * Render the verbatim code excerpt as numbered lines, highlighting the claim
- * comment's line (offset `claimLine - startLine`). Line numbers are the real
- * source line numbers so a player can find the comment in the repo.
+ * comment's line. The excerpt may have MULTIPLE segments (e.g. the commented
+ * code and the far-away line where it fails); a visible "⋮ lines N–M" gap is
+ * shown between segments so the jump in line numbers is explicit. Line numbers
+ * are the real source line numbers so a player can find the comment in the repo.
  */
 function CodeExcerpt({ claim }: CodeExcerptProps): ReactElement {
-  const lines = excerptLines(claim.code);
-  const highlightIndex = claim.claimLine - claim.startLine;
   return (
     <pre
       className="game-code"
@@ -99,21 +102,45 @@ function CodeExcerpt({ claim }: CodeExcerptProps): ReactElement {
       aria-label={`Code from ${claim.sourceLocation}`}
     >
       <code>
-        {lines.map((line, i) => {
-          const lineNo = claim.startLine + i;
-          const isClaim = i === highlightIndex;
+        {claim.segments.map((segment, si) => {
+          const lines = segmentLines(segment.code);
+          const prev = claim.segments[si - 1];
+          const gapFrom = prev ? prev.endLine + 1 : 0;
+          const gapTo = segment.startLine - 1;
           return (
-            <span
-              key={lineNo}
-              className={
-                isClaim ? "game-code__line game-code__line--claim" : "game-code__line"
-              }
-              data-claim-line={isClaim ? "true" : undefined}
-            >
-              <span className="game-code__ln" aria-hidden="true">
-                {lineNo}
-              </span>
-              <span className="game-code__text">{line === "" ? " " : line}</span>
+            <span key={segment.startLine} className="game-code__segment">
+              {si > 0 && gapTo >= gapFrom ? (
+                <span className="game-code__gap" aria-label={`lines ${gapFrom} to ${gapTo} omitted`}>
+                  <span className="game-code__ln" aria-hidden="true">
+                    ⋮
+                  </span>
+                  <span className="game-code__text">
+                    lines {gapFrom}–{gapTo} omitted
+                  </span>
+                </span>
+              ) : null}
+              {lines.map((line, i) => {
+                const lineNo = segment.startLine + i;
+                const isClaim = lineNo === claim.claimLine;
+                return (
+                  <span
+                    key={lineNo}
+                    className={
+                      isClaim
+                        ? "game-code__line game-code__line--claim"
+                        : "game-code__line"
+                    }
+                    data-claim-line={isClaim ? "true" : undefined}
+                  >
+                    <span className="game-code__ln" aria-hidden="true">
+                      {lineNo}
+                    </span>
+                    <span className="game-code__text">
+                      {line === "" ? " " : line}
+                    </span>
+                  </span>
+                );
+              })}
             </span>
           );
         })}
@@ -190,6 +217,16 @@ function RoundView({
         {claim.claimText}
       </blockquote>
 
+      {/* The claim's own description (verbatim from claims.json) as one plain
+          sentence, then the question. Never paraphrased. */}
+      <p className="game-claim-desc" data-testid={GAME_TEST_IDS.description}>
+        <span className="game-claim-desc__label">The comment claims:</span>{" "}
+        {claim.description}
+      </p>
+      <p className="game-question" data-testid={GAME_TEST_IDS.question}>
+        Is that true?
+      </p>
+
       <CodeExcerpt claim={claim} />
 
       {!revealed ? (
@@ -238,13 +275,25 @@ function RoundView({
             </span>
           </p>
 
-          {claim.verdict === "FAIL" && claim.counterexamplePlain ? (
-            <p
-              className="game-reveal__counterexample"
-              data-testid={GAME_TEST_IDS.counterexample}
-            >
-              {claim.counterexamplePlain}
-            </p>
+          {/* "How to spot it" — verified text only (report wording for a lie;
+              a factual run line for a held claim). Shown with the
+              counterexample for a FAIL. When there is no verified text and no
+              counterexample, the whole block is omitted (nothing invented). */}
+          {claim.howToSpot || (claim.verdict === "FAIL" && claim.counterexamplePlain) ? (
+            <div className="game-reveal__spot" data-testid={GAME_TEST_IDS.howToSpot}>
+              <p className="game-reveal__spot-title">How to spot it</p>
+              {claim.howToSpot ? (
+                <p className="game-reveal__spot-text">{claim.howToSpot}</p>
+              ) : null}
+              {claim.verdict === "FAIL" && claim.counterexamplePlain ? (
+                <p
+                  className="game-reveal__counterexample"
+                  data-testid={GAME_TEST_IDS.counterexample}
+                >
+                  {claim.counterexamplePlain}
+                </p>
+              ) : null}
+            </div>
           ) : null}
 
           {claim.rootCauseNote ? (

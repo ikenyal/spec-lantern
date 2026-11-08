@@ -121,6 +121,7 @@ export {
   SHARE_HASHTAG,
   type GameData,
   type GameClaim,
+  type GameCodeSegment,
   type GameCredit,
   type GameVerdict,
 } from "./game-asset.js";

@@ -66,19 +66,62 @@ export interface GameTargetSource {
 /* Excerpt file shape                                                         */
 /* -------------------------------------------------------------------------- */
 
+interface ExcerptSegment {
+  readonly startLine: number;
+  readonly endLine: number;
+  readonly code: string;
+}
+
 interface SourceExcerpt {
   readonly propertyId: string;
   readonly sourceFile: string;
-  readonly startLine: number;
-  readonly endLine: number;
   readonly claimLine: number;
   readonly claimText: string;
-  readonly code: string;
+  readonly segments: readonly ExcerptSegment[];
   readonly fileSha256: string;
 }
 
 interface ExcerptFile {
   readonly excerpts: readonly SourceExcerpt[];
+}
+
+/* -------------------------------------------------------------------------- */
+/* claims.json shape                                                          */
+/* -------------------------------------------------------------------------- */
+
+interface ClaimRecord {
+  readonly id: string;
+  readonly description: string;
+  readonly commentRef?: string;
+}
+
+interface ClaimsFile {
+  readonly claims: readonly ClaimRecord[];
+}
+
+/** The claim id is the propertyId suffix after the first dot. */
+function claimIdOf(propertyId: string): string {
+  const dot = propertyId.indexOf(".");
+  return dot === -1 ? propertyId : propertyId.slice(dot + 1);
+}
+
+/**
+ * Parse the set of source line numbers a claim's `commentRef` references.
+ * Handles both single tokens (`L17`) and ranges (`L42-46`, meaning 42..46).
+ * Used to assert the excerpt's highlighted claim line actually belongs to the
+ * claim — the "same claim" consistency check.
+ */
+function commentRefLines(commentRef: string | undefined): Set<number> {
+  const lines = new Set<number>();
+  if (!commentRef) return lines;
+  const re = /L(\d+)(?:-(\d+))?/g;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(commentRef)) !== null) {
+    const start = Number(m[1]);
+    const end = m[2] ? Number(m[2]) : start;
+    for (let n = start; n <= end; n++) lines.add(n);
+  }
+  return lines;
 }
 
 /* -------------------------------------------------------------------------- */
@@ -146,36 +189,51 @@ interface ResolvedClaim {
   readonly claimLine: number;
 }
 
+/**
+ * Resolve the comment a round DISPLAYS and verify it belongs to the SAME claim
+ * as the description and the excerpt. The excerpt's `claimLine` is the
+ * authority: it must fall inside one of the excerpt's segments (so the round
+ * shows the line it highlights) AND be referenced by the claim's own
+ * `commentRef` in claims.json (so the highlighted comment really is this
+ * claim's comment). The displayed text is the report row's `display.claimText`
+ * when that row is anchored on the claim line, else the excerpt's own verbatim
+ * claim line (trimmed) — either way it is the comment at `claimLine`.
+ */
 function resolveClaim(
   excerpt: SourceExcerpt,
   display: { claimText: string; sourceLocation: string },
-  story: LanternStory,
+  claimRef: { id: string; commentRefLines: Set<number> },
 ): ResolvedClaim {
   const claimLine = excerpt.claimLine;
 
-  // Fix: fail the build if the excerpt's claim line is not inside its own
-  // range — the round would highlight a line it does not show.
-  if (claimLine < excerpt.startLine || claimLine > excerpt.endLine) {
+  // (a) The claim line must be inside one of the shown segments.
+  const inSegment = excerpt.segments.some(
+    (s) => claimLine >= s.startLine && claimLine <= s.endLine,
+  );
+  if (!inSegment) {
     throw new Error(
-      `claim line ${claimLine} for ${excerpt.propertyId} is outside its excerpt ` +
-        `range [${excerpt.startLine}, ${excerpt.endLine}]`,
+      `claim line ${claimLine} for ${excerpt.propertyId} is not inside any excerpt segment`,
     );
   }
 
-  // Prefer the STORY comment when the story is about this property and its
-  // comment sits on the excerpt's claim line (the MoodPlays root-cause case).
+  // (b) Same-claim check: the highlighted line must be one the claim's own
+  //     commentRef points at. This ties comment + description + excerpt to one
+  //     claim id and fails the build if they drift apart.
   if (
-    story.propertyId === excerpt.propertyId &&
-    lineOf(story.comment.sourceLocation) === claimLine
+    claimRef.commentRefLines.size > 0 &&
+    !claimRef.commentRefLines.has(claimLine)
   ) {
-    return {
-      claimText: story.comment.claimText,
-      sourceLocation: story.comment.sourceLocation,
-      claimLine,
-    };
+    throw new Error(
+      `claim line ${claimLine} for ${excerpt.propertyId} is not referenced by ` +
+        `claim ${claimRef.id}'s commentRef (lines ` +
+        `${[...claimRef.commentRefLines].sort((x, y) => x - y).join(", ")})`,
+    );
   }
 
-  // Otherwise use the report display when its line matches the claim line …
+  // Display text: prefer the report row's comment when it is anchored on the
+  // claim line; else the excerpt's verbatim claim line (trimmed). Both are the
+  // comment AT claimLine, so the quoted comment always matches the highlight.
+  const basename = excerpt.sourceFile.split("/").pop() ?? excerpt.sourceFile;
   if (lineOf(display.sourceLocation) === claimLine) {
     return {
       claimText: display.claimText,
@@ -183,11 +241,6 @@ function resolveClaim(
       claimLine,
     };
   }
-
-  // … else fall back to the excerpt's own verbatim claim line (trimmed), with a
-  // location rebuilt from the excerpt's file basename + the claim line, so the
-  // displayed comment always matches the highlighted excerpt line.
-  const basename = excerpt.sourceFile.split("/").pop() ?? excerpt.sourceFile;
   return {
     claimText: excerpt.claimText.trim(),
     sourceLocation: `${basename}:${claimLine}`,
@@ -195,12 +248,17 @@ function resolveClaim(
   };
 }
 
-/** Do two inclusive line ranges overlap? */
-function rangesOverlap(
-  a: { startLine: number; endLine: number },
-  b: { startLine: number; endLine: number },
+/** Do two excerpts overlap in the same file (any segment vs any segment)? */
+function excerptsOverlap(
+  a: GameClaim,
+  b: GameClaim,
 ): boolean {
-  return a.startLine <= b.endLine && b.startLine <= a.endLine;
+  if (a.sourceFile !== b.sourceFile) return false;
+  return a.segments.some((sa) =>
+    b.segments.some(
+      (sb) => sa.startLine <= sb.endLine && sb.startLine <= sa.endLine,
+    ),
+  );
 }
 
 /**
@@ -264,6 +322,52 @@ function rootCauseNote(comparison: PropertyComparison): string | undefined {
   return note ? `${base} ${note}` : base;
 }
 
+/**
+ * The "How to spot it" text shown after the reveal, from VERIFIED sources only
+ * (no hand-written explanation):
+ *   - LIE: the report story's user-impact wording for this claim — the SAME
+ *     sentence the report page shows — but only when the story is actually
+ *     about this property. (The counterexample is shown separately by the UI.)
+ *     If the story is not about this claim, there is no verified lie text, so
+ *     we return undefined and the UI shows nothing.
+ *   - HELD (PASS): a factual statement of what a passing property run means,
+ *     with the real generated-input count IF the persisted result records one.
+ *     No PASS result in this repo records a count, so the number is omitted (as
+ *     the spec requires) rather than invented.
+ */
+function howToSpot(
+  comparison: PropertyComparison,
+  story: LanternStory,
+  verdict: GameVerdict,
+  runCount: number | null,
+): string | undefined {
+  if (verdict === "FAIL") {
+    if (story.propertyId === comparison.propertyId) {
+      return story.execution.userImpact;
+    }
+    return undefined;
+  }
+  // HELD: factual line from the persisted PASS result.
+  if (runCount !== null) {
+    return `Execution ran ${runCount} generated inputs and every one matched the comment, so the claim held.`;
+  }
+  return "Execution ran generated inputs and every one matched the comment, so the claim held.";
+}
+
+/**
+ * Parse a recorded generated-input count from a stage-c result, or null. Some
+ * runs record a `numRuns` / `numTests`; most PASS results do not, in which case
+ * the game omits the number (never fabricates one).
+ */
+function parseRunCount(json: string): number | null {
+  const obj = JSON.parse(json) as {
+    actualResult?: { numRuns?: unknown; numTests?: unknown };
+  };
+  const a = obj.actualResult;
+  const n = a?.numRuns ?? a?.numTests;
+  return typeof n === "number" && Number.isFinite(n) ? n : null;
+}
+
 /* -------------------------------------------------------------------------- */
 /* Per-target claims                                                          */
 /* -------------------------------------------------------------------------- */
@@ -289,6 +393,13 @@ export async function buildTargetClaims(
     excerptFile.excerpts.map((e) => [e.propertyId, e]),
   );
 
+  // 1b. Load + index claims.json (claim descriptions + commentRef).
+  const claimsAbs = join(target.rootAbs, "claims.json");
+  const claimsFile = JSON.parse(
+    await readers.readFile(claimsAbs),
+  ) as ClaimsFile;
+  const claimById = new Map(claimsFile.claims.map((c) => [c.id, c]));
+
   // Cache a sandbox file's computed hash so a file used by several excerpts is
   // read + hashed once.
   const hashCache = new Map<string, string | null>();
@@ -312,17 +423,32 @@ export async function buildTargetClaims(
     const excerpt = excerptByProp.get(propertyId);
     if (!excerpt) continue;
 
-    // The claim text + source come from the report display, but are RESOLVED
-    // to stay consistent with the excerpt the round shows (see resolveClaim):
-    // the displayed comment/line is always inside the excerpt, falling back to
-    // the headline story comment for a lie whose report line is outside it.
+    // The claim id joins the comment, the description and the excerpt. The
+    // claims.json record supplies the VERBATIM description and the commentRef
+    // used for the same-claim consistency check.
+    const claimId = claimIdOf(propertyId);
+    const claimRecord = claimById.get(claimId);
+    if (!claimRecord) {
+      throw new Error(
+        `no claims.json entry for ${claimId} (property ${propertyId})`,
+      );
+    }
+    if (excerpt.propertyId !== propertyId) {
+      throw new Error(
+        `excerpt propertyId ${excerpt.propertyId} != report propertyId ${propertyId}`,
+      );
+    }
+
+    // The comment text + source are RESOLVED to the excerpt's claim line, and
+    // the resolver asserts that line is inside a segment AND referenced by this
+    // claim's commentRef — so comment, description and excerpt share one claim.
     const reportClaimText = display?.claimText;
     const reportSourceLocation = display?.sourceLocation;
     if (!reportClaimText || !reportSourceLocation) continue;
     const resolved = resolveClaim(
       excerpt,
       { claimText: reportClaimText, sourceLocation: reportSourceLocation },
-      target.story,
+      { id: claimId, commentRefLines: commentRefLines(claimRecord.commentRef) },
     );
 
     // 2. Cross-check the LOCKED prediction against the report's predicted.
@@ -356,31 +482,40 @@ export async function buildTargetClaims(
       );
     }
 
+    // 5. The recorded generated-input count (if any) for the "How to spot it"
+    //    held-claim line — omitted when the result records none.
+    const runCount = parseRunCount(await readers.readFile(stageCAbs));
+
     // isLie: a Confirmed_Bug whose OWN comment is the lie (not a symptom). This
     // is exactly the countLies definition applied per-row.
     const isLie = comparison.confirmedBug === true && !display?.symptomOf;
 
+    const spot = howToSpot(comparison, target.story, stageCVerdict, runCount);
+    const counterexamplePlain =
+      stageCVerdict === "FAIL" ? plainCounterexample(comparison) : undefined;
+    const note = rootCauseNote(comparison);
+
     claims.push({
       propertyId,
+      claimId,
       targetId: target.id,
       targetLabel: target.label,
       claimText: resolved.claimText,
+      description: claimRecord.description,
       sourceLocation: resolved.sourceLocation,
-      code: excerpt.code,
+      segments: excerpt.segments.map((s) => ({
+        startLine: s.startLine,
+        endLine: s.endLine,
+        code: s.code,
+      })),
       sourceFile: excerpt.sourceFile,
-      startLine: excerpt.startLine,
-      endLine: excerpt.endLine,
       claimLine: resolved.claimLine,
       verdict: stageCVerdict,
       kiroPrediction: lockVerdict,
       isLie,
-      ...(rootCauseNote(comparison) !== undefined
-        ? { rootCauseNote: rootCauseNote(comparison) }
-        : {}),
-      ...(stageCVerdict === "FAIL" &&
-      plainCounterexample(comparison) !== undefined
-        ? { counterexamplePlain: plainCounterexample(comparison) }
-        : {}),
+      ...(spot !== undefined ? { howToSpot: spot } : {}),
+      ...(note !== undefined ? { rootCauseNote: note } : {}),
+      ...(counterexamplePlain !== undefined ? { counterexamplePlain } : {}),
     });
   }
 
@@ -435,7 +570,7 @@ export async function buildGameData(
     if (c.isLie) return true;
     if (c.verdict !== "PASS") return true; // symptoms etc. are not held rounds
     const overlappingLie = (liesBySource.get(c.sourceFile) ?? []).some((lie) =>
-      rangesOverlap(c, lie),
+      excerptsOverlap(c, lie),
     );
     return !overlappingLie;
   });

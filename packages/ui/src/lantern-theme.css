@@ -1358,6 +1358,24 @@ body {
   overflow-wrap: anywhere;
 }
 
+/* --- claim description + question --- */
+
+.game-claim-desc {
+  margin: 0 0 0.4rem;
+  color: var(--ink);
+}
+
+.game-claim-desc__label {
+  color: var(--ink-muted);
+  font-weight: 600;
+}
+
+.game-question {
+  margin: 0 0 1rem;
+  font-weight: 700;
+  color: var(--amber);
+}
+
 /* --- code excerpt --- */
 
 .game-code {
@@ -1386,6 +1404,19 @@ body {
 .game-code__line--claim {
   background: var(--amber-dim);
   box-shadow: inset 3px 0 0 var(--amber);
+}
+
+/* The "⋮ lines N–M omitted" marker between two excerpt segments. */
+.game-code__gap {
+  display: flex;
+  gap: 0.75rem;
+  padding: 0.15rem 0.9rem;
+  color: var(--ink-muted);
+  font-style: italic;
+  opacity: 0.75;
+  border-top: 1px dashed var(--charcoal-line);
+  border-bottom: 1px dashed var(--charcoal-line);
+  margin: 0.15rem 0;
 }
 
 .game-code__ln {
@@ -1474,6 +1505,37 @@ body {
 
 .game-reveal__you {
   color: var(--ink-muted);
+}
+
+.game-reveal__spot {
+  margin: 0 auto 0.75rem;
+  max-width: 52ch;
+  padding: 0.75rem 1rem;
+  background: var(--charcoal-sunken);
+  border: 1px solid var(--charcoal-line);
+  border-radius: 8px;
+  text-align: left;
+}
+
+.game-reveal__spot-title {
+  margin: 0 0 0.4rem;
+  font-weight: 700;
+  color: var(--amber);
+  font-size: 0.85rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.game-reveal__spot-text {
+  margin: 0 0 0.5rem;
+  color: var(--ink);
+}
+
+.game-reveal__spot .game-reveal__counterexample {
+  margin: 0;
+  max-width: none;
+  padding: 0.5rem 0.7rem;
+  background: var(--charcoal);
 }
 
 .game-reveal__counterexample,
