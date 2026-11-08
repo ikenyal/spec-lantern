@@ -359,6 +359,22 @@ body {
   color: var(--pass);
 }
 
+/* No-locked-prediction indicator: a real PASS/FAIL actual with NO prediction to
+ * compare against. Muted and neutral — explicitly NOT a pass/match, and never
+ * styled like one. */
+.lantern-no-prediction {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  color: var(--ink-muted);
+  font-size: 0.85rem;
+  font-style: italic;
+  white-space: nowrap;
+}
+.lantern-no-prediction__icon {
+  color: var(--ink-muted);
+}
+
 /* Symptom-of indicator: a mismatch row that is NOT itself a lie, only a symptom
  * of another row's root-cause defect. Amber like a mismatch (it IS a
  * predicted/actual gap) but clearly labeled, never "Lie exposed". */

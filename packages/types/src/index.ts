@@ -248,7 +248,14 @@ export interface PropertyComparison {
     // R7.4.
     | "NOT_COMPARED_TIMEOUT"
     // R7.5.
-    | "NOT_EXECUTED";
+    | "NOT_EXECUTED"
+    // A real PASS/FAIL actual exists but NO prediction was locked, so there is
+    // nothing to compare against. Rendered explicitly as "no locked
+    // prediction" — it must never read as a verified PASS/FAIL (no prediction
+    // was fabricated to fill the gap). `confirmedBug` still holds for a FAIL
+    // actual, but such a row is NOT a prediction lie (a lie needs a locked
+    // prediction that disagreed with the actual).
+    | "NO_LOCKED_PREDICTION";
   /** R7.3 (true only when actual verdict is FAIL). */
   confirmedBug: boolean;
   transition?: PropertyTransition;

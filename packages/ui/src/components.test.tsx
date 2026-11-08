@@ -90,6 +90,50 @@ describe("LanternReportView rows (task 18.1)", () => {
     }
   });
 });
+
+describe("LanternReportView — a missing/null locked prediction (cleanup 3)", () => {
+  const noPredictionReport = {
+    comparisons: [
+      {
+        propertyId: "p-nolock-fail",
+        predicted: null,
+        actual: verdictActual("p-nolock-fail", "FAIL"),
+        status: "NO_LOCKED_PREDICTION" as const,
+        confirmedBug: true,
+      },
+      {
+        propertyId: "p-nolock-pass",
+        predicted: null,
+        actual: verdictActual("p-nolock-pass", "PASS"),
+        status: "NO_LOCKED_PREDICTION" as const,
+        confirmedBug: false,
+      },
+    ] satisfies PropertyComparison[],
+    observedDeviations: [],
+    noConfirmedBug: false,
+    noObservedDeviation: true,
+    generatedAt: "2020-01-01T00:00:00.000Z",
+  };
+
+  it('renders an explicit "no locked prediction" indicator, never a "Match" or mismatch', () => {
+    render(<LanternReportView report={noPredictionReport} />);
+
+    for (const id of ["p-nolock-fail", "p-nolock-pass"]) {
+      const indicator = screen.getByTestId(TEST_IDS.noLockedPrediction(id));
+      expect(indicator).toBeTruthy();
+      expect(indicator.textContent).toMatch(/no locked prediction/i);
+      // Must NOT read as a verified pass/match or as a mismatch.
+      expect(screen.queryByTestId(TEST_IDS.match(id))).toBeNull();
+      expect(screen.queryByTestId(TEST_IDS.mismatch(id))).toBeNull();
+    }
+  });
+
+  it("tags the row's data-status as NO_LOCKED_PREDICTION", () => {
+    render(<LanternReportView report={noPredictionReport} />);
+    const row = screen.getByTestId(TEST_IDS.row("p-nolock-fail"));
+    expect(row.getAttribute("data-status")).toBe("NO_LOCKED_PREDICTION");
+  });
+});
 /**
  * Smoke test for the Lantern_Report_UI detail + empty states (task 18.2).
  *

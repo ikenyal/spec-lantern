@@ -18,7 +18,8 @@
  *     the timing test (task 18.4) measures against; we do not hard-code "3".
  *   - R10.3: a visual mismatch indicator appears EXACTLY on rows whose Predicted
  *     differs from Actual — i.e. `status === "PREDICTION_MISMATCH"` — and is
- *     ABSENT everywhere else (MATCH, NOT_COMPARED_TIMEOUT, NOT_EXECUTED). We rely
+ *     ABSENT everywhere else (MATCH, NO_LOCKED_PREDICTION, NOT_COMPARED_TIMEOUT,
+ *     NOT_EXECUTED). We rely
  *     on the `status` field the Comparison Engine (task 14) already computed
  *     rather than re-deriving the comparison here, so TIMEOUT / NOT_EXECUTED rows
  *     are never mis-flagged as mismatches.
@@ -96,6 +97,8 @@ export const TEST_IDS = {
   mismatch: (propertyId: string) => `mismatch-indicator-${propertyId}`,
   symptom: (propertyId: string) => `symptom-indicator-${propertyId}`,
   match: (propertyId: string) => `match-indicator-${propertyId}`,
+  noLockedPrediction: (propertyId: string) =>
+    `no-locked-prediction-indicator-${propertyId}`,
   claim: (propertyId: string) => `claim-${propertyId}`,
   claimNote: (propertyId: string) => `claim-note-${propertyId}`,
   // Task 18.2 — Counterexample (R10.4) and its parts.
@@ -195,6 +198,17 @@ export function formatActual(actual: ActualResult): string {
  */
 export function isMismatch(comparison: PropertyComparison): boolean {
   return comparison.status === "PREDICTION_MISMATCH";
+}
+
+/**
+ * Whether a row had NO locked prediction to compare against. True EXACTLY when
+ * the Comparison Engine classified the row as `NO_LOCKED_PREDICTION` (a real
+ * PASS/FAIL actual exists but no prediction was locked). Such a row must render
+ * explicitly as "no locked prediction" — never as a verified pass/match — and
+ * is never a prediction lie (though a FAIL actual still confirms a bug).
+ */
+export function hasNoLockedPrediction(comparison: PropertyComparison): boolean {
+  return comparison.status === "NO_LOCKED_PREDICTION";
 }
 
 /**
@@ -420,8 +434,10 @@ export interface PropertyRowProps {
  * Layout: the Claim hero (id/title/quoted comment), then the predicted cell
  * IMMEDIATELY FOLLOWED BY the actual cell (adjacent, same row — R10.1), then a
  * status cell that holds the mismatch indicator when {@link isMismatch} is true
- * (R10.3) and a muted "✓ Match" otherwise. The indicator's `data-testid` makes
- * presence/absence assertable.
+ * (R10.3), an explicit "No locked prediction" indicator when
+ * {@link hasNoLockedPrediction} is true (a real actual with no prediction to
+ * compare against — never shown as a pass), and a muted "✓ Match" otherwise. The
+ * indicator's `data-testid` makes presence/absence assertable.
  *
  * Design: predicted is the translucent "ghost", actual is crisp; the per-cell
  * labels are dropped in favour of the column headers. A mismatched row carries
@@ -431,6 +447,10 @@ export interface PropertyRowProps {
 export function PropertyRow({ comparison }: PropertyRowProps): ReactElement {
   const { propertyId } = comparison;
   const mismatch = isMismatch(comparison);
+  // A real PASS/FAIL actual with no locked prediction: there is nothing to
+  // compare against, so the row must read as "no locked prediction" and never
+  // as a verified "✓ Match".
+  const noLockedPrediction = hasNoLockedPrediction(comparison);
   // A mismatch row whose own comment is NOT the lie — it is a SYMPTOM of another
   // row's root-cause defect. Keep the row's factual data (mismatch styling,
   // counterexample, transition), but label it "Symptom of <…>" instead of
@@ -501,6 +521,21 @@ export function PropertyRow({ comparison }: PropertyRowProps): ReactElement {
               <span className="lantern-mismatch__label">Lie exposed</span>
             </span>
           )
+        ) : noLockedPrediction ? (
+          <span
+            className="lantern-no-prediction"
+            data-testid={TEST_IDS.noLockedPrediction(propertyId)}
+            role="img"
+            aria-label="no locked prediction — nothing to compare against"
+            title="No prediction was locked for this property"
+          >
+            <span className="lantern-no-prediction__icon" aria-hidden="true">
+              —
+            </span>
+            <span className="lantern-no-prediction__label">
+              No locked prediction
+            </span>
+          </span>
         ) : (
           <span
             className="lantern-match"

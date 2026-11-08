@@ -66,7 +66,13 @@ export type DeriveCode =
   /** A property file is missing its `Feature: spec-lantern, Property {n}:` tag. */
   | "PROPERTY_TAG_MISSING"
   /** The requested propertyId (replay) was not found under `properties/`. */
-  | "PROPERTY_NOT_FOUND";
+  | "PROPERTY_NOT_FOUND"
+  /**
+   * A property file that `readdir` listed could not be read (it vanished
+   * between the listing and the read — a concurrent write). Surfaced rather
+   * than silently dropped so derivation never under-reports its property count.
+   */
+  | "PROPERTY_FILE_UNREADABLE";
 
 /** A single structured derivation finding. */
 export interface DeriveIssue {
@@ -276,7 +282,25 @@ export async function deriveProperties(specRoot: string): Promise<DeriveResult> 
   for (const fileName of listed.files) {
     const filePath = resolve(specRoot, ARTIFACT_PATHS.propertiesDir, fileName);
     const source = await readTextOrNull(filePath);
-    if (source === null) continue; // readdir listed it; a race removed it — skip.
+    if (source === null) {
+      // `readdir` listed this file but it could not be read (a concurrent write
+      // removed it between the listing and the read). Surface the discrepancy
+      // as a structured issue instead of silently dropping it — a silent
+      // `continue` would under-derive without any signal that a listed property
+      // never made it into the result.
+      return {
+        properties: null,
+        issue: {
+          code: "PROPERTY_FILE_UNREADABLE",
+          message:
+            `Property file ${filePath} was listed by the properties directory ` +
+            `but could not be read (it may have been removed or written ` +
+            `concurrently); refusing to derive fewer properties than were ` +
+            `listed without signalling the discrepancy.`,
+          path: filePath,
+        },
+      };
+    }
     const built = reconstructProperty(fileName, source, claims.map, filePath);
     if (built.property === null) return { properties: null, issue: built.issue };
     properties.push(built.property);

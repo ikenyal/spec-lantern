@@ -24,11 +24,11 @@
  *                         |           | else PREDICTION_      | actual
  *                         |           | MISMATCH (R7.1,R7.2)  | verdict FAIL
  *                         |           |                       | (R7.3)
- *   VERDICT (PASS/FAIL)   | null      | MATCH (no mismatch    | true iff
- *                         |           | possible without a    | actual
- *                         |           | prediction; the pair  | verdict FAIL
- *                         |           | is still a real       | (R7.3)
- *                         |           | result, R7.3 stands)  |
+ *   VERDICT (PASS/FAIL)   | null      | NO_LOCKED_PREDICTION  | true iff
+ *                         |           | (nothing to compare;  | actual
+ *                         |           | shown as "no locked   | verdict FAIL
+ *                         |           | prediction", NEVER as | (R7.3)
+ *                         |           | a pass; not a lie)    |
  *   TIMEOUT               | any       | NOT_COMPARED_TIMEOUT  | false
  *                         |           | (R7.4)                |
  *   EXECUTION_ERROR /     | any       | NOT_EXECUTED (R7.5:   | false
@@ -132,9 +132,11 @@ function actualVerdict(actual: ActualResult): Verdict | null {
  *     Counterexample rides along on `actual`. Then:
  *       - If a predicted PASS/FAIL also exists, the pair is compared (R7.1):
  *         `MATCH` when equal, `PREDICTION_MISMATCH` when unequal (R7.2).
- *       - If no prediction was locked, no mismatch is possible, so the status is
- *         `MATCH` (the result is still a valid, paired actual outcome); the FAIL
- *         still confirms a bug.
+ *       - If no prediction was locked, there is nothing to compare against, so
+ *         the status is `NO_LOCKED_PREDICTION` — rendered explicitly as "no
+ *         locked prediction", never as a verified PASS/FAIL (no prediction is
+ *         fabricated). The FAIL still confirms a bug, but such a row is never a
+ *         prediction lie.
  *
  * @param input the property's locked prediction and actual result
  * @returns the classified {@link PropertyComparison}
@@ -177,8 +179,12 @@ export function compareProperty(input: ComparisonInput): PropertyComparison {
   const confirmedBug = verdict === "FAIL";
 
   if (predicted === null) {
-    // No prediction to pair → no mismatch possible; the paired actual stands.
-    return { ...base, status: "MATCH", confirmedBug };
+    // No prediction was locked, so there is nothing to compare against. This is
+    // NOT a verified PASS/FAIL and must never render as a plain MATCH that reads
+    // as a pass — surface it explicitly as "no locked prediction". A FAIL actual
+    // still confirms a bug (`confirmedBug`), but the absence of a prediction
+    // means this row can never be a prediction lie.
+    return { ...base, status: "NO_LOCKED_PREDICTION", confirmedBug };
   }
 
   // Pair predicted with actual (R7.1); flag inequality as a mismatch (R7.2).

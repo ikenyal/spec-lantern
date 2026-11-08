@@ -25,13 +25,14 @@
  * stdin/stdout. {@link createMcpServer} builds and configures the server
  * (testable without a transport); {@link startStdioServer} connects it to stdio.
  *
- * SCOPE. `execute_properties` (task 10.1), `replay_counterexample`
- * (task 11.1), and `apply_fixes_and_reexecute` (task 15.2) are wired here, each
- * delegating to its pure orchestrator behind this same transport seam. The
- * `apply_fixes_and_reexecute` handler delegates to
- * {@link applyFixesAndReexecute}, which copies the Target_Repo, applies fixes to
- * the copy (task 15.1), and re-executes the properties against the copy via
- * {@link executeProperties}.
+ * SCOPE. Five tools are wired here, each delegating to its pure orchestrator
+ * behind this same transport seam: `execute_properties` (task 10.1),
+ * `replay_counterexample` (task 11.1), `apply_fixes_and_reexecute` (task 15.2),
+ * `lock_prediction` (the prediction lock, R3.4/R3.5), and `compare_predictions`
+ * (locks vs a persisted execution result). The `apply_fixes_and_reexecute`
+ * handler delegates to {@link applyFixesAndReexecute}, which copies the
+ * Target_Repo, applies fixes to the copy (task 15.1), and re-executes the
+ * properties against the copy via {@link executeProperties}.
  */
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";

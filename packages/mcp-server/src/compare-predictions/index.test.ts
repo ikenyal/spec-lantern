@@ -139,6 +139,41 @@ describe("comparePredictions (change 3)", () => {
     expect(group.isLie).toBe(true);
   });
 
+  it("shows an actual with NO locked prediction as NO_LOCKED_PREDICTION — confirms a FAIL bug but is NOT a lie", async () => {
+    // No lock authored for this property → readLockedVerdict yields null. The
+    // row must surface explicitly as "no locked prediction" (never MATCH/PASS/
+    // FAIL), still confirm the bug on a FAIL actual, and NOT inflate lieCount.
+    const resultsPath = join(specRoot, "results", "run.json");
+    await writeFile(
+      resultsPath,
+      JSON.stringify({
+        results: [
+          {
+            propertyId: "property-1.claim-unlocked",
+            outcome: "VERDICT",
+            verdict: "FAIL",
+          },
+        ],
+        executionContexts: {},
+      }),
+    );
+
+    const result = await comparePredictions({ specRoot, resultsPath });
+
+    const row = result.comparisons.find(
+      (c) => c.propertyId === "property-1.claim-unlocked",
+    );
+    expect(row?.predicted).toBeNull();
+    expect(row?.status).toBe("NO_LOCKED_PREDICTION");
+    expect(row?.status).not.toBe("MATCH");
+    expect(row?.status).not.toBe("PREDICTION_MISMATCH");
+    // FAIL actual still confirms a bug…
+    expect(row?.confirmedBug).toBe(true);
+    expect(result.confirmedBugCount).toBe(1);
+    // …but with no locked prediction it is NOT a prediction lie.
+    expect(result.lieCount).toBe(0);
+  });
+
   it("reads actuals from .postFixExecution.results for an apply-fixes result", async () => {
     await lockProperty(specRoot, 1, "claim-root", "FAIL");
     const resultsPath = join(specRoot, "results", "post.json");

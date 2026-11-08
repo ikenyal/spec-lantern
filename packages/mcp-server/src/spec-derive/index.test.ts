@@ -115,6 +115,24 @@ describe("deriveProperties / deriveProperty (change 1)", () => {
     expect(result.issue?.code).toBe("CLAIMS_MISSING");
   });
 
+  it("surfaces PROPERTY_FILE_UNREADABLE for a listed-but-unreadable file instead of silently dropping it (concurrent-write race)", async () => {
+    // A property file whose name readdir lists but whose read fails with ENOENT
+    // (modeled by a dangling symlink — listed by the directory, unreadable on
+    // open). The derivation must NOT silently skip it and under-report; it must
+    // surface the discrepancy as a structured issue.
+    const { symlink } = await import("node:fs/promises");
+    await symlink(
+      join(specRoot, "does-not-exist.ts"),
+      join(specRoot, "properties", "property-3.claim-c.test.ts"),
+    );
+    const result = await deriveProperties(specRoot);
+    expect(result.properties).toBeNull();
+    expect(result.issue?.code).toBe("PROPERTY_FILE_UNREADABLE");
+    // The two intact properties are NOT returned in place of the discrepancy —
+    // derivation refuses to under-report rather than returning a short list.
+    expect(result.issue?.path).toContain("property-3.claim-c.test.ts");
+  });
+
   it("returns PROPERTIES_DIR_MISSING when properties/ is absent", async () => {
     const empty = await mkdtemp(join(tmpdir(), "spec-lantern-empty-"));
     try {

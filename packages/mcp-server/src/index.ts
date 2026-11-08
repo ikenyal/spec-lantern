@@ -347,11 +347,13 @@ export {
 
 /**
  * The MCP transport + tool wiring (tasks 10.1, 11.1, 15.2, 20). Exposes the
- * MCP_Server over the MCP TypeScript SDK and registers four tools:
+ * MCP_Server over the MCP TypeScript SDK and registers five tools:
  * `execute_properties`, `replay_counterexample`, `apply_fixes_and_reexecute`,
- * and `lock_prediction` (the prediction lock, R3.4/R3.5), whose handlers
+ * `lock_prediction` (the prediction lock, R3.4/R3.5), and
+ * `compare_predictions` (locks vs a persisted execution result), whose handlers
  * delegate to {@link executeProperties}, {@link replayCounterexample},
- * {@link applyFixesAndReexecute}, and {@link lockPrediction} respectively.
+ * {@link applyFixesAndReexecute}, {@link lockPrediction}, and
+ * {@link comparePredictions} respectively.
  * {@link createMcpServer} builds the configured server (transport-agnostic, for
  * tests); {@link startStdioServer} connects it to the stdio transport so a local
  * Kiro_Power can launch it as a subprocess (see src/bin/server.ts).

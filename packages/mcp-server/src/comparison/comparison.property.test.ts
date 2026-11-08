@@ -290,3 +290,62 @@ describe("Comparison Engine — classification properties (task 14.2)", () => {
     );
   });
 });
+
+/* -------------------------------------------------------------------------- */
+/* Null / missing locked prediction — explicit "no locked prediction"         */
+/* -------------------------------------------------------------------------- */
+
+describe("Comparison Engine — a missing/null locked prediction (cleanup 3)", () => {
+  it("classifies a real PASS/FAIL actual with NO prediction as NO_LOCKED_PREDICTION (never MATCH / PASS / FAIL)", () => {
+    const input = propertyId.chain((id) =>
+      fc.record({
+        propertyId: fc.constant(id),
+        predicted: fc.constant(null), // NO locked prediction
+        actual: verdictResult(id), // a real PASS/FAIL actual exists
+      }),
+    );
+
+    fc.assert(
+      fc.property(input, (cmp) => {
+        const result = compareProperty(cmp);
+
+        // Explicit "no locked prediction" — NEVER a plain MATCH that reads as a
+        // verified pass, and never a mismatch either.
+        expect(result.status).toBe("NO_LOCKED_PREDICTION");
+        expect(result.status).not.toBe("MATCH");
+        expect(result.status).not.toBe("PREDICTION_MISMATCH");
+
+        // No prediction was fabricated to fill the gap (report-data-fidelity).
+        expect(result.predicted).toBeNull();
+
+        // A FAIL actual still confirms a bug…
+        const isActualFail =
+          cmp.actual.outcome === "VERDICT" && cmp.actual.verdict === "FAIL";
+        expect(result.confirmedBug).toBe(isActualFail);
+      }),
+    );
+  });
+
+  it("a FAIL actual with no prediction confirms a bug but is NOT a prediction mismatch (not a lie)", () => {
+    const result = compareProperty({
+      propertyId: "property-1.claim-x",
+      predicted: null,
+      actual: { propertyId: "property-1.claim-x", outcome: "VERDICT", verdict: "FAIL" },
+    });
+    expect(result.status).toBe("NO_LOCKED_PREDICTION");
+    expect(result.confirmedBug).toBe(true);
+    // A lie requires a locked prediction that disagreed with the actual; a
+    // missing prediction can never be a PREDICTION_MISMATCH.
+    expect(result.status).not.toBe("PREDICTION_MISMATCH");
+  });
+
+  it("a PASS actual with no prediction is NO_LOCKED_PREDICTION and not a confirmed bug", () => {
+    const result = compareProperty({
+      propertyId: "property-2.claim-y",
+      predicted: null,
+      actual: { propertyId: "property-2.claim-y", outcome: "VERDICT", verdict: "PASS" },
+    });
+    expect(result.status).toBe("NO_LOCKED_PREDICTION");
+    expect(result.confirmedBug).toBe(false);
+  });
+});

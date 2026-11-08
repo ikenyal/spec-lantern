@@ -43,6 +43,7 @@ export {
   formatPredicted,
   formatActual,
   isMismatch,
+  hasNoLockedPrediction,
   getCounterexample,
   safeStringify,
   extractExpectedActual,
