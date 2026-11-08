@@ -83,6 +83,10 @@ Read them in this order and follow each exactly:
 6. **`steering/05-artifact-formats.md`** — the exact on-disk formats and
    directory layout every artifact above must be written in. This is the single
    source of truth for file shapes; the other steering files reference it.
+7. **`steering/06-component-claims.md`** — authoring a `component_rendered`
+   property that actually runs: the jsdom pragma, the pinned clock, Radix
+   activation, safe DOM queries, and a copy-paste template. Read this whenever a
+   Claim's logic lives in a React component (step 04 references it).
 
 ## Artifact formats are defined, not invented
 

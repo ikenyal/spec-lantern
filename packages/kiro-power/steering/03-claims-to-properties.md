@@ -107,9 +107,12 @@ Handle it by how the component gets its data:
   logic as embedded component logic and derive a Correctness_Property of
   `kind: "component_rendered"` that asserts on the **rendered output** of the
   component (not on source). Record `embeddedComponentLogic` with the
-  `componentPath` and the `mockedData` injected via props. The MCP_Server renders
-  it in jsdom with a Controllable_Clock and mocked data and evaluates the
-  property against the rendered DOM.
+  `componentPath` and the `mockedData` injected via props. The property file
+  **renders the component itself** in jsdom and asserts on the rendered DOM —
+  the runner does NOT render it for you. Authoring a component property that
+  actually runs (jsdom environment, the fixed clock, Radix activation, safe DOM
+  queries) has real pitfalls, so there is a dedicated step for it:
+  **follow `steering/06-component-claims.md` and start from its template.**
 - **R3.6 — internally-fetching component** (fetches its own data, e.g. via a
   Supabase client or any internal data fetch): it cannot be rendered
   deterministically for verification. Do **not** derive a component_rendered

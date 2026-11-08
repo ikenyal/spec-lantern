@@ -106,7 +106,11 @@ import {
   buildSeedClockVitestConfig,
   recordExecutionContext,
 } from "./execution-context.js";
-import { applyTimeoutLimit, parseVitestJson } from "./vitest-classify.js";
+import {
+  applyTimeoutLimit,
+  domEnvironmentHint,
+  parseVitestJson,
+} from "./vitest-classify.js";
 
 /* -------------------------------------------------------------------------- */
 /* Defaults                                                                   */
@@ -613,14 +617,19 @@ export async function runTestPhaseWithContext(
     } catch {
       // No report written — classify from exit code/stderr as an execution
       // error (e.g. node_modules absent so `npx --no-install` could not find
-      // Vitest). Never a verdict.
+      // Vitest). Never a verdict. When the crash was a missing DOM global
+      // (a component_rendered property that forgot the jsdom pragma), surface
+      // the SAME actionable guidance the report-based classifier gives rather
+      // than a raw ReferenceError dump.
+      const domHint = domEnvironmentHint(proc.stderr);
       return {
         result: {
           propertyId,
           outcome: "EXECUTION_ERROR",
           reason:
+            domHint ??
             `Vitest produced no JSON report (podman exit ${String(proc.code)}): ` +
-            `${proc.stderr.trim().slice(0, 500)}`,
+              `${proc.stderr.trim().slice(0, 500)}`,
         },
         executionContext: ctx,
       };

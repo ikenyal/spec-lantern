@@ -29,6 +29,15 @@
  * When in doubt between FAIL and EXECUTION_ERROR, prefer EXECUTION_ERROR: a
  * false "contradiction" is strictly worse than an honest "couldn't evaluate".
  *
+ * ACTIONABLE EXECUTION_ERROR REASONS. One EXECUTION_ERROR is common enough to
+ * name specifically: a `component_rendered` property that touches the DOM but
+ * ran under the default `node` environment throws "ReferenceError: document is
+ * not defined". {@link domEnvironmentHint} rewrites that opaque crash into the
+ * one fix the author must make — add "// @vitest-environment jsdom" as the first
+ * line of the property file — so the report tells the author what to do rather
+ * than dumping a raw ReferenceError. It stays an EXECUTION_ERROR (never a
+ * verdict); only the reason text changes.
+ *
  * WHY THE TOOLCHAIN IS PINNED. The classifier distinguishes a genuine assertion
  * FAIL from a thrown non-assertion error by the SHAPE of fast-check's failure
  * message, which is version-dependent. fast-check 3.x's async failure message
@@ -216,6 +225,42 @@ function suiteLoadFailureMessage(report: VitestJsonReport): string | null {
 }
 
 /**
+ * Recognize the specific "the property touched the DOM but ran under the default
+ * `node` Vitest environment" failure and turn it into an ACTIONABLE reason.
+ *
+ * A `component_rendered` property renders a React component with
+ * `@testing-library/react`, which needs a browser-like DOM. Under spec-lantern's
+ * generic execute path the per-run Vitest config sets NO `test.environment`, so
+ * a property that does not opt into jsdom runs under Node and the first touch of
+ * `document`/`window` throws `ReferenceError: document is not defined`. Left
+ * raw, that reads like an opaque harness crash; the fix the author must make is
+ * to add the per-file environment pragma. This helper detects that exact
+ * ReferenceError (locale-independent — the error name and the `document`/
+ * `window` identifiers are not localized) and returns the actionable guidance,
+ * or null when the message is some other error.
+ */
+export function domEnvironmentHint(message: string): string | null {
+  // The jsdom globals a component render reaches for first. `ReferenceError` +
+  // "<global> is not defined" is Node's fixed phrasing for an undefined global.
+  const missingDomGlobal =
+    /\bReferenceError\b/.test(message) &&
+    /\b(document|window|navigator|HTMLElement|localStorage)\s+is not defined\b/.test(
+      message,
+    );
+  if (!missingDomGlobal) return null;
+  const which =
+    /\b(document|window|navigator|HTMLElement|localStorage)\s+is not defined\b/.exec(
+      message,
+    )?.[1] ?? "document";
+  return (
+    `the property needs a DOM environment but ran under the default "node" ` +
+    `environment (${which} is not defined). Add the per-file pragma ` +
+    `"// @vitest-environment jsdom" as the FIRST line of the property test ` +
+    `file so the component renders in jsdom`
+  );
+}
+
+/**
  * Classify a Vitest JSON report into the closed {@link ActualResult} union.
  * See the module header for the full classification contract.
  */
@@ -236,10 +281,12 @@ function classifyVitestReport(
   //     registered. Honest EXECUTION_ERROR, never a verdict.
   const loadFailure = suiteLoadFailureMessage(report);
   if (loadFailure !== null) {
+    const domHint = domEnvironmentHint(loadFailure);
     return {
       propertyId,
       outcome: "EXECUTION_ERROR",
-      reason: `test file failed to load: ${loadFailure.slice(0, 500)}`,
+      reason:
+        domHint ?? `test file failed to load: ${loadFailure.slice(0, 500)}`,
     };
   }
 
@@ -255,10 +302,13 @@ function classifyVitestReport(
             JSON.stringify(e),
       )
       .join("; ");
+    const domHint = domEnvironmentHint(text);
     return {
       propertyId,
       outcome: "EXECUTION_ERROR",
-      reason: `unhandled error during execution: ${text.trim().slice(0, 500)}`,
+      reason:
+        domHint ??
+        `unhandled error during execution: ${text.trim().slice(0, 500)}`,
     };
   }
 
@@ -292,12 +342,15 @@ function classifyVitestReport(
     }
 
     if (kind === "thrown") {
+      const domHint = domEnvironmentHint(failureMessage);
       return {
         propertyId,
         outcome: "EXECUTION_ERROR",
-        reason: `property threw a non-assertion error (did not evaluate to PASS/FAIL): ${thrownErrorDetail(
-          failureMessage,
-        ).slice(0, 500)}`,
+        reason:
+          domHint ??
+          `property threw a non-assertion error (did not evaluate to PASS/FAIL): ${thrownErrorDetail(
+            failureMessage,
+          ).slice(0, 500)}`,
       };
     }
 

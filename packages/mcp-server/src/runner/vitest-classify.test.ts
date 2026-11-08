@@ -27,7 +27,11 @@
 
 import { describe, expect, it } from "vitest";
 import type { ActualResult, ExecutionContext } from "@spec-lantern/types";
-import { applyTimeoutLimit, parseVitestJson } from "./vitest-classify.js";
+import {
+  applyTimeoutLimit,
+  domEnvironmentHint,
+  parseVitestJson,
+} from "./vitest-classify.js";
 
 const PROPERTY_ID = "property-1.claim-monthly-order";
 
@@ -395,5 +399,143 @@ describe("parseVitestJson — both fast-check failure styles are a VERDICT FAIL 
     expect(result.reason).toContain("non-assertion error");
     // The reason names the real error, not the opaque wrapper header.
     expect(result.reason).toContain("TypeError");
+  });
+});
+
+describe("parseVitestJson — a DOM-touching property with no jsdom env gets an actionable reason (component-claim authoring fix)", () => {
+  const PRAGMA = "// @vitest-environment jsdom";
+
+  it("rewrites a load-time 'document is not defined' into add-the-pragma guidance", () => {
+    // A component property whose module graph touches the DOM at import time
+    // fails the SUITE load under the default node environment.
+    const result = parseVitestJson(
+      PROPERTY_ID,
+      report({
+        numTotalTests: 0,
+        numFailedTests: 0,
+        numFailedTestSuites: 1,
+        testResults: [
+          {
+            status: "failed",
+            message: "ReferenceError: document is not defined",
+            assertionResults: [],
+          },
+        ],
+      }),
+      "",
+      CTX,
+    );
+
+    expect(result.outcome).toBe("EXECUTION_ERROR");
+    expect(result.outcome).not.toBe("VERDICT");
+    if (result.outcome !== "EXECUTION_ERROR") throw new Error("expected error");
+    // Names the missing global AND the exact one-line fix.
+    expect(result.reason).toContain("document is not defined");
+    expect(result.reason).toContain("DOM environment");
+    expect(result.reason).toContain(PRAGMA);
+    // NOT the opaque generic load-failure reason.
+    expect(result.reason).not.toContain("test file failed to load");
+  });
+
+  it("rewrites a per-test 'window is not defined' thrown error into pragma guidance", () => {
+    // The DOM is first touched inside the test body (e.g. render()), so it
+    // surfaces as a thrown non-assertion error rather than a suite-load failure.
+    const thrown = [
+      "Error: Property failed after 1 tests",
+      "Counterexample: [{}]",
+      "Got error: ReferenceError: window is not defined",
+    ].join("\n");
+
+    const result = parseVitestJson(
+      PROPERTY_ID,
+      report({
+        numTotalTests: 1,
+        numFailedTests: 1,
+        numPassedTests: 0,
+        testResults: [
+          {
+            status: "failed",
+            assertionResults: [{ status: "failed", failureMessages: [thrown] }],
+          },
+        ],
+      }),
+      "",
+      CTX,
+    );
+
+    expect(result.outcome).toBe("EXECUTION_ERROR");
+    if (result.outcome !== "EXECUTION_ERROR") throw new Error("expected error");
+    expect(result.reason).toContain("window is not defined");
+    expect(result.reason).toContain(PRAGMA);
+    // NOT the generic thrown-error reason.
+    expect(result.reason).not.toContain("non-assertion error");
+  });
+
+  it("rewrites an unhandled 'document is not defined' error into pragma guidance", () => {
+    const result = parseVitestJson(
+      PROPERTY_ID,
+      JSON.stringify({
+        numTotalTests: 0,
+        numFailedTests: 0,
+        unhandledErrors: ["ReferenceError: document is not defined\n    at <module>"],
+      }),
+      "",
+      CTX,
+    );
+
+    expect(result.outcome).toBe("EXECUTION_ERROR");
+    if (result.outcome !== "EXECUTION_ERROR") throw new Error("expected error");
+    expect(result.reason).toContain("document is not defined");
+    expect(result.reason).toContain(PRAGMA);
+    expect(result.reason).not.toContain("unhandled error during execution");
+  });
+
+  it("leaves an unrelated thrown error's reason unchanged (no false DOM hint)", () => {
+    const thrown = [
+      "Error: Property failed after 1 tests",
+      "Counterexample: [[]]",
+      "Got error: TypeError: Cannot read properties of null (reading 'label')",
+    ].join("\n");
+
+    const result = parseVitestJson(
+      PROPERTY_ID,
+      report({
+        numTotalTests: 1,
+        numFailedTests: 1,
+        numPassedTests: 0,
+        testResults: [
+          {
+            status: "failed",
+            assertionResults: [{ status: "failed", failureMessages: [thrown] }],
+          },
+        ],
+      }),
+      "",
+      CTX,
+    );
+
+    expect(result.outcome).toBe("EXECUTION_ERROR");
+    if (result.outcome !== "EXECUTION_ERROR") throw new Error("expected error");
+    // A real TypeError keeps the generic reason — the DOM hint must not fire.
+    expect(result.reason).toContain("non-assertion error");
+    expect(result.reason).not.toContain("DOM environment");
+  });
+});
+
+describe("domEnvironmentHint — the pure detector", () => {
+  it("fires for each DOM global Node reports as undefined", () => {
+    for (const g of ["document", "window", "navigator", "HTMLElement", "localStorage"]) {
+      const hint = domEnvironmentHint(`ReferenceError: ${g} is not defined`);
+      expect(hint).not.toBeNull();
+      expect(hint).toContain(g);
+      expect(hint).toContain("// @vitest-environment jsdom");
+    }
+  });
+
+  it("does not fire for an ordinary ReferenceError or a DOM mention without the ReferenceError", () => {
+    // A ReferenceError on an app symbol is not a missing-DOM-env problem.
+    expect(domEnvironmentHint("ReferenceError: getPeriods is not defined")).toBeNull();
+    // Prose that merely mentions `document` is not a missing-global crash.
+    expect(domEnvironmentHint("expected the document title to be 'X'")).toBeNull();
   });
 });

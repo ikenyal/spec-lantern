@@ -125,6 +125,16 @@ const executePropertiesInputShape = {
    * working copy itself, so the caller need not place files by hand.
    */
   specRoot: z.string().optional(),
+  /**
+   * OPTIONAL per-property test-phase timeout in seconds (the no-network test
+   * phase ceiling). Defaults to 30 (R5.7) when omitted. A `component_rendered`
+   * property that renders a real component in jsdom for its ≥100 fast-check
+   * iterations can legitimately need more than 30s — especially on the first,
+   * cold run — so raise this (e.g. 180) when a component property comes back
+   * TIMEOUT rather than a verdict. Does NOT affect the install phase, which has
+   * its own generous timeout.
+   */
+  timeoutSeconds: z.number().int().positive().optional(),
 } as const;
 
 /**
@@ -589,10 +599,13 @@ export function createMcpServer(
       };
 
       // Merge a per-call specRoot (so the server stages property files into the
-      // working copy) over the construction-time options.
+      // working copy) and an optional per-call timeout over the
+      // construction-time options. An explicit timeout wins; otherwise the
+      // orchestrator/runner default (30s, R5.7) applies.
       const result = await executeProperties(request, {
         ...options.execute,
         specRoot,
+        timeoutSeconds: args.timeoutSeconds ?? options.execute?.timeoutSeconds,
       });
 
       return finalizeToolResult("execute_properties", result, specRoot, options);
