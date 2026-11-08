@@ -119,6 +119,90 @@ function stageCFileName(propertyId: string): string {
   return `${propertyId}.json`;
 }
 
+/** Parse the trailing `:<line>` off a `file:line` source location, or null. */
+function lineOf(sourceLocation: string): number | null {
+  const m = /:(\d+)\s*$/.exec(sourceLocation);
+  return m ? Number(m[1]) : null;
+}
+
+/**
+ * The resolved comment a game round should DISPLAY: text, a `file:line`
+ * location, and the absolute source line, all CONSISTENT with the excerpt the
+ * round shows (the displayed line is always inside the excerpt).
+ *
+ * Why this is needed: for the MoodPlays lie, the REPORT row headlines the
+ * `// Handle 24-hour format` comment at `openingHoursParser.ts:17` — a line
+ * OUTSIDE the excerpt (L48-61) the game shows, which would read as inconsistent.
+ * The headline STORY instead quotes the root-cause comment `// Check for 24
+ * hours` at `:51`, which IS inside the excerpt. So when the report's claim line
+ * is outside the excerpt and the story is about this property, we fall back to
+ * the story's comment (keeping the game consistent with the report story). The
+ * excerpt's own `claimLine`/`claimText` (extracted to the story's line) is the
+ * final authority; a resolved line outside the excerpt range throws.
+ */
+interface ResolvedClaim {
+  readonly claimText: string;
+  readonly sourceLocation: string;
+  readonly claimLine: number;
+}
+
+function resolveClaim(
+  excerpt: SourceExcerpt,
+  display: { claimText: string; sourceLocation: string },
+  story: LanternStory,
+): ResolvedClaim {
+  const claimLine = excerpt.claimLine;
+
+  // Fix: fail the build if the excerpt's claim line is not inside its own
+  // range — the round would highlight a line it does not show.
+  if (claimLine < excerpt.startLine || claimLine > excerpt.endLine) {
+    throw new Error(
+      `claim line ${claimLine} for ${excerpt.propertyId} is outside its excerpt ` +
+        `range [${excerpt.startLine}, ${excerpt.endLine}]`,
+    );
+  }
+
+  // Prefer the STORY comment when the story is about this property and its
+  // comment sits on the excerpt's claim line (the MoodPlays root-cause case).
+  if (
+    story.propertyId === excerpt.propertyId &&
+    lineOf(story.comment.sourceLocation) === claimLine
+  ) {
+    return {
+      claimText: story.comment.claimText,
+      sourceLocation: story.comment.sourceLocation,
+      claimLine,
+    };
+  }
+
+  // Otherwise use the report display when its line matches the claim line …
+  if (lineOf(display.sourceLocation) === claimLine) {
+    return {
+      claimText: display.claimText,
+      sourceLocation: display.sourceLocation,
+      claimLine,
+    };
+  }
+
+  // … else fall back to the excerpt's own verbatim claim line (trimmed), with a
+  // location rebuilt from the excerpt's file basename + the claim line, so the
+  // displayed comment always matches the highlighted excerpt line.
+  const basename = excerpt.sourceFile.split("/").pop() ?? excerpt.sourceFile;
+  return {
+    claimText: excerpt.claimText.trim(),
+    sourceLocation: `${basename}:${claimLine}`,
+    claimLine,
+  };
+}
+
+/** Do two inclusive line ranges overlap? */
+function rangesOverlap(
+  a: { startLine: number; endLine: number },
+  b: { startLine: number; endLine: number },
+): boolean {
+  return a.startLine <= b.endLine && b.startLine <= a.endLine;
+}
+
 /**
  * Patterns that pull an Expected-vs-Actual pair out of a fast-check
  * `observedOutput` STRING. Kept in sync with the UI's
@@ -228,10 +312,18 @@ export async function buildTargetClaims(
     const excerpt = excerptByProp.get(propertyId);
     if (!excerpt) continue;
 
-    // The claim text + source come VERBATIM from the report display.
-    const claimText = display?.claimText;
-    const sourceLocation = display?.sourceLocation;
-    if (!claimText || !sourceLocation) continue;
+    // The claim text + source come from the report display, but are RESOLVED
+    // to stay consistent with the excerpt the round shows (see resolveClaim):
+    // the displayed comment/line is always inside the excerpt, falling back to
+    // the headline story comment for a lie whose report line is outside it.
+    const reportClaimText = display?.claimText;
+    const reportSourceLocation = display?.sourceLocation;
+    if (!reportClaimText || !reportSourceLocation) continue;
+    const resolved = resolveClaim(
+      excerpt,
+      { claimText: reportClaimText, sourceLocation: reportSourceLocation },
+      target.story,
+    );
 
     // 2. Cross-check the LOCKED prediction against the report's predicted.
     const lockAbs = join(target.rootAbs, "locks", `${propertyId}.lock.json`);
@@ -272,13 +364,13 @@ export async function buildTargetClaims(
       propertyId,
       targetId: target.id,
       targetLabel: target.label,
-      claimText,
-      sourceLocation,
+      claimText: resolved.claimText,
+      sourceLocation: resolved.sourceLocation,
       code: excerpt.code,
       sourceFile: excerpt.sourceFile,
       startLine: excerpt.startLine,
       endLine: excerpt.endLine,
-      claimLine: excerpt.claimLine,
+      claimLine: resolved.claimLine,
       verdict: stageCVerdict,
       kiroPrediction: lockVerdict,
       isLie,
@@ -311,25 +403,47 @@ export async function buildGameData(
   targets: readonly GameTargetSource[],
   now: () => Date = () => new Date(),
 ): Promise<GameData> {
-  const claims: GameClaim[] = [];
+  const allClaims: GameClaim[] = [];
   const credits: GameCredit[] = [];
   for (const target of targets) {
-    claims.push(...(await buildTargetClaims(readers, target)));
+    allClaims.push(...(await buildTargetClaims(readers, target)));
     if (target.story.credit) {
       credits.push({ targetId: target.id, credit: target.story.credit });
     }
   }
 
-  const lies = claims.filter((c) => c.isLie);
-  const passes = claims.filter((c) => c.verdict === "PASS");
+  const lies = allClaims.filter((c) => c.isLie);
   if (lies.length !== 2) {
     throw new Error(
       `expected exactly 2 lie claims across targets, found ${lies.length}`,
     );
   }
+
+  // FAIRNESS CHECK: a held (PASS) round must not SHOW the buggy line a lie's
+  // excerpt reveals. Exclude any held claim whose excerpt overlaps a lie's
+  // excerpt in the SAME source file (e.g. MoodPlays property-4
+  // "// Open 24 hours, never closing" at :53 lives in the same L48-61 span as
+  // the property-1 lie's buggy `includes('24')` line). Lie rounds themselves
+  // are kept; only held rounds are filtered.
+  const liesBySource = new Map<string, GameClaim[]>();
+  for (const lie of lies) {
+    const list = liesBySource.get(lie.sourceFile) ?? [];
+    list.push(lie);
+    liesBySource.set(lie.sourceFile, list);
+  }
+  const claims = allClaims.filter((c) => {
+    if (c.isLie) return true;
+    if (c.verdict !== "PASS") return true; // symptoms etc. are not held rounds
+    const overlappingLie = (liesBySource.get(c.sourceFile) ?? []).some((lie) =>
+      rangesOverlap(c, lie),
+    );
+    return !overlappingLie;
+  });
+
+  const passes = claims.filter((c) => c.verdict === "PASS" && !c.isLie);
   if (passes.length < 4) {
     throw new Error(
-      `need at least 4 PASS claims to fill a game, found ${passes.length}`,
+      `need at least 4 non-overlapping PASS claims to fill a game, found ${passes.length}`,
     );
   }
 

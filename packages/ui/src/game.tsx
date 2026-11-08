@@ -150,6 +150,20 @@ function RoundView({
   const revealed = answered !== null;
   const playerCorrect = revealed && verdictToChoice(claim.verdict) === answered;
   const kiroPick = verdictToChoice(claim.kiroPrediction);
+
+  // Wording (Fix 4): distinguish the two ways to be wrong. "Fooled" applies
+  // ONLY when the player trusted a comment that actually lies. Doubting a
+  // comment that held is a different (also-wrong) outcome, worded as such.
+  let playerResultText: string;
+  if (playerCorrect) {
+    playerResultText = "✓ got it";
+  } else if (answered === "trust") {
+    // trusted a lying comment
+    playerResultText = "✗ were fooled";
+  } else {
+    // doubted a comment that held up
+    playerResultText = "✗ doubted a comment that held";
+  }
   const nextRef = useRef<HTMLButtonElement>(null);
 
   // Move focus to the Next button when the reveal appears, so a keyboard player
@@ -220,7 +234,7 @@ function RoundView({
               ? "the comment told the truth."
               : "the comment was lying."}{" "}
             <span className="game-reveal__you">
-              You {playerCorrect ? "✓ got it" : "✗ were fooled"}.
+              You {playerResultText}.
             </span>
           </p>
 
@@ -376,7 +390,7 @@ export interface GameViewProps {
 
 type Phase =
   | { readonly kind: "intro" }
-  | { readonly kind: "playing"; readonly roundIndex: number; readonly answered: Choice | null }
+  | { readonly kind: "playing"; readonly roundIndex: number }
   | { readonly kind: "final" };
 
 /**
@@ -390,7 +404,12 @@ export function GameView({ data, seed }: GameViewProps): ReactElement {
     () => seed ?? (Date.now() & 0x7fffffff),
   );
   const [phase, setPhase] = useState<Phase>({ kind: "intro" });
-  const [results, setResults] = useState<RoundResult[]>([]);
+  // Each round's answer, indexed by round. `null` = not yet answered. Keyed by
+  // index (not an append-only list) so a double-click on the SAME round is
+  // idempotent — it can only ever set that one slot, never add a second result.
+  // This is the answer guard: without it, rapid clicks produced bogus tallies
+  // like "You: 6/12" / "4 of 4 lying comments".
+  const [answers, setAnswers] = useState<readonly (Choice | null)[]>([]);
 
   const rounds = useMemo(
     () => (data ? selectRounds(data, gameSeed) : []),
@@ -398,37 +417,45 @@ export function GameView({ data, seed }: GameViewProps): ReactElement {
   );
 
   const startGame = useCallback(() => {
-    setResults([]);
-    setPhase({ kind: "playing", roundIndex: 0, answered: null });
-  }, []);
+    setAnswers(new Array(rounds.length).fill(null));
+    setPhase({ kind: "playing", roundIndex: 0 });
+  }, [rounds.length]);
 
   const playAgain = useCallback(() => {
     // New seed -> new random held-claim draw and order.
-    setGameSeed((Date.now() & 0x7fffffff) ^ (results.length + 1));
-    setResults([]);
+    setGameSeed((Date.now() & 0x7fffffff) ^ (answers.length + 1));
+    setAnswers([]);
     setPhase({ kind: "intro" });
-  }, [results.length]);
+  }, [answers.length]);
 
+  // Record the answer for the CURRENT round. Guarded: a round already answered
+  // keeps its first answer (ignore later Trust/Doubt clicks or key presses).
   const choose = useCallback(
     (choice: Choice) => {
-      setPhase((p) => {
-        if (p.kind !== "playing" || p.answered !== null) return p;
-        const claim = rounds[p.roundIndex];
-        setResults((rs) => [...rs, scoreRound(claim, choice)]);
-        return { ...p, answered: choice };
+      if (phase.kind !== "playing") return;
+      const roundIndex = phase.roundIndex;
+      setAnswers((prev) => {
+        if (prev[roundIndex] != null) return prev; // already answered -> ignore
+        const nextAnswers = prev.slice();
+        nextAnswers[roundIndex] = choice;
+        return nextAnswers;
       });
     },
-    [rounds],
+    [phase],
   );
 
+  // Advance to the next round / final. Guarded: only fires once the CURRENT
+  // round has been answered, so a stray Next click/keypress before the reveal
+  // (or a rapid double-advance) cannot skip a round or over-count.
   const next = useCallback(() => {
     setPhase((p) => {
       if (p.kind !== "playing") return p;
+      if (answers[p.roundIndex] == null) return p; // not answered yet -> ignore
       const nextIndex = p.roundIndex + 1;
       if (nextIndex >= rounds.length) return { kind: "final" };
-      return { kind: "playing", roundIndex: nextIndex, answered: null };
+      return { kind: "playing", roundIndex: nextIndex };
     });
-  }, [rounds.length]);
+  }, [answers, rounds.length]);
 
   if (!data) {
     return (
@@ -440,6 +467,14 @@ export function GameView({ data, seed }: GameViewProps): ReactElement {
     );
   }
 
+  // Results are DERIVED from the answers array (one per answered round), so the
+  // tally is a pure function of the guarded answers and can never double-count.
+  const results: RoundResult[] = rounds
+    .map((claim, i) => {
+      const choice = answers[i];
+      return choice != null ? scoreRound(claim, choice) : null;
+    })
+    .filter((r): r is RoundResult => r !== null);
   const score = tallyGame(results);
 
   return (
@@ -492,7 +527,7 @@ export function GameView({ data, seed }: GameViewProps): ReactElement {
           claim={rounds[phase.roundIndex]}
           index={phase.roundIndex}
           total={rounds.length}
-          answered={phase.answered}
+          answered={answers[phase.roundIndex] ?? null}
           onChoose={choose}
           onNext={next}
           isLast={phase.roundIndex === rounds.length - 1}

@@ -137,8 +137,12 @@ describe("GameView rounds", () => {
     expect(verdict).toContain(
       first.verdict === "PASS" ? "Execution: PASS" : "Execution: FAIL",
     );
-    // Doubting a FAIL is correct; doubting a PASS is wrong.
-    expect(verdict).toContain(first.verdict === "FAIL" ? "got it" : "were fooled");
+    // Doubting a FAIL is correct ("got it"); doubting a PASS is the
+    // "doubted a comment that held" wording (never "were fooled").
+    expect(verdict).toContain(
+      first.verdict === "FAIL" ? "got it" : "doubted a comment that held",
+    );
+    expect(verdict).not.toContain("were fooled");
 
     // Kiro's locked prediction is shown (all PASS -> Trust).
     const kiro = screen.getByTestId(GAME_TEST_IDS.kiroPick).textContent ?? "";
@@ -151,6 +155,58 @@ describe("GameView rounds", () => {
         screen.getByTestId(GAME_TEST_IDS.counterexample).textContent,
       ).toContain("execution produced");
     }
+  });
+
+  it("says 'were fooled' only when the player trusted a lie, else 'doubted a comment that held' (Fix 4)", () => {
+    render(<GameView data={DATA} seed={SEED} />);
+    fireEvent.click(screen.getByTestId(GAME_TEST_IDS.start));
+    const rounds = selectRounds(DATA, SEED);
+    for (let i = 0; i < rounds.length; i++) {
+      const r = rounds[i];
+      if (r.isLie) {
+        // Trust a lie -> fooled.
+        fireEvent.click(screen.getByTestId(GAME_TEST_IDS.trust));
+        const text = screen.getByTestId(GAME_TEST_IDS.verdict).textContent ?? "";
+        expect(text).toContain("were fooled");
+        expect(text).not.toContain("doubted a comment that held");
+      } else {
+        // Doubt a held comment -> "doubted a comment that held", never fooled.
+        fireEvent.click(screen.getByTestId(GAME_TEST_IDS.doubt));
+        const text = screen.getByTestId(GAME_TEST_IDS.verdict).textContent ?? "";
+        expect(text).toContain("doubted a comment that held");
+        expect(text).not.toContain("were fooled");
+      }
+      fireEvent.click(screen.getByTestId(GAME_TEST_IDS.next));
+    }
+  });
+
+  it("ignores extra Trust/Doubt clicks and premature Next after a round is answered (Fix 1)", () => {
+    render(<GameView data={DATA} seed={SEED} />);
+    fireEvent.click(screen.getByTestId(GAME_TEST_IDS.start));
+    const rounds = selectRounds(DATA, SEED);
+
+    // Answer round 1 by trusting, then rapidly click the (now-removed) choice
+    // and spam Next. Only one advance should happen per real answer.
+    for (let i = 0; i < rounds.length; i++) {
+      fireEvent.click(screen.getByTestId(GAME_TEST_IDS.trust));
+      // The choice buttons are gone post-answer; Next is present. Spam it.
+      const nextBtn = screen.getByTestId(GAME_TEST_IDS.next);
+      fireEvent.click(nextBtn);
+      fireEvent.click(nextBtn);
+      fireEvent.click(nextBtn);
+    }
+
+    // After six real answers the game ends with a well-formed /6 tally — never
+    // the bogus "/12" that rapid clicking used to produce.
+    const scoreEl = screen.getByTestId(GAME_TEST_IDS.finalScore).textContent ?? "";
+    expect(scoreEl).toContain("You: ");
+    expect(scoreEl).toContain("/6");
+    expect(scoreEl).not.toContain("/12");
+    // Trusting everything: player catches the 4 held (PASS) but is fooled by
+    // the 2 lies -> 4/6; fooled by exactly 2 of 2 lies.
+    expect(scoreEl).toContain("You: 4/6");
+    const final = screen.getByTestId(GAME_TEST_IDS.final).textContent ?? "";
+    expect(final).toContain("fooled by 2 of 2 lying comments");
   });
 
   it("shows a root-cause note for a symptom-style claim when one appears", () => {

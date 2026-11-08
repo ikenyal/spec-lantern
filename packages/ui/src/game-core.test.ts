@@ -79,15 +79,24 @@ function stageCFile(propertyId: string, verdict: string): string {
   });
 }
 
+/** Per-property excerpt overrides (file, range, claim line). */
+interface ExcerptSpec {
+  readonly sourceFile?: string;
+  readonly startLine?: number;
+  readonly endLine?: number;
+  readonly claimLine?: number;
+  readonly claimText?: string;
+}
+
 /** An excerpt entry with a code slice + the sandbox file hash. */
-function excerpt(propertyId: string) {
+function excerpt(propertyId: string, spec: ExcerptSpec = {}) {
   return {
     propertyId,
-    sourceFile: SRC,
-    startLine: 1,
-    endLine: 3,
-    claimLine: 2,
-    claimText: "line2",
+    sourceFile: spec.sourceFile ?? SRC,
+    startLine: spec.startLine ?? 1,
+    endLine: spec.endLine ?? 3,
+    claimLine: spec.claimLine ?? 2,
+    claimText: spec.claimText ?? "line2",
     code: "line1\nline2\nline3",
     fileSha256: SRC_HASH,
   };
@@ -98,6 +107,8 @@ interface FixtureOpts {
   readonly locks: Record<string, string>;
   readonly stageC: Record<string, string>;
   readonly excerptPropertyIds: readonly string[];
+  /** Optional per-property excerpt overrides (range / file / claim line). */
+  readonly excerptSpecs?: Record<string, ExcerptSpec>;
   /** When false, the sandbox source is absent (readSourceBytes -> null). */
   readonly sandboxPresent?: boolean;
   /** Override the stored excerpt hash to force a drift. */
@@ -116,7 +127,7 @@ function makeTarget(opts: FixtureOpts): {
     files[join(ROOT, "results", "stage-c", `${pid}.json`)] = body;
   }
   const excerpts = opts.excerptPropertyIds.map((pid) => {
-    const e = excerpt(pid);
+    const e = excerpt(pid, opts.excerptSpecs?.[pid]);
     return opts.excerptHashOverride
       ? { ...e, fileSha256: opts.excerptHashOverride }
       : e;
@@ -350,6 +361,94 @@ describe("buildTargetClaims", () => {
     const claims = await buildTargetClaims(readers, target);
     expect(claims).toHaveLength(1);
   });
+
+  it("throws when the excerpt's claim line is outside its own range (Fix 2)", async () => {
+    const { readers, target } = makeTarget({
+      comparisons: [
+        comparison({
+          propertyId: "p1",
+          display: { claimText: "// c", sourceLocation: "file.ts:99" },
+        }),
+      ],
+      locks: { p1: lockFile("p1", "PASS") },
+      stageC: { p1: stageCFile("p1", "PASS") },
+      excerptPropertyIds: ["p1"],
+      // excerpt covers lines 10-12 but the claim line is 99 -> out of range.
+      excerptSpecs: { p1: { startLine: 10, endLine: 12, claimLine: 99 } },
+      sandboxPresent: false,
+    });
+    await expect(buildTargetClaims(readers, target)).rejects.toThrow(
+      /claim line 99 .* outside its excerpt range \[10, 12\]/,
+    );
+  });
+
+  it("falls back to the story comment when the report claim line is outside the excerpt (Fix 2)", async () => {
+    // Report headlines a comment at :17 (outside the excerpt L48-61); the story
+    // (about p1) quotes the root-cause comment at :51, which IS inside. The
+    // game must show the story comment, consistent with the report story.
+    const story: LanternStory = {
+      ...STORY,
+      propertyId: "p1",
+      comment: {
+        claimText: "// Check for 24 hours",
+        sourceLocation: "openingHoursParser.ts:51",
+      },
+    };
+    const { readers } = makeTarget({
+      comparisons: [
+        comparison({
+          propertyId: "p1",
+          actual: { propertyId: "p1", outcome: "VERDICT", verdict: "FAIL" },
+          confirmedBug: true,
+          display: {
+            claimText: '// Handle 24-hour format (e.g., "22:00")',
+            sourceLocation: "openingHoursParser.ts:17",
+          },
+        }),
+      ],
+      locks: { p1: lockFile("p1", "PASS") },
+      stageC: { p1: stageCFile("p1", "FAIL") },
+      excerptPropertyIds: ["p1"],
+      excerptSpecs: {
+        p1: {
+          sourceFile: "sandbox/moodplays/src/utils/openingHoursParser.ts",
+          startLine: 48,
+          endLine: 61,
+          claimLine: 51,
+          claimText: "  // Check for 24 hours",
+        },
+      },
+      sandboxPresent: false,
+    });
+    const targetWithStory: GameTargetSource = {
+      id: "demo",
+      label: "Demo",
+      rootAbs: ROOT,
+      repoRootAbs: "/abs",
+      report: {
+        comparisons: [
+          comparison({
+            propertyId: "p1",
+            actual: { propertyId: "p1", outcome: "VERDICT", verdict: "FAIL" },
+            confirmedBug: true,
+            display: {
+              claimText: '// Handle 24-hour format (e.g., "22:00")',
+              sourceLocation: "openingHoursParser.ts:17",
+            },
+          }),
+        ],
+        observedDeviations: [],
+        noConfirmedBug: false,
+        noObservedDeviation: true,
+        generatedAt: "2026-01-01T00:00:00.000Z",
+      },
+      story,
+    };
+    const [claim] = await buildTargetClaims(readers, targetWithStory);
+    expect(claim.claimText).toBe("// Check for 24 hours");
+    expect(claim.sourceLocation).toBe("openingHoursParser.ts:51");
+    expect(claim.claimLine).toBe(51);
+  });
 });
 
 describe("buildGameData", () => {
@@ -399,7 +498,7 @@ describe("buildGameData", () => {
     };
     await expect(
       buildGameData(readers(opts), [target(opts)]),
-    ).rejects.toThrow(/at least 4 PASS claims/);
+    ).rejects.toThrow(/at least 4 non-overlapping PASS claims/);
   });
 
   it("assembles a valid pool (2 lies + >= 4 held) with credits", async () => {
@@ -422,6 +521,14 @@ describe("buildGameData", () => {
     const lieRow2 = { ...lieRow, propertyId: "p2" } as PropertyComparison;
 
     const allPids = ["p1", "p2", "p3", "p4", "p5", "p6"];
+    // Give every claim its OWN non-overlapping excerpt range so no held claim
+    // is excluded by the fairness overlap check.
+    const excerptSpecs: Record<string, ExcerptSpec> = Object.fromEntries(
+      allPids.map((p, i) => [
+        p,
+        { startLine: i * 10 + 1, endLine: i * 10 + 3, claimLine: i * 10 + 2 },
+      ]),
+    );
     const opts: FixtureOpts = {
       comparisons: [lieRow, lieRow2, ...passRows],
       locks: Object.fromEntries(allPids.map((p) => [p, lockFile(p, "PASS")])),
@@ -432,6 +539,7 @@ describe("buildGameData", () => {
         ]),
       ),
       excerptPropertyIds: allPids,
+      excerptSpecs,
       sandboxPresent: false,
     };
     const data = await buildGameData(readers(opts), [target(opts)]);
@@ -440,5 +548,71 @@ describe("buildGameData", () => {
     expect(data.credits).toEqual([
       { targetId: "demo", credit: "Demo by someone (MIT)." },
     ]);
+  });
+
+  it("excludes a held claim whose excerpt overlaps a lie's excerpt in the same file (Fix 3)", async () => {
+    const SAME = "sandbox/t/opening.ts";
+    // p1 lie covers L48-61. "overlap" (held) covers L53-54 — inside the lie's
+    // span, so it would SHOW the buggy line and must be excluded. The other
+    // held claims sit in disjoint ranges and survive.
+    const lieRow = comparison({
+      propertyId: "p1",
+      actual: { propertyId: "p1", outcome: "VERDICT", verdict: "FAIL" },
+      confirmedBug: true,
+      display: { claimText: "// lie", sourceLocation: `${SAME}:51` },
+    });
+    const lieRow2 = comparison({
+      propertyId: "p2",
+      actual: { propertyId: "p2", outcome: "VERDICT", verdict: "FAIL" },
+      confirmedBug: true,
+      display: { claimText: "// lie2", sourceLocation: "sandbox/t/other.ts:5" },
+    });
+    const held = (pid: string, line: number) =>
+      comparison({
+        propertyId: pid,
+        display: { claimText: `// ${pid}`, sourceLocation: `x:${line}` },
+      });
+    const comparisons = [
+      lieRow,
+      lieRow2,
+      held("overlap", 53),
+      held("h1", 70),
+      held("h2", 80),
+      held("h3", 90),
+      held("h4", 100),
+    ];
+    const allPids = comparisons.map((c) => c.propertyId);
+    const excerptSpecs: Record<string, ExcerptSpec> = {
+      p1: { sourceFile: SAME, startLine: 48, endLine: 61, claimLine: 51 },
+      p2: {
+        sourceFile: "sandbox/t/other.ts",
+        startLine: 1,
+        endLine: 8,
+        claimLine: 5,
+      },
+      overlap: { sourceFile: SAME, startLine: 53, endLine: 54, claimLine: 53 },
+      h1: { sourceFile: SAME, startLine: 70, endLine: 72, claimLine: 70 },
+      h2: { sourceFile: SAME, startLine: 80, endLine: 82, claimLine: 80 },
+      h3: { sourceFile: SAME, startLine: 90, endLine: 92, claimLine: 90 },
+      h4: { sourceFile: SAME, startLine: 100, endLine: 102, claimLine: 100 },
+    };
+    const opts: FixtureOpts = {
+      comparisons,
+      locks: Object.fromEntries(allPids.map((p) => [p, lockFile(p, "PASS")])),
+      stageC: Object.fromEntries(
+        allPids.map((p) => [
+          p,
+          stageCFile(p, p === "p1" || p === "p2" ? "FAIL" : "PASS"),
+        ]),
+      ),
+      excerptPropertyIds: allPids,
+      excerptSpecs,
+      sandboxPresent: false,
+    };
+    const data = await buildGameData(readers(opts), [target(opts)]);
+    const ids = data.claims.map((c) => c.propertyId);
+    expect(ids).not.toContain("overlap"); // excluded by the overlap check
+    expect(ids).toContain("p1"); // the lie itself is kept
+    expect(data.claims.filter((c) => c.verdict === "PASS" && !c.isLie)).toHaveLength(4);
   });
 });
