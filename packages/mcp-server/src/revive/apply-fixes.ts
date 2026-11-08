@@ -53,9 +53,9 @@
  * exclusion only shapes what the copy contains.
  */
 import { cp, mkdtemp, rm, writeFile, mkdir } from "node:fs/promises";
-import { tmpdir } from "node:os";
 import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import type { FixTask } from "@spec-lantern/types";
+import { WORKING_COPY_PARENT_DIR } from "../runner/working-copy.js";
 
 /* -------------------------------------------------------------------------- */
 /* The applyable-edit contract                                                */
@@ -136,10 +136,13 @@ export interface ApplyFixesResult {
 export interface ApplyFixesOptions {
   /**
    * Where to root the Target_Repo_Copy. Defaults to a fresh `mkdtemp` under the
-   * OS temp dir. Overridable so a caller/test can place the copy somewhere
-   * specific (e.g. a path the macOS Podman VM can see for task 15.2). A fresh,
-   * unique directory is always created UNDER this location so two applies never
-   * collide and neither can touch the original.
+   * `/Users`-visible working-copy parent ({@link WORKING_COPY_PARENT_DIR}) — NOT
+   * the OS temp dir, because the macOS Podman machine shares `/Users` but NOT
+   * `/tmp`, so a copy under `tmpdir()` would be invisible inside the container
+   * when the post-fix re-execution mounts it. Overridable so a test can place
+   * the copy somewhere specific. A fresh, unique directory is always created
+   * UNDER this location so two applies never collide and neither can touch the
+   * original.
    */
   copyParentDir?: string;
   /** Optional progress sink (defaults to no-op). */
@@ -206,12 +209,15 @@ export async function copyTargetRepo(
 
   const parent = options.copyParentDir
     ? resolve(options.copyParentDir)
-    : tmpdir();
-  // Ensure the parent exists when a caller pointed us at a non-default location.
+    : WORKING_COPY_PARENT_DIR;
+  // Ensure the parent exists (the /Users-visible skeleton dir, or a caller-
+  // specified location).
   await mkdir(parent, { recursive: true });
 
-  // Fresh, unique copy root. Nothing the original owns is ever written.
-  const copyRoot = await mkdtemp(join(parent, "spec-lantern-target-copy-"));
+  // Fresh, unique copy root. Nothing the original owns is ever written. The
+  // `.worktree` prefix keeps the copy covered by the repo's `.worktree*`
+  // gitignore when it lands under the default /Users-visible parent.
+  const copyRoot = await mkdtemp(join(parent, ".worktree-fix-"));
   log(`Copying Target_Repo ${sourceAbs} → Target_Repo_Copy ${copyRoot}`);
 
   await cp(sourceAbs, copyRoot, {

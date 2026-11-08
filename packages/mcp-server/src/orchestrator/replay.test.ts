@@ -83,7 +83,9 @@ describe("replayCounterexample — replay wiring (task 11.1)", () => {
         property: makeProperty("property-1.claim-monthly-order"),
         executionContext: RECORDED_CONTEXT,
       },
-      { runner },
+      // mountInPlace exercises the wiring with a symbolic ref; copy-safety is
+      // covered against a real repo in working-copy.test.ts.
+      { runner, mountInPlace: true },
     );
 
     // The property was dispatched ONCE, mounting ONLY the target ref, with the
@@ -120,7 +122,7 @@ describe("replayCounterexample — replay wiring (task 11.1)", () => {
         property: makeProperty("property-1.claim-monthly-order"),
         executionContext: RECORDED_CONTEXT,
       },
-      { runner },
+      { runner, mountInPlace: true },
     );
 
     // Replay returns the ONE ActualResult (not a batch), carrying the original
@@ -186,7 +188,7 @@ describe("replayCounterexample — replay wiring (task 11.1)", () => {
         property: makeProperty("property-1.claim-monthly-order"),
         executionContext: RECORDED_CONTEXT,
       },
-      { runner },
+      { runner, mountInPlace: true },
     );
 
     expect(runner.calls).toHaveLength(1);

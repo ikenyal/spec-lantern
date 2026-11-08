@@ -32,6 +32,12 @@
  *    contract. There is no code path from the orchestrator to host execution,
  *    and the runner itself surfaces `RUNNER_UNAVAILABLE` rather than falling
  *    back to the host when Podman is absent (R5.3, R5.8, R12.5).
+ *  - The ORIGINAL Target_Repo is never mounted. The orchestrator first copies it
+ *    into a FRESH throwaway, `/Users`-visible working copy
+ *    ({@link prepareWorkingCopy}) and mounts THAT, then removes the copy when
+ *    the run finishes. This is what makes the site's "read-only target" promise
+ *    true in code: the install phase writes `node_modules`/lock files into the
+ *    mount, so the mount must be a copy, never the user's repo.
  *  - The runner runs the Dependency_Install_Phase fully before the
  *    Test_Execution_Phase (R5.4, R12.2, R12.3); that ordering is owned by
  *    `runTwoPhase` and the orchestrator does not reorder or skip it.
@@ -67,6 +73,11 @@ import {
   getIsolatedRunner,
   type IsolatedRunner,
 } from "../runner/isolated-runner.js";
+import {
+  prepareWorkingCopy,
+  cleanupWorkingCopy,
+  stagedPropertyTestFileRel,
+} from "../runner/working-copy.js";
 
 /* -------------------------------------------------------------------------- */
 /* Options                                                                    */
@@ -85,6 +96,31 @@ export interface ExecutePropertiesOptions {
    * orchestration deterministically without Podman.
    */
   runner?: IsolatedRunner;
+  /**
+   * Optional spec root. When provided, the orchestrator stages each property's
+   * `properties/property-{n}.{claimId}.test.ts` from the spec root INTO the
+   * throwaway working copy itself (R: callers should not have to place files by
+   * hand). When omitted, properties are assumed to already live inside the copy
+   * (e.g. the caller staged them, or they are part of the Target_Repo), and the
+   * runner resolves `<id>.test.ts` in place.
+   */
+  specRoot?: string;
+  /**
+   * Override the throwaway working-copy directory (tests). Normally a fresh,
+   * unique `/Users`-visible dir is created per call and removed afterwards.
+   */
+  workingCopyDir?: string;
+  /**
+   * Skip copying the Target_Repo into a throwaway working copy and mount
+   * `targetRepoRef` directly. DANGEROUS — the install phase writes
+   * `node_modules`/lock files into whatever is mounted, so this mutates the
+   * mounted dir. It exists ONLY for the internal post-fix re-execution, where
+   * the caller ({@link ../revive/apply-fixes-reexecute.ts}) has ALREADY made a
+   * throwaway copy and passes THAT copy as `targetRepoRef`; copying again would
+   * be wasteful and pointless. Defaults to `false`: every external caller
+   * (`execute_properties`) always copies.
+   */
+  mountInPlace?: boolean;
   /**
    * Per-run execution timeout in seconds forwarded to the runner for each
    * property. The runner defaults it when omitted (R5.7). Dedicated timeout
@@ -138,6 +174,12 @@ function propertyTestFileFor(property: CorrectnessProperty): string {
  *     the gate rejects it (host-bound target/property), the rejection's
  *     per-property `SAFETY_VIOLATION` results are returned unchanged and NO
  *     runner is created — the host is untouched.
+ *  1b. **Copy to a throwaway working copy, mount the COPY.** The accepted
+ *     `targetRepoRef` is copied into a fresh `/Users`-visible working copy
+ *     (excluding `node_modules`/`.git`/build), and that copy is what every
+ *     property runs against. The original is never mounted and is removed-copy-
+ *     safe. When a `specRoot` is given, the property test files are staged into
+ *     the copy here too. The copy is removed in a `finally`.
  *  2. **Dispatch accepted properties to the runner (R5.3).** Each property is
  *     run through the {@link IsolatedRunner} contract one at a time. The runner
  *     runs the install phase fully, then the no-network test phase, and resolves
@@ -183,43 +225,80 @@ export async function executeProperties(
       } to the Isolated_Runner`,
   );
 
-  // 2. Dispatch each accepted property through the runner. The runner owns the
-  //    install→test ordering and the no-host-fallback guarantee.
-  const runner = options.runner ?? getIsolatedRunner();
-  const results: ActualResult[] = [];
-  // Per-execution Execution_Context, recorded for EVERY execution (R6.1), keyed
-  // by propertyId. The runner's context-aware channel reports it directly; a
-  // runner that only implements `runProperty` contributes a context only when a
-  // FAIL Counterexample carries one (see `collect`).
-  const recordedContexts: Record<string, ExecutionContext> = {};
-  for (const property of request.properties) {
-    log(`Executing property ${property.id} in the runner…`);
-    const runnerRequest = {
-      propertyId: property.id,
-      targetRepoPath: request.targetRepoRef,
-      propertyTestFile: propertyTestFileFor(property),
-      timeoutSeconds: options.timeoutSeconds,
-    };
-
-    // Prefer the context-aware channel (task 10.3): it surfaces the
-    // Execution_Context the run used for EVERY outcome — PASS, FAIL, TIMEOUT, or
-    // ERROR — not only when a FAIL Counterexample happens to bundle one (R6.1).
-    // Fall back to plain `runProperty` for a runner that does not implement it.
-    let result: ActualResult;
-    if (runner.runPropertyWithContext) {
-      const withContext = await runner.runPropertyWithContext(runnerRequest);
-      result = withContext.result;
-      recordedContexts[property.id] = withContext.executionContext;
-    } else {
-      result = await runner.runProperty(runnerRequest);
-    }
-    log(`Property ${property.id} → ${result.outcome}`);
-    results.push(result);
+  // 2. Copy the Target_Repo into a FRESH throwaway working copy and mount THAT
+  //    — never the original (the install phase writes node_modules/lock files
+  //    into whatever is mounted, so the original must stay untouched; the site
+  //    promises it is read-only). The optional `specRoot` lets the tool stage
+  //    the property test files into the copy itself. `mountInPlace` is the one
+  //    internal exception: the post-fix re-execution already passes a throwaway
+  //    copy as `targetRepoRef`, so it opts out of copying again.
+  const mountInPlace = options.mountInPlace ?? false;
+  let mountPath = request.targetRepoRef;
+  let staged = false;
+  let workingCopyDir: string | undefined;
+  if (!mountInPlace) {
+    const prepared = await prepareWorkingCopy(request.targetRepoRef, {
+      specRoot: options.specRoot,
+      properties: options.specRoot ? request.properties : undefined,
+      workingCopyDir: options.workingCopyDir,
+      log,
+    });
+    workingCopyDir = prepared.workingCopyDir;
+    mountPath = prepared.workingCopyDir;
+    staged = options.specRoot !== undefined;
   }
 
-  // 3. Collect into the response shape, surfacing a per-property context for
-  //    every execution the runner reported one for.
-  return collect(results, recordedContexts);
+  try {
+    // 3. Dispatch each accepted property through the runner. The runner owns the
+    //    install→test ordering and the no-host-fallback guarantee.
+    const runner = options.runner ?? getIsolatedRunner();
+    const results: ActualResult[] = [];
+    // Per-execution Execution_Context, recorded for EVERY execution (R6.1), keyed
+    // by propertyId. The runner's context-aware channel reports it directly; a
+    // runner that only implements `runProperty` contributes a context only when a
+    // FAIL Counterexample carries one (see `collect`).
+    const recordedContexts: Record<string, ExecutionContext> = {};
+    for (const property of request.properties) {
+      log(`Executing property ${property.id} in the runner…`);
+      // When the tool staged files from a spec root, the property lives at the
+      // canonical `properties/...test.ts` path inside the copy; otherwise the
+      // runner resolves `<id>.test.ts` in place.
+      const propertyTestFile = staged
+        ? stagedPropertyTestFileRel(property.id)
+        : propertyTestFileFor(property);
+      const runnerRequest = {
+        propertyId: property.id,
+        targetRepoPath: mountPath,
+        propertyTestFile,
+        timeoutSeconds: options.timeoutSeconds,
+      };
+
+      // Prefer the context-aware channel (task 10.3): it surfaces the
+      // Execution_Context the run used for EVERY outcome — PASS, FAIL, TIMEOUT, or
+      // ERROR — not only when a FAIL Counterexample happens to bundle one (R6.1).
+      // Fall back to plain `runProperty` for a runner that does not implement it.
+      let result: ActualResult;
+      if (runner.runPropertyWithContext) {
+        const withContext = await runner.runPropertyWithContext(runnerRequest);
+        result = withContext.result;
+        recordedContexts[property.id] = withContext.executionContext;
+      } else {
+        result = await runner.runProperty(runnerRequest);
+      }
+      log(`Property ${property.id} → ${result.outcome}`);
+      results.push(result);
+    }
+
+    // 4. Collect into the response shape, surfacing a per-property context for
+    //    every execution the runner reported one for.
+    return collect(results, recordedContexts);
+  } finally {
+    // 5. Remove the throwaway working copy so nothing leaks between runs. The
+    //    original was never mounted, so there is nothing to clean up there.
+    if (workingCopyDir) {
+      await cleanupWorkingCopy(workingCopyDir).catch(() => undefined);
+    }
+  }
 }
 
 /**

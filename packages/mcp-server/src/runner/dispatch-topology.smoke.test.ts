@@ -53,14 +53,17 @@
 // are visible and never mask a failure.
 
 import { spawn } from "node:child_process";
-import { access, stat } from "node:fs/promises";
-import { resolve } from "node:path";
+import { createHash } from "node:crypto";
+import { access, readdir, readFile, stat } from "node:fs/promises";
+import { join, relative, resolve } from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
+import type { PropertyExecutionRequest } from "@spec-lantern/types";
 import {
   prepareWalkingSkeletonWorkingCopy,
   WALKING_SKELETON_PROPERTY_ID,
   WALKING_SKELETON_TARGET_SOURCE,
 } from "../execute-path.js";
+import { executeProperties } from "../orchestrator/index.js";
 import { getIsolatedRunner } from "./isolated-runner.js";
 import {
   createInstallTopology,
@@ -399,3 +402,109 @@ async function probeTcpFromInternalNetwork(
   }
   return { open: false };
 }
+
+/* -------------------------------------------------------------------------- */
+/* Part 3 — executeProperties never mutates the ORIGINAL Target_Repo          */
+/*          (the critical read-only safety fix, end-to-end in a container)    */
+/* -------------------------------------------------------------------------- */
+
+// This part drives the ACTUAL fix path: `executeProperties` with the real
+// read-only `sandbox/writing-tracker` as `targetRepoRef`. Before the fix this
+// mounted the original in place, so the install phase wrote node_modules +
+// rewrote package.json/package-lock.json INTO the user's repo. Now it copies
+// into a throwaway working copy and mounts THAT. We fingerprint EVERY file in
+// the original (contents + the absence of node_modules) before and after a REAL
+// container run and assert nothing changed. The property's own outcome is
+// irrelevant here (it may be EXECUTION_ERROR without the component-render shims
+// the walking-skeleton seam injects) — what this proves is that the install
+// phase ran against a COPY and the original is byte-for-byte untouched.
+
+/** SHA-256 fingerprint of a directory tree, excluding the volatile .git dir. */
+async function fingerprintTree(root: string): Promise<Record<string, string>> {
+  const out: Record<string, string> = {};
+  async function walk(dir: string): Promise<void> {
+    const entries = await readdir(dir, { withFileTypes: true });
+    for (const entry of entries) {
+      // .git carries loose-object/pack churn unrelated to the read-only
+      // guarantee; the install/run never touches it, so exclude it for a stable
+      // fingerprint focused on the repo's working tree.
+      if (entry.name === ".git") continue;
+      const abs = join(dir, entry.name);
+      const rel = relative(root, abs).split("\\").join("/");
+      if (entry.isDirectory()) {
+        out[`${rel}/`] = "<dir>";
+        await walk(abs);
+      } else {
+        out[rel] = createHash("sha256")
+          .update(await readFile(abs))
+          .digest("hex");
+      }
+    }
+  }
+  await walk(root);
+  return out;
+}
+
+const SKELETON_SPEC_ROOT = resolve(
+  WALKING_SKELETON_TARGET_SOURCE,
+  "..",
+  "..",
+  "packages",
+  "mcp-server",
+  "skeleton",
+  "writing-tracker-monthly-order",
+);
+
+describe("executeProperties — the ORIGINAL Target_Repo is read-only (safety fix)", () => {
+  it.skipIf(!RUN_SMOKE)(
+    "running execute_properties against the real sandbox source leaves it byte-for-byte unchanged (no node_modules, lock intact)",
+    async () => {
+      // Fingerprint the original BEFORE the run.
+      const before = await fingerprintTree(HOST_TARGET_SOURCE);
+      const nodeModulesBefore = await pathExists(HOST_TARGET_NODE_MODULES);
+
+      // Drive the real fix path: the ORIGINAL sandbox source is the targetRepoRef.
+      // executeProperties copies it into a throwaway working copy and mounts THAT.
+      // The specRoot lets the tool stage the property test file into the copy.
+      const request: PropertyExecutionRequest = {
+        targetRepoRef: HOST_TARGET_SOURCE,
+        properties: [
+          {
+            id: WALKING_SKELETON_PROPERTY_ID,
+            claimId: "claim-monthly-order",
+            title: "monthly ordering",
+            statement: "the first monthly row is the current month",
+            kind: "component_rendered",
+            validatesRequirements: ["R5"],
+          },
+        ],
+        phase: "initial",
+      };
+
+      // A real container run (install phase + test phase). The install phase
+      // installs the target's deps into the COPY, never the original.
+      const result = await executeProperties(request, {
+        specRoot: SKELETON_SPEC_ROOT,
+        timeoutSeconds: 600,
+      });
+
+      // The run reached the runner (any closed outcome is fine; the point is the
+      // install phase executed against a copy, not the original).
+      expect(result.results).toHaveLength(1);
+      expect(result.results[0]?.propertyId).toBe(WALKING_SKELETON_PROPERTY_ID);
+
+      // THE GUARANTEE: the original is byte-for-byte unchanged.
+      const after = await fingerprintTree(HOST_TARGET_SOURCE);
+      expect(after).toEqual(before);
+
+      // No node_modules leaked into the original source tree.
+      if (!nodeModulesBefore) {
+        expect(await pathExists(HOST_TARGET_NODE_MODULES)).toBe(false);
+      }
+      // package.json / package-lock.json were NOT rewritten by the install.
+      expect(before["package.json"]).toBe(after["package.json"]);
+      expect(before["package-lock.json"]).toBe(after["package-lock.json"]);
+    },
+    E2E_TIMEOUT_MS,
+  );
+});

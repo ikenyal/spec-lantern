@@ -38,7 +38,11 @@
  * Execution_Context onto the runner request so the run is pinned rather than
  * freshly recorded. All host-safety invariants therefore hold unchanged: no host
  * execution, no host fallback (`RUNNER_UNAVAILABLE` surfaces verbatim), and only
- * the target working directory is mounted.
+ * a THROWAWAY working copy of the target is mounted — never the original. Replay
+ * copies `targetRepoRef` into a fresh `/Users`-visible copy (the same way
+ * {@link executeProperties} does) and removes it afterwards, so the original
+ * Target_Repo stays byte-for-byte unchanged (the install phase writes
+ * `node_modules`/lock files into the mount).
  *
  * SCOPE (task 11.1). This module wires the replay PATH and forces the recorded
  * context through the runner. The optional Property 12 reproducibility
@@ -60,6 +64,11 @@ import {
   type IsolatedRunner,
   type IsolatedRunnerRequest,
 } from "../runner/isolated-runner.js";
+import {
+  prepareWorkingCopy,
+  cleanupWorkingCopy,
+  stagedPropertyTestFileRel,
+} from "../runner/working-copy.js";
 
 /* -------------------------------------------------------------------------- */
 /* Request / options                                                          */
@@ -106,6 +115,27 @@ export interface ReplayCounterexampleOptions {
    * tests drive replay deterministically without Podman.
    */
   runner?: IsolatedRunner;
+  /**
+   * Optional spec root. When provided, the replay stages the property's
+   * `properties/property-{n}.{claimId}.test.ts` from the spec root INTO the
+   * throwaway working copy itself so the caller need not place it by hand. When
+   * omitted, the property is assumed to already live inside the copy and the
+   * runner resolves `<id>.test.ts` in place.
+   */
+  specRoot?: string;
+  /**
+   * Override the throwaway working-copy directory (tests). Normally a fresh,
+   * unique `/Users`-visible dir is created per call and removed afterwards.
+   */
+  workingCopyDir?: string;
+  /**
+   * Skip copying the Target_Repo into a throwaway working copy and mount
+   * `targetRepoRef` directly. DANGEROUS for a real target (the install phase
+   * writes into the mount); it exists only for unit tests that drive the wiring
+   * with a fake runner and a symbolic target ref. Defaults to `false`: a real
+   * replay always copies.
+   */
+  mountInPlace?: boolean;
   /**
    * Per-run execution timeout in seconds forwarded to the runner. The runner
    * defaults it when omitted (R5.7).
@@ -207,21 +237,51 @@ export async function replayCounterexample(
       `now=${request.executionContext.fixedCurrentTime})`,
   );
 
-  // 2. Dispatch through the runner with the recorded context FORCED. The runner
-  //    uses a supplied context verbatim (see recordExecutionContext), so the
-  //    replay seed/timezone/fixed-instant match the original exactly (R6.3).
-  const runner = options.runner ?? getIsolatedRunner();
-  const runnerRequest: IsolatedRunnerRequest = {
-    propertyId: request.property.id,
-    targetRepoPath: request.targetRepoRef,
-    propertyTestFile: propertyTestFileFor(request.property),
-    executionContext: request.executionContext,
-    timeoutSeconds: options.timeoutSeconds,
-  };
+  // 2. Copy the Target_Repo into a FRESH throwaway working copy and replay
+  //    against THAT — never the original (the install phase writes node_modules/
+  //    lock files into whatever is mounted; the original must stay read-only,
+  //    exactly as execute_properties does). Optionally stage the property file
+  //    from a spec root into the copy. `mountInPlace` is a test-only escape hatch.
+  const mountInPlace = options.mountInPlace ?? false;
+  let mountPath = request.targetRepoRef;
+  let staged = false;
+  let workingCopyDir: string | undefined;
+  if (!mountInPlace) {
+    const prepared = await prepareWorkingCopy(request.targetRepoRef, {
+      specRoot: options.specRoot,
+      properties: options.specRoot ? [request.property] : undefined,
+      workingCopyDir: options.workingCopyDir,
+      log,
+    });
+    workingCopyDir = prepared.workingCopyDir;
+    mountPath = prepared.workingCopyDir;
+    staged = options.specRoot !== undefined;
+  }
 
-  const result = await runner.runProperty(runnerRequest);
-  log(`Replay of property ${request.property.id} → ${result.outcome}`);
+  try {
+    // 3. Dispatch through the runner with the recorded context FORCED. The runner
+    //    uses a supplied context verbatim (see recordExecutionContext), so the
+    //    replay seed/timezone/fixed-instant match the original exactly (R6.3).
+    const runner = options.runner ?? getIsolatedRunner();
+    const runnerRequest: IsolatedRunnerRequest = {
+      propertyId: request.property.id,
+      targetRepoPath: mountPath,
+      propertyTestFile: staged
+        ? stagedPropertyTestFileRel(request.property.id)
+        : propertyTestFileFor(request.property),
+      executionContext: request.executionContext,
+      timeoutSeconds: options.timeoutSeconds,
+    };
 
-  // 3. Return the single ActualResult (the tool's output is one result).
-  return result;
+    const result = await runner.runProperty(runnerRequest);
+    log(`Replay of property ${request.property.id} → ${result.outcome}`);
+
+    // 4. Return the single ActualResult (the tool's output is one result).
+    return result;
+  } finally {
+    // 5. Remove the throwaway copy; the original was never mounted.
+    if (workingCopyDir) {
+      await cleanupWorkingCopy(workingCopyDir).catch(() => undefined);
+    }
+  }
 }

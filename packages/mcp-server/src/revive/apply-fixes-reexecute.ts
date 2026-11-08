@@ -86,6 +86,7 @@ import {
   executeProperties,
   type ExecutePropertiesOptions,
 } from "../orchestrator/index.js";
+import { stagePropertiesInto } from "../runner/working-copy.js";
 
 /* -------------------------------------------------------------------------- */
 /* Pure transition classification                                             */
@@ -206,6 +207,13 @@ export interface ApplyFixesAndReexecuteOptions {
   /** Overrides forwarded to {@link applyFixesToCopy} (copy dir + log). */
   apply?: ApplyFixesOptions;
   /**
+   * OPTIONAL spec root holding `properties/property-{n}.{claimId}.test.ts`. When
+   * provided, the property test files are staged from here INTO the fixed copy
+   * before re-execution, so the caller need not place them by hand (the copy is
+   * mounted in place, so the files must already be inside it).
+   */
+  specRoot?: string;
+  /**
    * Keep the Target_Repo_Copy on disk after re-execution. Defaults to `false`
    * (the copy is a throwaway artifact of this call and is removed). Set `true`
    * when a caller wants to inspect or reuse the fixed copy.
@@ -323,6 +331,17 @@ export async function applyFixesAndReexecute(
   );
 
   try {
+    // 1b. Stage the property test files from a spec root INTO the fixed copy
+    //     (the copy is mounted in place, so the files must live inside it).
+    if (options.specRoot && request.properties.length > 0) {
+      await stagePropertiesInto(
+        applied.targetRepoCopyPath,
+        options.specRoot,
+        request.properties,
+        log,
+      );
+    }
+
     // 2. Re-execute the SAME properties against the COPY, tagged post_fix (R8.3).
     const postFixRequest: PropertyExecutionRequest = {
       targetRepoRef: applied.targetRepoCopyPath,
@@ -334,10 +353,13 @@ export async function applyFixesAndReexecute(
         `${request.properties.length === 1 ? "y" : "ies"} against the ` +
         `Target_Repo_Copy ${applied.targetRepoCopyPath} (phase=post_fix)`,
     );
-    const postFixExecution = await executeProperties(
-      postFixRequest,
-      options.execute,
-    );
+    // The fixed copy IS already a fresh throwaway (made by applyFixesToCopy),
+    // and it carries the fixes. Mount it in place — copying it again in
+    // executeProperties would both waste a copy and DROP the applied fixes.
+    const postFixExecution = await executeProperties(postFixRequest, {
+      ...options.execute,
+      mountInPlace: true,
+    });
 
     // Index the post-fix results by propertyId for pairing.
     const postByProperty = new Map<string, ActualResult>();

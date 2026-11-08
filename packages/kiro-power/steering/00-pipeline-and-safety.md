@@ -60,9 +60,18 @@ This Power never runs Target_Repo code. It calls these MCP_Server tools:
 | Tool | Input | Output | Use for |
 | --- | --- | --- | --- |
 | prediction-lock tool | the Predicted_Result files + the properties they refer to | a persisted lock (hash + timestamp) | locking predictions before execution (R3.4, R3.5) |
-| `execute_properties` | `PropertyExecutionRequest` (`{ targetRepoRef, properties[], phase: "initial" }`) | `PropertyExecutionResult` (`ActualResult[]` + per-property `ExecutionContext`) | running every property against the Target_Repo in the runner (R5, R6) |
-| `apply_fixes_and_reexecute` | `{ targetRepoCopyRef, fixTasks[], properties[] }` | `PropertyExecutionResult` with Pre/Post results | applying Fix_Tasks to the Target_Repo_Copy and re-running (R8.3) |
-| `replay_counterexample` | `{ property, executionContext }` | `Actual_Result` (equals the original) | reproducing a counterexample exactly (R6.3) |
+| `execute_properties` | `{ targetRepoRef, properties[], phase: "initial", specRoot? }` | `PropertyExecutionResult` (`ActualResult[]` + per-property `ExecutionContext`) | running every property against the Target_Repo in the runner (R5, R6) |
+| `apply_fixes_and_reexecute` | `{ targetRepoRef, applications[], properties[], preFixResults, specRoot? }` | `PropertyExecutionResult` with Pre/Post results | applying Fix_Tasks to a throwaway copy and re-running (R8.3) |
+| `replay_counterexample` | `{ targetRepoRef, property, executionContext, specRoot? }` | `Actual_Result` (equals the original) | reproducing a counterexample exactly (R6.3) |
+
+`targetRepoRef` is always the path to the user's ORIGINAL Target_Repo. Every one
+of these tools COPIES that repo into a fresh throwaway working copy and runs
+against the COPY — it never mounts or writes to the original (the install phase
+would otherwise write `node_modules` and rewrite `package.json`/`package-lock.json`
+into the user's repo). Pass the original path directly; do NOT make a copy
+yourself. The optional `specRoot` lets the server stage each property's
+`properties/property-{n}.{claimId}.test.ts` from your spec root INTO the copy, so
+you never have to place test files inside the target by hand.
 
 The `ActualResult` union is closed and comes from `@spec-lantern/types`:
 `VERDICT` (carries `verdict: "PASS" | "FAIL"` and, on FAIL, a `Counterexample`),
@@ -86,9 +95,70 @@ Timeouts and errors are NEVER PASS or FAIL — read them as their own outcomes.
    timezone, Fixed_Current_Time) per execution; author properties that assume a
    pinned `TZ` and fixed current time (the `writing-tracker` monthly bug
    reproduced under `TZ=Asia/Tokyo`). Never rely on the host's wall clock.
+4. **The target is read-only.** `execute_properties`, `replay_counterexample`,
+   and `apply_fixes_and_reexecute` each copy `targetRepoRef` into a fresh
+   throwaway working copy and run against the COPY; the original repo is never
+   mounted or written. Always pass the user's original Target_Repo path — never
+   pre-install, pre-build, or pre-copy it yourself, and never pass a path you
+   want preserved as a copy destination.
 
 ## Scope note
 
 `sandbox/` holds local experiments and third-party repos (including the
 `writing-tracker` reference Target_Repo). It is never product code. Target
 repos are analyzed; they are not part of this Power.
+
+## Tool call shapes (copy these; do not read the server source)
+
+A property is described by metadata; with a `specRoot` the server stages its
+test file from `properties/property-{n}.{claimId}.test.ts` into the throwaway
+working copy for you. `targetRepoRef` is the ORIGINAL target path — the server
+copies it and mounts the copy, so the original stays read-only.
+
+```json
+// execute_properties
+{
+  "targetRepoRef": "/absolute/path/to/target-repo",
+  "specRoot": "/absolute/path/to/spec-root",
+  "phase": "initial",
+  "properties": [
+    {
+      "id": "property-4.claim-open-24-hours",
+      "claimId": "claim-open-24-hours",
+      "title": "Only real 24-hour phrasing means never closing",
+      "statement": "An ordinary range whose close time contains '24' still yields a closing time",
+      "kind": "function",
+      "validatesRequirements": ["R1.1"]
+    }
+  ]
+}
+```
+
+```json
+// apply_fixes_and_reexecute (the original is copied; edits + re-run hit the copy only)
+{
+  "targetRepoRef": "/absolute/path/to/target-repo",
+  "specRoot": "/absolute/path/to/spec-root",
+  "properties": [ /* the same property objects as above, ALL of them */ ],
+  "preFixResults": { "property-4.claim-open-24-hours": { /* its persisted ActualResult */ } },
+  "applications": [
+    {
+      "fixTask": {
+        "id": "fix-1.claim-open-24-hours",
+        "confirmedBugPropertyId": "property-4.claim-open-24-hours",
+        "description": "Detect real 24-hour phrasing instead of any '24' substring",
+        "appliesTo": "Target_Repo_Copy"
+      },
+      "edits": [
+        { "kind": "write", "path": "src/utils/openingHoursParser.ts", "contents": "<full new file>" }
+      ]
+    }
+  ]
+}
+```
+
+`lock_prediction` takes `{ specRoot, claimId, propertyNumber }`.
+`replay_counterexample` takes the property, the `targetRepoRef` (the original —
+copied like the others), the recorded `executionContext` from the failing
+result, and an optional `specRoot`. Preserve the file's original line endings
+(CRLF vs LF) when writing `contents`.

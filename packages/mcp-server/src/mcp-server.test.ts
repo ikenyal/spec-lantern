@@ -52,7 +52,11 @@ function fakeRunner(
 async function connectClient(
   runner: IsolatedRunner,
 ): Promise<{ client: Client; close: () => Promise<void> }> {
-  const server = createMcpServer({ execute: { runner } });
+  // mountInPlace: true exercises the transport → gate → runner wiring with a
+  // symbolic target ref (no real copy). The copy-safety behavior — an external
+  // tool call copies the original into a throwaway and mounts THAT — is covered
+  // against a real on-disk repo in working-copy.test.ts.
+  const server = createMcpServer({ execute: { runner, mountInPlace: true } });
   const [clientTransport, serverTransport] =
     InMemoryTransport.createLinkedPair();
   const client = new Client({ name: "test-client", version: "0.0.0" });
@@ -195,7 +199,7 @@ describe("execute_properties MCP tool (task 10.1)", () => {
 async function connectReplayClient(
   runner: IsolatedRunner,
 ): Promise<{ client: Client; close: () => Promise<void> }> {
-  const server = createMcpServer({ replay: { runner } });
+  const server = createMcpServer({ replay: { runner, mountInPlace: true } });
   const [clientTransport, serverTransport] =
     InMemoryTransport.createLinkedPair();
   const client = new Client({ name: "test-client", version: "0.0.0" });

@@ -470,6 +470,11 @@ export const ISOLATION_MODEL: IsolationModel = {
     },
     {
       text:
+        "Every tool that runs the target — execute, replay, and fix-and-re-execute — copies it into a throwaway working copy first and mounts only that; the original repo is never mounted or written to.",
+      source: "packages/mcp-server/src/runner/working-copy.ts",
+    },
+    {
+      text:
         "Fixes are written only to a throwaway copy of the target; the original repo is never opened for writing.",
       source: "packages/mcp-server/src/revive/apply-fixes.ts",
     },

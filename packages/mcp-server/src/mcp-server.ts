@@ -93,12 +93,23 @@ const correctnessPropertySchema = z.object({
  * surfaces each field as a named tool argument.
  */
 const executePropertiesInputShape = {
-  /** Path / copy reference the runner mounts (never executed on the host). */
+  /**
+   * Path to the ORIGINAL Target_Repo. The server COPIES this into a fresh
+   * throwaway working copy and mounts the COPY (never the original), so the
+   * user's repo stays byte-for-byte unchanged (the install phase writes
+   * `node_modules`/lock files into whatever is mounted).
+   */
   targetRepoRef: z.string(),
   /** The Correctness_Properties to execute. */
   properties: z.array(correctnessPropertySchema),
   /** Which pipeline phase this execution belongs to. */
   phase: z.enum(["initial", "post_fix"]),
+  /**
+   * OPTIONAL spec root holding `properties/property-{n}.{claimId}.test.ts`. When
+   * provided, the server stages each property's test file from here INTO the
+   * working copy itself, so the caller need not place files by hand.
+   */
+  specRoot: z.string().optional(),
 } as const;
 
 /**
@@ -215,6 +226,12 @@ const applyFixesAndReexecuteInputShape = {
   properties: z.array(correctnessPropertySchema),
   /** Pre_Fix_Result per propertyId — the original execution outcome (R8.4). */
   preFixResults: z.record(z.string(), actualResultSchema),
+  /**
+   * OPTIONAL spec root holding `properties/property-{n}.{claimId}.test.ts`. When
+   * provided, the server stages each property's test file from here INTO the
+   * fixed copy before re-execution, so the caller need not place files by hand.
+   */
+  specRoot: z.string().optional(),
 } as const;
 
 /**
@@ -224,12 +241,22 @@ const applyFixesAndReexecuteInputShape = {
  * `execute_properties` convention.
  */
 const replayCounterexampleInputShape = {
-  /** Path / copy reference the runner mounts (never executed on the host). */
+  /**
+   * Path to the ORIGINAL Target_Repo. The server COPIES this into a fresh
+   * throwaway working copy and mounts the COPY (never the original), exactly as
+   * `execute_properties` does, so the user's repo stays unchanged.
+   */
   targetRepoRef: z.string(),
   /** The single Correctness_Property to replay. */
   property: correctnessPropertySchema,
   /** The Execution_Context recorded with the original Counterexample (R6.2). */
   executionContext: executionContextSchema,
+  /**
+   * OPTIONAL spec root holding `properties/property-{n}.{claimId}.test.ts`. When
+   * provided, the server stages the property's test file from here INTO the
+   * working copy itself.
+   */
+  specRoot: z.string().optional(),
 } as const;
 
 /**
@@ -308,7 +335,12 @@ export function createMcpServer(
         phase: args.phase,
       };
 
-      const result = await executeProperties(request, options.execute);
+      // Merge a per-call specRoot (so the server stages property files into the
+      // working copy) over the construction-time options.
+      const result = await executeProperties(request, {
+        ...options.execute,
+        specRoot: args.specRoot ?? options.execute?.specRoot,
+      });
 
       return {
         // PropertyExecutionResult is a plain serializable JSON object; the SDK
@@ -349,7 +381,10 @@ export function createMcpServer(
         executionContext: args.executionContext,
       };
 
-      const result = await replayCounterexample(request, options.replay);
+      const result = await replayCounterexample(request, {
+        ...options.replay,
+        specRoot: args.specRoot ?? options.replay?.specRoot,
+      });
 
       return {
         // ActualResult is a plain serializable JSON object; the SDK types
@@ -394,10 +429,11 @@ export function createMcpServer(
         preFixResults: args.preFixResults as Record<string, ActualResult>,
       };
 
-      const result = await applyFixesAndReexecute(
-        request,
-        options.applyFixesAndReexecute,
-      );
+      const result = await applyFixesAndReexecute(request, {
+        ...options.applyFixesAndReexecute,
+        specRoot:
+          args.specRoot ?? options.applyFixesAndReexecute?.specRoot,
+      });
 
       return {
         // The result is a plain serializable JSON object; the SDK types

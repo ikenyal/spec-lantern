@@ -124,7 +124,15 @@ describe("executeProperties — orchestrator wiring (task 10.1)", () => {
       phase: "initial",
     };
 
-    const result = await executeProperties(request, { runner });
+    // mountInPlace: true exercises the gate → dispatch → collect wiring with a
+    // fake runner and a symbolic target ref (no real copy). The copy-safety
+    // behavior — that an EXTERNAL call copies the original into a throwaway and
+    // mounts THAT — is covered by its own test (working-copy.test.ts) against a
+    // real on-disk repo.
+    const result = await executeProperties(request, {
+      runner,
+      mountInPlace: true,
+    });
 
     // One VERDICT per property, in request order.
     expect(result.results).toEqual([
@@ -192,7 +200,10 @@ describe("executeProperties — orchestrator wiring (task 10.1)", () => {
       phase: "initial",
     };
 
-    const result = await executeProperties(request, { runner });
+    const result = await executeProperties(request, {
+      runner,
+      mountInPlace: true,
+    });
 
     expect(runner.calls).toHaveLength(1);
     expect(result.results[0]).toEqual({
@@ -227,7 +238,10 @@ describe("executeProperties — orchestrator wiring (task 10.1)", () => {
       phase: "initial",
     };
 
-    const result = await executeProperties(request, { runner });
+    const result = await executeProperties(request, {
+      runner,
+      mountInPlace: true,
+    });
 
     expect(result.executionContexts["property-1.claim-a"]).toEqual(
       executionContext,
@@ -277,7 +291,10 @@ describe("executeProperties — orchestrator wiring (task 10.1)", () => {
       phase: "initial",
     };
 
-    const result = await executeProperties(request, { runner });
+    const result = await executeProperties(request, {
+      runner,
+      mountInPlace: true,
+    });
 
     // Every execution — the PASS included — has its recorded context surfaced.
     expect(result.executionContexts["property-1.claim-a"]).toEqual(passContext);
@@ -306,7 +323,10 @@ describe("executeProperties — orchestrator wiring (task 10.1)", () => {
       phase: "initial",
     };
 
-    const result = await executeProperties(request, { runner });
+    const result = await executeProperties(request, {
+      runner,
+      mountInPlace: true,
+    });
 
     // A TIMEOUT carries no Counterexample, yet the recorded context is surfaced.
     expect(result.results[0]?.outcome).toBe("TIMEOUT");
@@ -346,7 +366,10 @@ describe("executeProperties — orchestrator wiring (task 10.1)", () => {
       phase: "initial",
     };
 
-    const result = await executeProperties(request, { runner });
+    const result = await executeProperties(request, {
+      runner,
+      mountInPlace: true,
+    });
 
     const fail = result.results[0];
     expect(fail?.outcome).toBe("VERDICT");
