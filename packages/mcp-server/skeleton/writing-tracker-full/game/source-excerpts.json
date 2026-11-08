@@ -1,0 +1,34 @@
+{
+  "excerpts": [
+    {
+      "propertyId": "property-1.claim-monthly-order",
+      "sourceFile": "sandbox/writing-tracker/src/components/statistics/PeriodProgressSummary.tsx",
+      "startLine": 40,
+      "endLine": 58,
+      "claimLine": 54,
+      "claimText": "      // Reverse to have most recent month first",
+      "code": "      // Generate last 6 months\n      for (let i = 0; i < 6; i++) {\n        const monthStart = new Date(currentDate.getFullYear(), currentDate.getMonth() - i, 1);\n        const monthEnd = new Date(currentDate.getFullYear(), currentDate.getMonth() - i + 1, 0);\n        \n        const monthNames = [\"Jan\", \"Feb\", \"Mar\", \"Apr\", \"May\", \"Jun\", \"Jul\", \"Aug\", \"Sep\", \"Oct\", \"Nov\", \"Dec\"];\n        const monthName = monthNames[monthStart.getMonth()];\n        \n        periods.push({\n          label: `${monthName} ${monthStart.getFullYear()}`,\n          start: monthStart,\n          end: monthEnd\n        });\n      }\n      // Reverse to have most recent month first\n      periods.reverse();\n    }\n    \n    return periods;",
+      "fileSha256": "bb2a37526236a60f4cc4bb1ca9c61f13b4bdb54e417d7f5961869828e2130090"
+    },
+    {
+      "propertyId": "property-2.claim-active-tasks-recent",
+      "sourceFile": "sandbox/writing-tracker/src/components/statistics/MostActiveItemsList.tsx",
+      "startLine": 27,
+      "endLine": 37,
+      "claimLine": 36,
+      "claimText": "      .slice(0, 5); // Top 5 most recently updated tasks",
+      "code": "  // Calculate active tasks (most recently updated or with highest order position)\n  const activeTasks = React.useMemo(() => {\n    return tasks\n      .sort((a, b) => {\n        // Sort by updated_at date (most recent first)\n        const dateA = new Date(a.updated_at).getTime();\n        const dateB = new Date(b.updated_at).getTime();\n        return dateB - dateA;\n      })\n      .slice(0, 5); // Top 5 most recently updated tasks\n  }, [tasks]);",
+      "fileSha256": "5ed562c41f98701a68711b6bf7b1a89ece890e6af6c852c6881f029aadf89170"
+    },
+    {
+      "propertyId": "property-3.claim-active-stages-top5",
+      "sourceFile": "sandbox/writing-tracker/src/components/statistics/MostActiveItemsList.tsx",
+      "startLine": 15,
+      "endLine": 25,
+      "claimLine": 24,
+      "claimText": "      .slice(0, 5); // Top 5 most active stages",
+      "code": "const MostActiveItemsList = ({ stages, tasks }: MostActiveItemsListProps) => {\n  // Calculate activity score for stages (based on task completion and progress)\n  const activeStages = React.useMemo(() => {\n    return stages\n      .map(stage => ({\n        ...stage,\n        activityScore: (stage.progress || 0) + (stage.is_completed ? 100 : 0),\n      }))\n      .sort((a, b) => b.activityScore - a.activityScore)\n      .slice(0, 5); // Top 5 most active stages\n  }, [stages]);",
+      "fileSha256": "5ed562c41f98701a68711b6bf7b1a89ece890e6af6c852c6881f029aadf89170"
+    }
+  ]
+}

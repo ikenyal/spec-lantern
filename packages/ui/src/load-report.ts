@@ -15,6 +15,7 @@ import {
   type ReportManifest,
   type ReportSectionsAsset,
 } from "./report-asset.js";
+import { GAME_ASSET_PATH, type GameData } from "./game-asset.js";
 
 /** Minimal `fetch` surface this loader needs, so it is easy to test/inject. */
 export type FetchLike = (input: string) => Promise<{
@@ -78,4 +79,19 @@ export async function loadFirstReportAsset(
   const first = manifest.reports[0];
   if (!first) return null;
   return loadReportAsset(fetchImpl, first.path);
+}
+
+/**
+ * Fetch and parse the build-time-generated "Trust or Test?" game data asset
+ * from {@link GAME_ASSET_PATH}. Returns `null` when the asset is absent (a
+ * non-OK response) so the game route can show its own "could not load" state
+ * rather than throwing. Nothing here is synthesized.
+ */
+export async function loadGameData(
+  fetchImpl: FetchLike,
+  path: string = GAME_ASSET_PATH,
+): Promise<GameData | null> {
+  const res = await fetchImpl(path);
+  if (!res.ok) return null;
+  return (await res.json()) as GameData;
 }

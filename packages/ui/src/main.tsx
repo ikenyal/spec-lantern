@@ -14,7 +14,9 @@
 import { StrictMode, useEffect, useState, type ReactElement } from "react";
 import { createRoot } from "react-dom/client";
 import { LanternReportView } from "./components.js";
+import { GameView } from "./game.js";
 import {
+  loadGameData,
   loadManifest,
   loadReportAsset,
   loadSectionsAsset,
@@ -24,6 +26,7 @@ import type {
   ReportManifestEntry,
   ReportSectionsAsset,
 } from "./report-asset.js";
+import type { GameData } from "./game-asset.js";
 import "./lantern-theme.css";
 
 type LoadState =
@@ -144,6 +147,54 @@ function DemoApp(): ReactElement {
   );
 }
 
+/**
+ * The #play route wrapper: fetches the build-time game data asset once and
+ * renders the {@link GameView}. While loading it renders the game's own
+ * "could not load" fallback via a null data prop; a successful load swaps in
+ * the data. No network beyond the single static-asset fetch, no tracking.
+ */
+function GamePlay(): ReactElement {
+  const [data, setData] = useState<GameData | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    loadGameData((input) => fetch(input))
+      .then((d) => {
+        if (!cancelled) setData(d);
+      })
+      .catch(() => {
+        if (!cancelled) setData(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+  return <GameView data={data} />;
+}
+
+/** Normalize the current hash to a route: "#play" -> "play", else "report". */
+function routeFromHash(): "play" | "report" {
+  return window.location.hash.replace(/^#/, "") === "play" ? "play" : "report";
+}
+
+/**
+ * Tiny hash router: renders the game at `#play` and the report everywhere else.
+ * It listens for `hashchange` so the header / Try-it links switch views without
+ * a reload, and scrolls to the top on a route change so the new view starts at
+ * its header.
+ */
+function Root(): ReactElement {
+  const [route, setRoute] = useState<"play" | "report">(() => routeFromHash());
+  useEffect(() => {
+    const onHashChange = (): void => {
+      setRoute(routeFromHash());
+      window.scrollTo(0, 0);
+    };
+    window.addEventListener("hashchange", onHashChange);
+    return () => window.removeEventListener("hashchange", onHashChange);
+  }, []);
+  return route === "play" ? <GamePlay /> : <DemoApp />;
+}
+
 const container = document.getElementById("root");
 if (!container) {
   throw new Error("Demo root element #root not found");
@@ -151,6 +202,6 @@ if (!container) {
 
 createRoot(container).render(
   <StrictMode>
-    <DemoApp />
+    <Root />
   </StrictMode>,
 );

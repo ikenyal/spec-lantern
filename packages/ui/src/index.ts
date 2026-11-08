@@ -38,6 +38,7 @@ export {
   SameStandardSection,
   ReportSections,
   TryItSection,
+  PlayGameLink,
   ReportFooter,
   TEST_IDS,
   getUiRenderLimitSeconds,
@@ -104,5 +105,43 @@ export {
   loadReportAsset,
   loadFirstReportAsset,
   loadSectionsAsset,
+  loadGameData,
   type FetchLike,
 } from "./load-report.js";
+
+/**
+ * "Trust or Test?" mini-game (route #play). The build-time {@link GameData}
+ * asset is generated from the real pipeline artifacts (claims.json, locks/,
+ * results/) by scripts/game-core.ts; the {@link GameView} renders it and the
+ * pure {@link selectRounds}/{@link tallyGame} helpers drive the rules.
+ */
+export {
+  GAME_ASSET_PATH,
+  SITE_URL,
+  SHARE_HASHTAG,
+  type GameData,
+  type GameClaim,
+  type GameCredit,
+  type GameVerdict,
+} from "./game-asset.js";
+export {
+  GameView,
+  GAME_TEST_IDS,
+  type GameViewProps,
+} from "./game.js";
+export {
+  ROUNDS_PER_GAME,
+  REQUIRED_LIES,
+  verdictToChoice,
+  isChoiceCorrect,
+  kiroChoice,
+  kiroWasFooled,
+  seededShuffle,
+  selectRounds,
+  scoreRound,
+  tallyGame,
+  shareText,
+  type Choice,
+  type RoundResult,
+  type GameScore,
+} from "./game-logic.js";

@@ -147,6 +147,8 @@ export const TEST_IDS = {
   noReport: "lantern-no-report",
   // "Try it on your repo" call-to-action at the bottom of the report page.
   tryIt: "lantern-try-it",
+  // "Play the game" link (report header + Try it section) to the #play route.
+  playLink: "lantern-play-link",
   // Page footer at the very bottom of every target.
   footer: "lantern-footer",
   footerCredit: "lantern-footer-credit",
@@ -1424,6 +1426,30 @@ export function ReportSections({
 }
 
 /* -------------------------------------------------------------------------- */
+/* PlayGameLink                                                               */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * A small call-to-action linking to the "Trust or Test?" mini-game at the
+ * `#play` route. Rendered in the report header and inside {@link TryItSection}.
+ * It is a plain in-page hash link — no network, no tracking.
+ */
+export function PlayGameLink(): ReactElement {
+  return (
+    <a
+      className="lantern-play-link"
+      data-testid={TEST_IDS.playLink}
+      href="#play"
+    >
+      <span className="lantern-play-link__flame" aria-hidden="true">
+        🏮
+      </span>
+      Play “Trust or Test?” — can you spot the lying comments?
+    </a>
+  );
+}
+
+/* -------------------------------------------------------------------------- */
 /* TryItSection                                                               */
 /* -------------------------------------------------------------------------- */
 
@@ -1489,6 +1515,10 @@ export function TryItSection(): ReactElement {
         Check the comments in this repo — are any of them lying about what the
         code does?
       </blockquote>
+
+      <p className="lantern-try-it__play">
+        <PlayGameLink />
+      </p>
     </section>
   );
 }
@@ -1665,6 +1695,8 @@ export function LanternReportView({
             Lantern Report · {targetLabel}
             {sampleBadge}
           </p>
+          <PlayGameLink />
+          
           <h1
             className="lantern-header__headline"
             data-testid={TEST_IDS.storyThesis}
@@ -1695,6 +1727,7 @@ export function LanternReportView({
           >
             Target: {targetLabel}
           </p>
+          <PlayGameLink />
         </header>
       )}
       {story ? (

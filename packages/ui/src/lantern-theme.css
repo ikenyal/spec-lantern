@@ -1234,3 +1234,415 @@ body {
     padding: 1.25rem 1.1rem;
   }
 }
+
+/* ======================================================================== */
+/* "Trust or Test?" mini-game (#play)                                       */
+/*                                                                          */
+/* Same lantern language: charcoal ground, amber the only strong accent.    */
+/* Accessibility: choices and the reveal never rely on colour alone (text   */
+/* + ✓/✗ + PASS/FAIL labels carry the meaning); the lantern "light up" is    */
+/* disabled under prefers-reduced-motion; layout holds at 375px.            */
+/* ======================================================================== */
+
+.game {
+  max-width: 760px;
+  margin: 0 auto;
+  padding: 2rem 1.5rem 3rem;
+}
+
+.game-header {
+  text-align: center;
+  margin-bottom: 1.5rem;
+}
+
+.game-header__title {
+  font-size: clamp(1.6rem, 6vw, 2.4rem);
+  margin: 0 0 0.4rem;
+  color: var(--ink);
+}
+
+.game-header__tagline {
+  margin: 0;
+  color: var(--ink-muted);
+}
+
+.game-intro,
+.game-round,
+.game-final {
+  background: var(--charcoal-raised);
+  border: 1px solid var(--charcoal-line);
+  border-radius: 14px;
+  padding: 1.5rem;
+}
+
+.game-intro p {
+  margin: 0 0 1rem;
+}
+
+.game-intro__fine {
+  color: var(--ink-muted);
+  font-size: 0.95rem;
+}
+
+/* Primary buttons share one amber style. */
+.game-start,
+.game-next,
+.game-play-again,
+.game-share {
+  display: inline-block;
+  font: inherit;
+  font-weight: 700;
+  color: var(--charcoal);
+  background: var(--amber);
+  border: 1px solid var(--amber-strong);
+  border-radius: 10px;
+  padding: 0.7rem 1.2rem;
+  cursor: pointer;
+}
+
+.game-start:hover,
+.game-next:hover,
+.game-play-again:hover,
+.game-share:hover {
+  background: var(--amber-strong);
+}
+
+.game-start:focus-visible,
+.game-next:focus-visible,
+.game-play-again:focus-visible,
+.game-share:focus-visible,
+.game-share--x:focus-visible,
+.game-choice:focus-visible,
+.lantern-play-link:focus-visible {
+  outline: 3px solid var(--amber-strong);
+  outline-offset: 2px;
+}
+
+.game-start {
+  margin-top: 0.5rem;
+}
+
+/* --- round --- */
+
+.game-round__progress {
+  margin: 0 0 0.75rem;
+  color: var(--ink-muted);
+  font-size: 0.85rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.game-round__prompt {
+  margin: 0 0 0.5rem;
+  font-size: 0.9rem;
+}
+
+.game-round__target {
+  color: var(--amber);
+  font-weight: 700;
+}
+
+.game-round__source {
+  color: var(--ink-muted);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+
+.game-claim {
+  margin: 0 0 1rem;
+  padding: 0.75rem 1rem;
+  border-left: 3px solid var(--amber);
+  background: var(--charcoal-sunken);
+  border-radius: 0 8px 8px 0;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  color: var(--ink);
+  overflow-wrap: anywhere;
+}
+
+/* --- code excerpt --- */
+
+.game-code {
+  margin: 0 0 1.25rem;
+  padding: 0.75rem 0;
+  background: var(--charcoal-sunken);
+  border: 1px solid var(--charcoal-line);
+  border-radius: 8px;
+  overflow-x: auto;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.82rem;
+  line-height: 1.55;
+}
+
+.game-code code {
+  display: block;
+}
+
+.game-code__line {
+  display: flex;
+  gap: 0.75rem;
+  padding: 0 0.9rem;
+  white-space: pre;
+}
+
+.game-code__line--claim {
+  background: var(--amber-dim);
+  box-shadow: inset 3px 0 0 var(--amber);
+}
+
+.game-code__ln {
+  color: var(--ink-muted);
+  opacity: 0.6;
+  user-select: none;
+  min-width: 2.2ch;
+  text-align: right;
+}
+
+.game-code__text {
+  color: var(--ink);
+}
+
+/* --- choices --- */
+
+.game-choices {
+  display: flex;
+  gap: 1rem;
+}
+
+.game-choice {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  font: inherit;
+  font-weight: 700;
+  font-size: 1.1rem;
+  color: var(--ink);
+  background: var(--charcoal-sunken);
+  border: 1px solid var(--charcoal-line);
+  border-radius: 12px;
+  padding: 1rem;
+  cursor: pointer;
+  text-align: center;
+}
+
+.game-choice:hover {
+  border-color: var(--amber);
+}
+
+.game-choice--trust:hover {
+  box-shadow: inset 0 0 0 1px var(--amber);
+}
+
+.game-choice__hint {
+  font-weight: 400;
+  font-size: 0.85rem;
+  color: var(--ink-muted);
+}
+
+/* --- reveal --- */
+
+.game-reveal {
+  text-align: center;
+}
+
+.game-reveal__lantern {
+  font-size: 2.4rem;
+  margin: 0 0 0.25rem;
+  animation: game-flare 0.6s ease-out;
+}
+
+.game-reveal__verdict {
+  margin: 0 0 0.75rem;
+  font-size: 1.05rem;
+}
+
+.game-reveal__badge {
+  display: inline-block;
+  font-weight: 700;
+  padding: 0.1rem 0.5rem;
+  border-radius: 6px;
+}
+
+.game-reveal__badge[data-verdict="PASS"] {
+  color: var(--pass);
+  border: 1px solid var(--pass);
+}
+
+.game-reveal__badge[data-verdict="FAIL"] {
+  color: var(--fail);
+  border: 1px solid var(--fail);
+}
+
+.game-reveal__you {
+  color: var(--ink-muted);
+}
+
+.game-reveal__counterexample,
+.game-reveal__root-cause {
+  margin: 0 auto 0.75rem;
+  max-width: 48ch;
+  padding: 0.6rem 0.9rem;
+  background: var(--charcoal-sunken);
+  border-radius: 8px;
+  color: var(--ink);
+}
+
+.game-reveal__root-cause {
+  color: var(--ink-muted);
+  font-size: 0.9rem;
+}
+
+.game-reveal__kiro {
+  margin: 0 0 1.25rem;
+  color: var(--ink-muted);
+}
+
+.game-reveal__kiro strong {
+  color: var(--amber);
+}
+
+@keyframes game-flare {
+  from {
+    transform: scale(0.6);
+    filter: brightness(0.5);
+  }
+  to {
+    transform: scale(1);
+    filter: brightness(1);
+  }
+}
+
+/* --- final --- */
+
+.game-final {
+  text-align: center;
+}
+
+.game-final__title {
+  margin: 0 0 0.75rem;
+}
+
+.game-final__score {
+  font-size: clamp(1.4rem, 6vw, 2rem);
+  font-weight: 700;
+  margin: 0 0 0.5rem;
+}
+
+.game-final__you {
+  color: var(--amber);
+}
+
+.game-final__kiro {
+  color: var(--ink);
+}
+
+.game-final__lies {
+  color: var(--ink-muted);
+  margin: 0 0 1.5rem;
+}
+
+.game-final__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  justify-content: center;
+  margin-bottom: 1.5rem;
+}
+
+.game-share--x {
+  text-decoration: none;
+  display: inline-block;
+}
+
+.game-play-again {
+  background: transparent;
+  color: var(--amber);
+  border-color: var(--amber);
+}
+
+.game-play-again:hover {
+  background: var(--amber-dim);
+}
+
+.game-credits {
+  color: var(--ink-muted);
+  font-size: 0.85rem;
+  margin: 1rem 0 0;
+}
+
+.game-final__back {
+  margin: 1.5rem 0 0;
+}
+
+.game-final__link,
+.game-load-error a {
+  color: var(--amber);
+}
+
+.game-load-error {
+  text-align: center;
+  color: var(--ink-muted);
+  padding: 2rem;
+}
+
+/* --- "Play the game" link on the report page --- */
+
+.lantern-play-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin-top: 0.75rem;
+  padding: 0.45rem 0.9rem;
+  border: 1px solid var(--amber);
+  border-radius: 999px;
+  color: var(--amber);
+  background: var(--amber-dim);
+  text-decoration: none;
+  font-weight: 600;
+  font-size: 0.95rem;
+}
+
+.lantern-play-link:hover {
+  background: rgba(255, 179, 71, 0.26);
+}
+
+.lantern-try-it__play {
+  margin-top: 1.5rem;
+}
+
+/* --- reduced motion --- */
+
+@media (prefers-reduced-motion: reduce) {
+  .game-reveal__lantern {
+    animation: none;
+  }
+}
+
+/* --- narrow viewport (<= 420px, covers 375px) --- */
+
+@media (max-width: 420px) {
+  .game {
+    padding: 1.5rem 1rem 2.5rem;
+  }
+
+  .game-intro,
+  .game-round,
+  .game-final {
+    padding: 1.1rem;
+  }
+
+  .game-choices {
+    flex-direction: column;
+  }
+
+  .game-code {
+    font-size: 0.76rem;
+  }
+
+  .game-final__actions {
+    flex-direction: column;
+  }
+
+  .game-final__actions > * {
+    width: 100%;
+  }
+}

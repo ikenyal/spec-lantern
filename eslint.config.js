@@ -55,13 +55,28 @@ export default [
   },
   {
     // Browser globals for the runnable UI demo entry (mounts React into #root
-    // and fetches the pre-generated report asset client-side).
-    files: ["packages/ui/src/main.tsx"],
+    // and fetches the pre-generated report asset client-side) and the
+    // client-side mini-game view (#play), which uses the clipboard + DOM types.
+    files: ["packages/ui/src/main.tsx", "packages/ui/src/game.tsx"],
     languageOptions: {
       globals: {
         document: "readonly",
         window: "readonly",
         fetch: "readonly",
+        navigator: "readonly",
+        HTMLButtonElement: "readonly",
+      },
+    },
+  },
+  {
+    // Browser / jsdom + Node globals for the UI test files: the component tests
+    // run in jsdom (navigator/clipboard) and the generator tests compute hashes
+    // over Buffers.
+    files: ["packages/ui/src/**/*.test.{ts,tsx}"],
+    languageOptions: {
+      globals: {
+        navigator: "readonly",
+        Buffer: "readonly",
       },
     },
   },
@@ -74,6 +89,7 @@ export default [
         __dirname: "readonly",
         process: "readonly",
         console: "readonly",
+        Buffer: "readonly",
       },
     },
   },

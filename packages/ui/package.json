@@ -13,7 +13,8 @@
     "export:sample": "vite-node scripts/export-sample-report.ts",
     "generate:timeline": "vite-node scripts/generate-timeline.ts",
     "generate:og": "vite-node scripts/generate-og-image.ts",
-    "build:demo": "npm run export:sample && npm run generate:timeline && npm run generate:og && vite build"
+    "generate:game": "vite-node scripts/generate-game.ts",
+    "build:demo": "npm run export:sample && npm run generate:timeline && npm run generate:game && npm run generate:og && vite build"
   },
   "dependencies": {
     "@spec-lantern/types": "*",
