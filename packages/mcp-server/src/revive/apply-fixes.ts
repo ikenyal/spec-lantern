@@ -52,10 +52,11 @@
  * guarantee on the ORIGINAL — we never write to the original at all; the
  * exclusion only shapes what the copy contains.
  */
-import { cp, mkdtemp, rm, writeFile, mkdir } from "node:fs/promises";
+import { cp, mkdtemp, readFile, rm, writeFile, mkdir } from "node:fs/promises";
 import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import type { FixTask } from "@spec-lantern/types";
 import { WORKING_COPY_PARENT_DIR } from "../runner/working-copy.js";
+import { diffPathFor, unifiedDiffForFile } from "./unified-diff.js";
 
 /* -------------------------------------------------------------------------- */
 /* The applyable-edit contract                                                */
@@ -128,6 +129,15 @@ export interface ApplyFixesResult {
   appliedFixTaskIds: string[];
   /** The total number of individual file edits written to the copy. */
   editsApplied: number;
+  /**
+   * The ACTUAL unified diff of every edit applied to the copy, concatenated
+   * per file (change 4). Computed at apply time by comparing each edit's
+   * ORIGINAL contents (read from the original Target_Repo, read-only) against
+   * the POST-edit contents written to the copy, PRESERVING line endings (CRLF
+   * is never normalized to LF). This is observed, never hand-authored
+   * (report-data-fidelity). Empty string when no edit changed any file.
+   */
+  unifiedDiff: string;
 }
 
 /**
@@ -240,24 +250,51 @@ export async function copyTargetRepo(
 /* Apply a single FileEdit to the copy                                        */
 /* -------------------------------------------------------------------------- */
 
+/** Read a file's UTF-8 text, returning `""` on ENOENT (a not-yet-existing file). */
+async function readTextOrEmpty(path: string): Promise<string> {
+  try {
+    return await readFile(path, "utf8");
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return "";
+    throw error;
+  }
+}
+
 /**
- * Apply ONE {@link FileEdit} under `copyRoot`. The path is boundary-checked via
- * {@link resolveInsideCopy} before any write, so an escaping edit throws and the
- * copy (and the original) stay untouched for that edit.
+ * Apply ONE {@link FileEdit} under `copyRoot` and return its REAL unified diff
+ * (change 4). The path is boundary-checked via {@link resolveInsideCopy} before
+ * any write, so an escaping edit throws and the copy (and the original) stay
+ * untouched for that edit.
  *
  * A `write` creates parent directories as needed and writes the full contents;
  * a `delete` removes the file if present (idempotent — a missing file is not an
  * error, matching "ensure this file is gone").
+ *
+ * The diff compares the ORIGINAL file contents (read from `originalRoot`, the
+ * read-only original Target_Repo, at the edit's repo-relative path) against the
+ * POST-edit contents (the `write`'s `contents`, or empty for a `delete`),
+ * preserving line endings. A new file diffs empty→contents; a delete diffs
+ * original→empty. Returns `""` when the edit changed nothing.
  */
-async function applyEdit(copyRoot: string, edit: FileEdit): Promise<void> {
+async function applyEdit(
+  copyRoot: string,
+  originalRoot: string,
+  edit: FileEdit,
+): Promise<string> {
   const absPath = resolveInsideCopy(copyRoot, edit.path);
+  // The original lives at the SAME repo-relative path under the read-only
+  // original (the copy was made from it); read it BEFORE mutating the copy.
+  const before = await readTextOrEmpty(resolve(originalRoot, edit.path));
+  const diffPath = diffPathFor(copyRoot, absPath);
+
   if (edit.kind === "write") {
     await mkdir(dirname(absPath), { recursive: true });
     await writeFile(absPath, edit.contents);
-    return;
+    return unifiedDiffForFile(diffPath, before, edit.contents);
   }
-  // delete — idempotent.
+  // delete — idempotent; diffs original→empty.
   await rm(absPath, { force: true });
+  return unifiedDiffForFile(diffPath, before, "");
 }
 
 /* -------------------------------------------------------------------------- */
@@ -314,8 +351,12 @@ export async function applyFixesToCopy(
   // 2. Copy the original into a fresh Target_Repo_Copy (original read-only).
   const copyRoot = await copyTargetRepo(targetRepoPath, options);
 
-  // 3. Apply every edit to the COPY, confined under the copy root.
+  // 3. Apply every edit to the COPY, confined under the copy root. Capture each
+  //    edit's real unified diff (original → post-edit) as we go, so the diff is
+  //    computed BEFORE any cleanup can delete the copy (change 4).
+  const originalRoot = resolve(targetRepoPath);
   const appliedFixTaskIds: string[] = [];
+  const diffParts: string[] = [];
   let editsApplied = 0;
   for (const { fixTask, edits } of applications) {
     log(
@@ -324,13 +365,19 @@ export async function applyFixesToCopy(
       }) to the Target_Repo_Copy`,
     );
     for (const edit of edits) {
-      await applyEdit(copyRoot, edit);
+      const diff = await applyEdit(copyRoot, originalRoot, edit);
+      if (diff.length > 0) diffParts.push(diff);
       editsApplied += 1;
     }
     appliedFixTaskIds.push(fixTask.id);
   }
 
-  return { targetRepoCopyPath: copyRoot, appliedFixTaskIds, editsApplied };
+  return {
+    targetRepoCopyPath: copyRoot,
+    appliedFixTaskIds,
+    editsApplied,
+    unifiedDiff: diffParts.join(""),
+  };
 }
 
 /**

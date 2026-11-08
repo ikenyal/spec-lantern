@@ -275,6 +275,13 @@ export interface ApplyFixesAndReexecuteResult {
   targetRepoCopyPath: string;
   /** The Fix_Tasks applied to the copy, in application order. */
   appliedFixTaskIds: string[];
+  /**
+   * The ACTUAL unified diff of the edits applied to the copy (change 4),
+   * computed at apply time before the copy is torn down and preserving line
+   * endings. Passed through verbatim from {@link applyFixesToCopy}; it is the
+   * authoritative diff — callers never hand-write one (report-data-fidelity).
+   */
+  unifiedDiff: string;
 }
 
 /* -------------------------------------------------------------------------- */
@@ -421,6 +428,7 @@ export async function applyFixesAndReexecute(
       skippedPropertyIds,
       targetRepoCopyPath: applied.targetRepoCopyPath,
       appliedFixTaskIds: applied.appliedFixTaskIds,
+      unifiedDiff: applied.unifiedDiff,
     };
   } finally {
     // 4. Clean up the throwaway copy unless the caller wants to keep it.

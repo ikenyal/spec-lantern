@@ -28,6 +28,7 @@ import type {
   IsolatedRunnerRequest,
 } from "./runner/isolated-runner.js";
 import { createMcpServer } from "./mcp-server.js";
+import { lockPrediction } from "./prediction-lock/index.js";
 
 function fakeRunner(
   scripted: Record<string, ActualResult> = {},
@@ -575,6 +576,275 @@ describe("lock_prediction MCP tool (task 20, Stage A)", () => {
       expect(JSON.parse(persisted).verdict).toBe("PASS");
     } finally {
       await close();
+    }
+  });
+});
+
+// Feature: spec-lantern — MCP power improvements (spec-derive, preFixResults
+// array+record, schema-error examples, resultsPath persistence, compare_predictions)
+//
+// These round-trips exercise the trial-driven changes: a Kiro client that omits
+// `properties` and relies on `specRoot` to DERIVE them; preFixResults accepted
+// as BOTH an array (execute_properties' `.results`) and a record; schema errors
+// that include a minimal valid example; verbatim result persistence returning a
+// `resultsPath`; and compare_predictions reading predictions from the locks.
+
+const PINNED_CLOCK = () => new Date("2026-11-08T20:54:49.867Z");
+
+/** Author a minimal on-disk spec: one property + its locked prediction. */
+async function authorSpec(
+  specRoot: string,
+  propertyNumber: number,
+  claimId: string,
+  statement: string,
+  verdict: "PASS" | "FAIL",
+): Promise<void> {
+  await mkdir(join(specRoot, "properties"), { recursive: true });
+  await mkdir(join(specRoot, "predictions"), { recursive: true });
+  await writeFile(
+    join(specRoot, "claims.json"),
+    JSON.stringify({
+      claims: [
+        { id: claimId, description: statement, sourceFile: "X.ts", commentRef: "L1" },
+      ],
+    }),
+  );
+  const stem = `property-${propertyNumber}.${claimId}`;
+  await writeFile(
+    join(specRoot, "properties", `${stem}.test.ts`),
+    `// Feature: spec-lantern, Property ${propertyNumber}: ${statement}\nexport {};\n`,
+  );
+  await writeFile(
+    join(specRoot, "predictions", `${stem}.predicted.json`),
+    JSON.stringify({
+      propertyId: stem,
+      verdict,
+      recordedAt: "2025-01-01T00:00:00.000Z",
+      immutable: true,
+    }),
+  );
+  const locked = await lockPrediction(
+    { specRoot, claimId, propertyNumber },
+    { now: () => "2025-01-01T00:00:00.000Z" },
+  );
+  if (locked.lock === null) throw new Error(locked.issue?.message);
+}
+
+describe("MCP power improvements (spec-derive / persist / compare)", () => {
+  let specRoot: string;
+
+  beforeEach(async () => {
+    specRoot = await mkdtemp(join(tmpdir(), "spec-lantern-improve-"));
+  });
+
+  afterEach(async () => {
+    await rm(specRoot, { recursive: true, force: true });
+  });
+
+  it("execute_properties derives properties from specRoot when omitted, and persists a resultsPath", async () => {
+    await authorSpec(specRoot, 1, "claim-a", "holds for all x", "PASS");
+    const runner = fakeRunner({
+      "property-1.claim-a": {
+        propertyId: "property-1.claim-a",
+        outcome: "VERDICT",
+        verdict: "FAIL",
+      },
+    });
+    const server = createMcpServer({
+      execute: { runner, mountInPlace: true },
+      resultsClock: PINNED_CLOCK,
+    });
+    const [ct, st] = InMemoryTransport.createLinkedPair();
+    const client = new Client({ name: "t", version: "0.0.0" });
+    await Promise.all([client.connect(ct), server.connect(st)]);
+    try {
+      const res = await client.callTool({
+        name: "execute_properties",
+        arguments: {
+          targetRepoRef: "target-repo-copy-abc",
+          // NO `properties` — derived from specRoot.
+          phase: "initial",
+          specRoot,
+        },
+      });
+      const structured = res.structuredContent as PropertyExecutionResult & {
+        resultsPath: string;
+      };
+      expect(structured.results[0]?.propertyId).toBe("property-1.claim-a");
+      // The runner ran the DERIVED property.
+      expect(runner.calls[0]?.propertyId).toBe("property-1.claim-a");
+
+      // A verbatim result was persisted and its path returned.
+      const resultsPath = structured.resultsPath;
+      expect(resultsPath).toContain("2026-11-08T20-54-49-867Z-execute_properties.json");
+      const persisted = JSON.parse(await readFile(resultsPath, "utf8"));
+      // The persisted file is the RAW result (no resultsPath annotation).
+      expect(persisted.resultsPath).toBeUndefined();
+      expect(persisted.results[0]?.outcome).toBe("VERDICT");
+    } finally {
+      await client.close();
+      await server.close();
+    }
+  });
+
+  it("execute_properties returns a schema error WITH a minimal example when properties omitted and no specRoot", async () => {
+    const runner = fakeRunner();
+    const server = createMcpServer({ execute: { runner, mountInPlace: true } });
+    const [ct, st] = InMemoryTransport.createLinkedPair();
+    const client = new Client({ name: "t", version: "0.0.0" });
+    await Promise.all([client.connect(ct), server.connect(st)]);
+    try {
+      const res = await client.callTool({
+        name: "execute_properties",
+        arguments: { targetRepoRef: "target-repo-copy-abc", phase: "initial" },
+      });
+      expect(res.isError).toBe(true);
+      const text = (res.content as { type: string; text: string }[])
+        .map((c) => c.text)
+        .join("");
+      // The message includes a minimal valid example of the expected input.
+      expect(text).toContain("minimal valid");
+      expect(text).toContain('"phase": "initial"');
+      expect(runner.calls).toHaveLength(0);
+    } finally {
+      await client.close();
+      await server.close();
+    }
+  });
+
+  it("apply_fixes_and_reexecute accepts preFixResults as BOTH an array and a record (identical transition)", async () => {
+    // Backing throwaway repo for the copy step.
+    const originalRepo = await mkdtemp(join(tmpdir(), "spec-lantern-afrr-orig-"));
+    const copyParent = await mkdtemp(join(tmpdir(), "spec-lantern-afrr-copy-"));
+    await writeFile(
+      join(originalRepo, "package.json"),
+      JSON.stringify({ name: "t", version: "1.0.0" }),
+    );
+    await mkdir(join(originalRepo, "src"), { recursive: true });
+    await writeFile(join(originalRepo, "src", "order.ts"), "export const reverse = true;\n");
+
+    const runner = fakeRunner({
+      "property-1.claim-a": {
+        propertyId: "property-1.claim-a",
+        outcome: "VERDICT",
+        verdict: "PASS",
+      },
+    });
+
+    const callWith = async (preFixResults: unknown) => {
+      const server = createMcpServer({
+        applyFixesAndReexecute: { execute: { runner }, apply: { copyParentDir: copyParent } },
+      });
+      const [ct, st] = InMemoryTransport.createLinkedPair();
+      const client = new Client({ name: "t", version: "0.0.0" });
+      await Promise.all([client.connect(ct), server.connect(st)]);
+      try {
+        const res = await client.callTool({
+          name: "apply_fixes_and_reexecute",
+          arguments: {
+            targetRepoRef: originalRepo,
+            applications: [
+              {
+                fixTask: {
+                  id: "fix-1",
+                  confirmedBugPropertyId: "property-1.claim-a",
+                  description: "stop reversing",
+                  appliesTo: "Target_Repo_Copy",
+                },
+                edits: [
+                  { kind: "write", path: "src/order.ts", contents: "export const reverse = false;\n" },
+                ],
+              },
+            ],
+            properties: [
+              {
+                id: "property-1.claim-a",
+                claimId: "claim-a",
+                title: "p",
+                statement: "holds",
+                kind: "function",
+                validatesRequirements: [],
+              },
+            ],
+            preFixResults,
+          },
+        });
+        return res.structuredContent as ApplyFixesAndReexecuteResult;
+      } finally {
+        await client.close();
+        await server.close();
+      }
+    };
+
+    try {
+      const preFail = {
+        propertyId: "property-1.claim-a",
+        outcome: "VERDICT",
+        verdict: "FAIL",
+      };
+      // Record form…
+      const recordForm = await callWith({ "property-1.claim-a": preFail });
+      // …and array form (exactly execute_properties' `.results`).
+      const arrayForm = await callWith([preFail]);
+
+      expect(recordForm.transitions[0]?.classification).toBe("FIXED");
+      expect(arrayForm.transitions[0]?.classification).toBe("FIXED");
+      expect(recordForm.transitions).toEqual(arrayForm.transitions);
+
+      // The real unified diff is returned and preserves the change.
+      expect(recordForm.unifiedDiff).toContain("-export const reverse = true;");
+      expect(recordForm.unifiedDiff).toContain("+export const reverse = false;");
+    } finally {
+      await rm(originalRepo, { recursive: true, force: true });
+      await rm(copyParent, { recursive: true, force: true });
+    }
+  });
+
+  it("compare_predictions reads predictions from the LOCKS and writes comparison.json", async () => {
+    await authorSpec(specRoot, 1, "claim-a", "holds for all x", "PASS");
+    // A persisted execution result where the actual is FAIL (vs locked PASS).
+    await mkdir(join(specRoot, "results"), { recursive: true });
+    const resultsPath = join(specRoot, "results", "run.json");
+    await writeFile(
+      resultsPath,
+      JSON.stringify({
+        results: [
+          { propertyId: "property-1.claim-a", outcome: "VERDICT", verdict: "FAIL" },
+        ],
+        executionContexts: {},
+      }),
+    );
+
+    const server = createMcpServer({ resultsClock: PINNED_CLOCK });
+    const [ct, st] = InMemoryTransport.createLinkedPair();
+    const client = new Client({ name: "t", version: "0.0.0" });
+    await Promise.all([client.connect(ct), server.connect(st)]);
+    try {
+      const { tools } = await client.listTools();
+      expect(tools.map((t) => t.name)).toContain("compare_predictions");
+
+      const res = await client.callTool({
+        name: "compare_predictions",
+        arguments: { specRoot, resultsPath },
+      });
+      const structured = res.structuredContent as {
+        lieCount: number;
+        comparisons: { predicted: string | null; status: string }[];
+        comparisonPath: string;
+        resultsPath: string;
+      };
+      // Predicted PASS came from the lock; the caller never supplied it.
+      expect(structured.comparisons[0]?.predicted).toBe("PASS");
+      expect(structured.comparisons[0]?.status).toBe("PREDICTION_MISMATCH");
+      expect(structured.lieCount).toBe(1);
+
+      // comparison.json written, and the tool persisted its own result too.
+      const comparison = JSON.parse(await readFile(join(specRoot, "comparison.json"), "utf8"));
+      expect(comparison.lieCount).toBe(1);
+      expect(structured.resultsPath).toContain("compare_predictions.json");
+    } finally {
+      await client.close();
+      await server.close();
     }
   });
 });

@@ -60,6 +60,12 @@ import {
   type LockPredictionOptions,
   type LockTarget,
 } from "./prediction-lock/index.js";
+import { deriveProperties, deriveProperty } from "./spec-derive/index.js";
+import { writeToolResult } from "./results/persist.js";
+import {
+  comparePredictions,
+  type ComparePredictionsRequest,
+} from "./compare-predictions/index.js";
 
 /* -------------------------------------------------------------------------- */
 /* Input schema — mirrors PropertyExecutionRequest                            */
@@ -100,8 +106,12 @@ const executePropertiesInputShape = {
    * `node_modules`/lock files into whatever is mounted).
    */
   targetRepoRef: z.string(),
-  /** The Correctness_Properties to execute. */
-  properties: z.array(correctnessPropertySchema),
+  /**
+   * The Correctness_Properties to execute. OPTIONAL: when omitted AND `specRoot`
+   * is given, the server DERIVES them from the spec on disk (claims.json +
+   * properties/), so the caller need not hand-write them.
+   */
+  properties: z.array(correctnessPropertySchema).optional(),
   /** Which pipeline phase this execution belongs to. */
   phase: z.enum(["initial", "post_fix"]),
   /**
@@ -222,10 +232,23 @@ const applyFixesAndReexecuteInputShape = {
   targetRepoRef: z.string(),
   /** The Fix_Tasks + their concrete edits to realize on the copy (15.1). */
   applications: z.array(fixApplicationSchema),
-  /** The SAME Correctness_Properties to re-execute against the fixed copy. */
-  properties: z.array(correctnessPropertySchema),
-  /** Pre_Fix_Result per propertyId — the original execution outcome (R8.4). */
-  preFixResults: z.record(z.string(), actualResultSchema),
+  /**
+   * The SAME Correctness_Properties to re-execute against the fixed copy.
+   * OPTIONAL: when omitted AND `specRoot` is given, the server DERIVES them from
+   * the spec on disk, so the caller need not hand-write them.
+   */
+  properties: z.array(correctnessPropertySchema).optional(),
+  /**
+   * Pre_Fix_Result per propertyId — the original execution outcome (R8.4).
+   * Accepts BOTH shapes `execute_properties` can hand back: a `record` keyed by
+   * propertyId, OR the `array` of ActualResult exactly as it returns at
+   * `.results`. An array is normalized to a record (keyed by `propertyId`)
+   * internally.
+   */
+  preFixResults: z.union([
+    z.record(z.string(), actualResultSchema),
+    z.array(actualResultSchema),
+  ]),
   /**
    * OPTIONAL spec root holding `properties/property-{n}.{claimId}.test.ts`. When
    * provided, the server stages each property's test file from here INTO the
@@ -247,8 +270,18 @@ const replayCounterexampleInputShape = {
    * `execute_properties` does, so the user's repo stays unchanged.
    */
   targetRepoRef: z.string(),
-  /** The single Correctness_Property to replay. */
-  property: correctnessPropertySchema,
+  /**
+   * The single Correctness_Property to replay. OPTIONAL: when omitted AND
+   * `specRoot` is given, the server DERIVES it from the spec (the property whose
+   * id matches the counterexample's propertyId is identified via `propertyId`).
+   */
+  property: correctnessPropertySchema.optional(),
+  /**
+   * The id of the property to replay — REQUIRED when `property` is omitted and
+   * derivation from `specRoot` is used, so the server knows which derived
+   * property to pick. Ignored when `property` is supplied explicitly.
+   */
+  propertyId: z.string().optional(),
   /** The Execution_Context recorded with the original Counterexample (R6.2). */
   executionContext: executionContextSchema,
   /**
@@ -277,6 +310,188 @@ const lockPredictionInputShape = {
   propertyNumber: z.number().int().positive(),
 } as const;
 
+/**
+ * Zod shape for the `compare_predictions` tool input (change 3). Reads the
+ * LOCKED predictions under `specRoot` and a persisted execution result at
+ * `resultsPath`, runs the Comparison Engine, optionally groups symptoms under a
+ * root cause, and writes `<specRoot>/comparison.json`. Predictions come ONLY
+ * from the locks, never from the caller.
+ */
+const comparePredictionsInputShape = {
+  /** Spec root holding the locks and receiving `comparison.json`. */
+  specRoot: z.string(),
+  /** Path to a persisted execution result JSON (what a tool wrote to results/). */
+  resultsPath: z.string(),
+  /**
+   * OPTIONAL root-cause → symptoms map. Groups symptom comparisons under their
+   * root cause and counts a lie once per root cause.
+   */
+  rootCauses: z.record(z.string(), z.array(z.string())).optional(),
+} as const;
+
+/* -------------------------------------------------------------------------- */
+/* Structured schema-error messages with a minimal valid example (change 1)   */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * A minimal valid example of each tool's expected input, used in the
+ * structured error a handler returns when the derived/supplied input is
+ * missing or invalid. Defined in ONE place so the example text stays correct
+ * and consistent (change 1). The examples are deliberately tiny but complete.
+ */
+function minimalExampleFor(
+  tool:
+    | "execute_properties"
+    | "replay_counterexample"
+    | "apply_fixes_and_reexecute"
+    | "compare_predictions",
+): string {
+  const oneProperty = {
+    id: "property-1.claim-a",
+    claimId: "claim-a",
+    title: "Example property",
+    statement: "for all x, holds",
+    kind: "function",
+    validatesRequirements: [],
+  };
+  const oneActual = {
+    propertyId: "property-1.claim-a",
+    outcome: "VERDICT",
+    verdict: "FAIL",
+  };
+  switch (tool) {
+    case "execute_properties":
+      return JSON.stringify(
+        {
+          targetRepoRef: "/path/to/target",
+          // Omit `properties` to derive from the spec when `specRoot` is given.
+          properties: [oneProperty],
+          phase: "initial",
+          specRoot: "/path/to/spec",
+        },
+        null,
+        2,
+      );
+    case "replay_counterexample":
+      return JSON.stringify(
+        {
+          targetRepoRef: "/path/to/target",
+          // Omit `property` and pass `propertyId` to derive from the spec.
+          property: oneProperty,
+          executionContext: {
+            randomSeed: 123456789,
+            timezone: "Asia/Tokyo",
+            fixedCurrentTime: "2020-01-15T00:00:00.000Z",
+          },
+          specRoot: "/path/to/spec",
+        },
+        null,
+        2,
+      );
+    case "apply_fixes_and_reexecute":
+      return JSON.stringify(
+        {
+          targetRepoRef: "/path/to/target",
+          applications: [
+            {
+              fixTask: {
+                id: "fix-1",
+                confirmedBugPropertyId: "property-1.claim-a",
+                description: "example fix",
+                appliesTo: "Target_Repo_Copy",
+              },
+              edits: [
+                { kind: "write", path: "src/x.ts", contents: "export {};\n" },
+              ],
+            },
+          ],
+          // Omit `properties` to derive from the spec when `specRoot` is given.
+          properties: [oneProperty],
+          // preFixResults accepts EITHER a record keyed by propertyId…
+          preFixResults: { "property-1.claim-a": oneActual },
+          // …OR an array (exactly execute_properties' `.results`):
+          // preFixResults: [oneActual],
+          specRoot: "/path/to/spec",
+        },
+        null,
+        2,
+      );
+    case "compare_predictions":
+      return JSON.stringify(
+        {
+          specRoot: "/path/to/spec",
+          resultsPath: "/path/to/spec/results/<timestamp>-execute_properties.json",
+          // Optional: group symptoms under a root cause.
+          rootCauses: { "property-1.claim-a": ["property-2.claim-b"] },
+        },
+        null,
+        2,
+      );
+  }
+}
+
+/** Build an MCP tool-error result whose text includes a minimal valid example. */
+function schemaErrorResult(
+  tool:
+    | "execute_properties"
+    | "replay_counterexample"
+    | "apply_fixes_and_reexecute"
+    | "compare_predictions",
+  reason: string,
+): {
+  isError: true;
+  content: { type: "text"; text: string }[];
+} {
+  return {
+    isError: true,
+    content: [
+      {
+        type: "text" as const,
+        text:
+          `${reason}\n\nExpected input for ${tool} — a minimal valid ` +
+          `example:\n${minimalExampleFor(tool)}`,
+      },
+    ],
+  };
+}
+
+/**
+ * Shared finalizer for the executing tools (change 2). When `specRoot` is given,
+ * it persists the RAW `result` verbatim to `<specRoot>/results/<stamp>-<tool>.
+ * json` and then returns the result ANNOTATED with the written `resultsPath`
+ * (both as structured content and as a JSON text block). When no `specRoot` is
+ * given, it returns the result unchanged (no persistence).
+ *
+ * The file on disk is the raw result WITHOUT `resultsPath` — self-contained and
+ * exactly the tool's output — while the returned value carries the path so the
+ * caller knows where it landed.
+ */
+async function finalizeToolResult(
+  toolName: string,
+  result: unknown,
+  specRoot: string | undefined,
+  options: CreateMcpServerOptions,
+): Promise<{
+  structuredContent: Record<string, unknown>;
+  content: { type: "text"; text: string }[];
+}> {
+  let returned = result;
+  if (specRoot !== undefined) {
+    // Persist the RAW result first (self-contained), then annotate the return.
+    const resultsPath = await writeToolResult(
+      specRoot,
+      toolName,
+      result,
+      options.resultsClock,
+    );
+    returned = { ...(result as Record<string, unknown>), resultsPath };
+  }
+  return {
+    structuredContent: returned as Record<string, unknown>,
+    content: [{ type: "text" as const, text: JSON.stringify(returned) }],
+  };
+}
+
 /* -------------------------------------------------------------------------- */
 /* Server construction                                                        */
 /* -------------------------------------------------------------------------- */
@@ -291,6 +506,13 @@ export interface CreateMcpServerOptions {
   applyFixesAndReexecute?: ApplyFixesAndReexecuteOptions;
   /** Options (timestamp injection) for `lock_prediction`. */
   lockPrediction?: LockPredictionOptions;
+  /**
+   * Injectable clock for the verbatim result-persistence filename (change 2).
+   * When a tool has a `specRoot`, it writes its raw result to
+   * `<specRoot>/results/<utc-stamp>-<tool>.json`; this pins the timestamp so
+   * tests get a deterministic filename. Defaults to `() => new Date()`.
+   */
+  resultsClock?: () => Date;
 }
 
 /**
@@ -329,9 +551,34 @@ export function createMcpServer(
       inputSchema: executePropertiesInputShape,
     },
     async (args) => {
+      const specRoot = args.specRoot ?? options.execute?.specRoot;
+
+      // Resolve the properties: explicit when supplied, else DERIVED from the
+      // spec when a specRoot is given (change 1). A structured error-with-example
+      // is returned when neither is available or derivation fails.
+      let properties = args.properties;
+      if (properties === undefined) {
+        if (specRoot === undefined) {
+          return schemaErrorResult(
+            "execute_properties",
+            "`properties` was omitted and no `specRoot` was given, so the " +
+              "properties could not be derived.",
+          );
+        }
+        const derived = await deriveProperties(specRoot);
+        if (derived.properties === null) {
+          return schemaErrorResult(
+            "execute_properties",
+            `Could not derive properties from specRoot "${specRoot}": ` +
+              `${derived.issue?.message ?? "unknown error"}`,
+          );
+        }
+        properties = derived.properties;
+      }
+
       const request: PropertyExecutionRequest = {
         targetRepoRef: args.targetRepoRef,
-        properties: args.properties,
+        properties,
         phase: args.phase,
       };
 
@@ -339,20 +586,10 @@ export function createMcpServer(
       // working copy) over the construction-time options.
       const result = await executeProperties(request, {
         ...options.execute,
-        specRoot: args.specRoot ?? options.execute?.specRoot,
+        specRoot,
       });
 
-      return {
-        // PropertyExecutionResult is a plain serializable JSON object; the SDK
-        // types structuredContent as an open record, so expose it as one.
-        structuredContent: result as unknown as Record<string, unknown>,
-        content: [
-          {
-            type: "text" as const,
-            text: JSON.stringify(result),
-          },
-        ],
-      };
+      return finalizeToolResult("execute_properties", result, specRoot, options);
     },
   );
 
@@ -375,28 +612,47 @@ export function createMcpServer(
       inputSchema: replayCounterexampleInputShape,
     },
     async (args) => {
+      const specRoot = args.specRoot ?? options.replay?.specRoot;
+
+      // Resolve the property: explicit when supplied, else DERIVED from the spec
+      // by its `propertyId` when a specRoot is given (change 1).
+      let property = args.property;
+      if (property === undefined) {
+        if (specRoot === undefined || args.propertyId === undefined) {
+          return schemaErrorResult(
+            "replay_counterexample",
+            "`property` was omitted; to derive it, provide both a `specRoot` " +
+              "and the `propertyId` of the property to replay.",
+          );
+        }
+        const derived = await deriveProperty(specRoot, args.propertyId);
+        if (derived.property === null) {
+          return schemaErrorResult(
+            "replay_counterexample",
+            `Could not derive property "${args.propertyId}" from specRoot ` +
+              `"${specRoot}": ${derived.issue?.message ?? "unknown error"}`,
+          );
+        }
+        property = derived.property;
+      }
+
       const request: ReplayCounterexampleRequest = {
         targetRepoRef: args.targetRepoRef,
-        property: args.property,
+        property,
         executionContext: args.executionContext,
       };
 
       const result = await replayCounterexample(request, {
         ...options.replay,
-        specRoot: args.specRoot ?? options.replay?.specRoot,
+        specRoot,
       });
 
-      return {
-        // ActualResult is a plain serializable JSON object; the SDK types
-        // structuredContent as an open record, so expose it as one.
-        structuredContent: result as unknown as Record<string, unknown>,
-        content: [
-          {
-            type: "text" as const,
-            text: JSON.stringify(result),
-          },
-        ],
-      };
+      return finalizeToolResult(
+        "replay_counterexample",
+        result,
+        specRoot,
+        options,
+      );
     },
   );
 
@@ -420,32 +676,63 @@ export function createMcpServer(
       inputSchema: applyFixesAndReexecuteInputShape,
     },
     async (args) => {
+      const specRoot =
+        args.specRoot ?? options.applyFixesAndReexecute?.specRoot;
+
+      // Resolve the properties: explicit when supplied, else DERIVED from the
+      // spec when a specRoot is given (change 1).
+      let properties = args.properties;
+      if (properties === undefined) {
+        if (specRoot === undefined) {
+          return schemaErrorResult(
+            "apply_fixes_and_reexecute",
+            "`properties` was omitted and no `specRoot` was given, so the " +
+              "properties could not be derived.",
+          );
+        }
+        const derived = await deriveProperties(specRoot);
+        if (derived.properties === null) {
+          return schemaErrorResult(
+            "apply_fixes_and_reexecute",
+            `Could not derive properties from specRoot "${specRoot}": ` +
+              `${derived.issue?.message ?? "unknown error"}`,
+          );
+        }
+        properties = derived.properties;
+      }
+
+      // Normalize preFixResults: accept BOTH an array (exactly what
+      // execute_properties returns at `.results`) and a record keyed by
+      // propertyId (change 1). An array is keyed by each result's propertyId.
+      const preFixResults: Record<string, ActualResult> = Array.isArray(
+        args.preFixResults,
+      )
+        ? Object.fromEntries(
+            (args.preFixResults as ActualResult[]).map((r) => [
+              r.propertyId,
+              r,
+            ]),
+          )
+        : (args.preFixResults as Record<string, ActualResult>);
+
       const request: ApplyFixesAndReexecuteRequest = {
         targetRepoRef: args.targetRepoRef,
         applications: args.applications,
-        properties: args.properties,
-        // The zod record validates each value as a closed ActualResult; narrow
-        // back to the typed record for the orchestrator.
-        preFixResults: args.preFixResults as Record<string, ActualResult>,
+        properties,
+        preFixResults,
       };
 
       const result = await applyFixesAndReexecute(request, {
         ...options.applyFixesAndReexecute,
-        specRoot:
-          args.specRoot ?? options.applyFixesAndReexecute?.specRoot,
+        specRoot,
       });
 
-      return {
-        // The result is a plain serializable JSON object; the SDK types
-        // structuredContent as an open record, so expose it as one.
-        structuredContent: result as unknown as Record<string, unknown>,
-        content: [
-          {
-            type: "text" as const,
-            text: JSON.stringify(result),
-          },
-        ],
-      };
+      return finalizeToolResult(
+        "apply_fixes_and_reexecute",
+        result,
+        specRoot,
+        options,
+      );
     },
   );
 
@@ -485,6 +772,55 @@ export function createMcpServer(
           },
         ],
       };
+    },
+  );
+
+  server.registerTool(
+    "compare_predictions",
+    {
+      title: "Compare LOCKED predictions against a persisted execution result",
+      description:
+        "Run the Comparison Engine against a persisted execution result " +
+        "(what execute_properties / apply_fixes_and_reexecute wrote under " +
+        "results/), reading each predicted verdict ONLY from the on-disk " +
+        "Prediction_Locks — never from the caller — so comparison uses the " +
+        "originally recorded value (R3.5). Classifies each property " +
+        "(MATCH / PREDICTION_MISMATCH / NOT_COMPARED_TIMEOUT / NOT_EXECUTED) " +
+        "and counts lies (confirmed prediction mismatches). When a rootCauses " +
+        "map is given, symptom comparisons are grouped under their root cause " +
+        "and a lie is counted once per root cause rather than once per symptom. " +
+        "Writes <specRoot>/comparison.json and returns the summary plus the " +
+        "written path.",
+      inputSchema: comparePredictionsInputShape,
+    },
+    async (args) => {
+      const request: ComparePredictionsRequest = {
+        specRoot: args.specRoot,
+        resultsPath: args.resultsPath,
+        rootCauses: args.rootCauses,
+      };
+
+      let result;
+      try {
+        result = await comparePredictions(request);
+      } catch (error) {
+        return schemaErrorResult(
+          "compare_predictions",
+          `compare_predictions could not read the persisted result at ` +
+            `"${args.resultsPath}": ${
+              error instanceof Error ? error.message : String(error)
+            }`,
+        );
+      }
+
+      // Persist this tool's own raw result verbatim under results/ too (change
+      // 2), and return it annotated with that path alongside comparison.json.
+      return finalizeToolResult(
+        "compare_predictions",
+        result,
+        args.specRoot,
+        options,
+      );
     },
   );
 

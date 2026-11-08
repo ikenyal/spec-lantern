@@ -15,16 +15,18 @@ Predicted_Result. The lock is what makes the later comparison trustworthy.
 
 ## Execute (delegate to `execute_properties`)
 
-Call `execute_properties` with a `PropertyExecutionRequest`:
-`{ targetRepoRef, properties[], phase: "initial" }`, and pass your `specRoot`
-so the server finds the property files. The server copies the target to a
-throwaway working copy and places each property file at the SAME location
-(relative to the target) it has in your spec — in place when `specRoot` is
-inside the target, or copied to a fixed path when it is outside — so the
-relative/alias imports you wrote (see `03-claims-to-properties.md`) resolve. You
-do not place files inside the copy by hand. Read the `PropertyExecutionResult`:
-an `ActualResult[]` plus a per-property `ExecutionContext`. Interpret each
-outcome by its tag, never guessing:
+Call `execute_properties` with `{ targetRepoRef, phase: "initial", specRoot }`
+and OMIT `properties` — the server derives the Correctness_Property objects from
+your spec (`claims.json` + `properties/`). It copies the target to a throwaway
+working copy and places each property file at the SAME location (relative to the
+target) it has in your spec — in place when `specRoot` is inside the target, or
+copied to a fixed path when it is outside — so the relative/alias imports you
+wrote (see `03-claims-to-properties.md`) resolve. You do not place files inside
+the copy by hand, and you do not hand-write the property objects. The tool
+persists its result verbatim and returns a `resultsPath`; keep that path for
+`compare_predictions`. Read the `PropertyExecutionResult`: an `ActualResult[]`
+plus a per-property `ExecutionContext`. Interpret each outcome by its tag, never
+guessing:
 
 - `VERDICT` → `verdict` is PASS or FAIL; on FAIL a `Counterexample` is attached
   (triggering input + observed output + its `ExecutionContext`).
@@ -38,17 +40,29 @@ outcome by its tag, never guessing:
 Never execute the target yourself to "double-check" a result. The tool's output
 is the source of truth for Actual_Results.
 
-## Compare predicted vs actual (read-side)
+## Compare predicted vs actual (delegate to `compare_predictions`)
 
-For each property, pair the **locked** Predicted_Result with the Actual_Result.
-Where predicted ≠ actual (both PASS/FAIL), it is a prediction mismatch — the
-core finding of spec-lantern. A property whose Actual_Result is FAIL is a
-**Confirmed_Bug**, carrying its Counterexample. (The Comparison Engine formalizes
-this in code; your job here is to drive the fix loop for each Confirmed_Bug.)
+Do NOT hand-write the comparison. `execute_properties` persisted its result and
+returned a `resultsPath`; call `compare_predictions` with
+`{ specRoot, resultsPath }`. It reads each predicted verdict ONLY from the
+on-disk Prediction_Locks (never from you), runs the Comparison Engine against
+the persisted Actual_Results, and writes `<specRoot>/comparison.json`.
+
+Read its summary: each property's `status` (`MATCH` / `PREDICTION_MISMATCH` /
+`NOT_COMPARED_TIMEOUT` / `NOT_EXECUTED`), `confirmedBug`, and the `lieCount`.
+A `PREDICTION_MISMATCH` (predicted ≠ actual, both PASS/FAIL) is the core finding;
+a property whose Actual_Result is FAIL is a **Confirmed_Bug** carrying its
+Counterexample. Your job here is to drive the fix loop for each Confirmed_Bug.
+
+When one defect makes several properties fail, pass `rootCauses`
+(`{ "<rootCause propertyId>": ["<symptom propertyId>", ...] }`); the tool groups
+the symptoms under the root cause and counts the lie ONCE per root cause rather
+than once per symptom. Do not count lies by hand.
 
 If you need to reproduce a specific failure exactly, call `replay_counterexample`
-with the property and its recorded `ExecutionContext`; it reproduces the original
-Actual_Result.
+with `{ specRoot, targetRepoRef, propertyId, executionContext }` (the recorded
+`ExecutionContext` from the failing result); it reproduces the original
+Actual_Result and persists its own result too.
 
 ## R8.1 — one or more Fix_Tasks per Confirmed_Bug
 
@@ -69,15 +83,22 @@ to verify. The `appliesTo` field is pinned to `"Target_Repo_Copy"`; honor it.
 
 ## Re-execute and read the transition (delegate to `apply_fixes_and_reexecute`)
 
-Call `apply_fixes_and_reexecute` with `{ targetRepoCopyRef, fixTasks[],
-properties[] }`. It applies the fixes to the copy and re-runs the same
-properties inside the runner, returning Pre_Fix_Result and Post_Fix_Result per
-property. Read the resulting Property_Transition classification:
+Call `apply_fixes_and_reexecute` with `{ targetRepoRef, specRoot, applications[],
+preFixResults }` (omit `properties` — the server derives them from the spec; pass
+`preFixResults` as the persisted `results` array or a record). It applies the
+fixes to a throwaway copy and re-runs the same properties inside the runner,
+returning Pre_Fix_Result and Post_Fix_Result per property. Read the resulting
+Property_Transition classification:
 
 - `FIXED` — FAIL → PASS,
 - `NOT_RESOLVED` — FAIL → FAIL,
 - `REGRESSION` — PASS → FAIL,
 - `STILL_PASSING` — PASS → PASS.
+
+The result also carries `unifiedDiff` — the ACTUAL unified diff of the edits
+applied to the copy, computed by the tool with line endings preserved. That diff
+is authoritative; do NOT hand-write or transcribe a diff. The tool also persisted
+its full result and returned a `resultsPath`.
 
 Report these transitions as the Revive outcome. The demo target
 (`writing-tracker`) must show at least one Confirmed_Bug with a Counterexample
@@ -92,18 +113,25 @@ and at least one `FIXED` (FAIL → PASS) transition applied to the copy.
 
 ## Evidence discipline (learned from real runs)
 
-- **Persist every tool output verbatim** under `results/` (for example
-  `results/stage-c/<propertyId>.json`, `results/stage-d/...`). Reports and
-  summaries read only from these files, never from chat text.
-- **Replay every FAIL** with `replay_counterexample` and persist the replay.
+- **The tools persist their own output — read it back, never transcribe it.**
+  Every tool call with a `specRoot` writes its EXACT result to
+  `<specRoot>/results/<UTC-timestamp>-<tool>.json` and returns that `resultsPath`;
+  `compare_predictions` additionally writes `<specRoot>/comparison.json`. Reports
+  and summaries read only from these files, never from chat text. Do not hand-copy
+  a result, comparison, or diff into a file — that hand-work caused a real
+  transcription error and is exactly what these tools remove.
+- **Replay every FAIL** with `replay_counterexample`; it persists the replay and
+  returns its path.
 - **Harness defects are not bugs.** If a FAIL is caused by the test itself
   (brittle lookup, untrimmed comparison), do not report it as a Confirmed_Bug.
   Fix only the test, keep the predicted verdict unchanged, move the old lock to
   `locks/superseded/` with a README (what was wrong, when relative to
   execution, original lock time), and re-lock.
-- **Count lies by root cause.** If one defect makes several properties fail,
-  report one lie and mark the other rows as symptoms of it. State honestly
-  whether each symptom's own comment is wrong or only failed because of the
-  root cause.
+- **Count lies by root cause via `compare_predictions`.** If one defect makes
+  several properties fail, pass `rootCauses` so the tool counts one lie per root
+  cause and groups the symptoms — do not tally lies by hand. State honestly
+  whether each symptom's own comment is wrong or only failed because of the root
+  cause.
 - **Re-run all properties after a fix** (not only the failing ones) so the
-  report can show STILL_PASSING vs REGRESSION.
+  report can show STILL_PASSING vs REGRESSION. `apply_fixes_and_reexecute`
+  re-runs the full derived property set for you.

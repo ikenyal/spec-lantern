@@ -361,3 +361,57 @@ export {
   startStdioServer,
   type CreateMcpServerOptions,
 } from "./mcp-server.js";
+
+/**
+ * Verbatim tool-result persistence (change 2). {@link writeToolResult} writes a
+ * tool's exact result to `<specRoot>/results/<utc-stamp>-<tool>.json` (creating
+ * `results/` if missing) and returns the absolute path;
+ * {@link utcStampForFilename} derives the filesystem-safe, sortable UTC stamp.
+ */
+export {
+  writeToolResult,
+  utcStampForFilename,
+  RESULTS_DIR,
+} from "./results/persist.js";
+
+/**
+ * Spec-derivation of CorrectnessProperty objects (change 1). When a `specRoot`
+ * is given and the `properties`/`property` argument is omitted, the executing
+ * tools call {@link deriveProperties} / {@link deriveProperty} to reconstruct
+ * the properties from `claims.json` + the `properties/` test files (honest
+ * `kind: "function"`), so the caller never hand-writes them.
+ */
+export {
+  deriveProperties,
+  deriveProperty,
+  type DeriveCode,
+  type DeriveIssue,
+  type DeriveResult,
+  type DeriveOneResult,
+} from "./spec-derive/index.js";
+
+/**
+ * The line-ending-preserving unified-diff builder (change 4). Used by
+ * {@link applyFixesToCopy} to compute the REAL diff of applied edits without
+ * normalizing CRLF/LF.
+ */
+export {
+  unifiedDiffForFile,
+  splitLinesPreservingEndings,
+  diffPathFor,
+} from "./revive/unified-diff.js";
+
+/**
+ * The `compare_predictions` tool (change 3). {@link comparePredictions} runs the
+ * Comparison Engine against a persisted execution result, reading predicted
+ * verdicts ONLY from the locks, optionally grouping symptoms under a root cause
+ * and counting lies per root cause, and writes `<specRoot>/comparison.json`.
+ */
+export {
+  comparePredictions,
+  extractActualResults,
+  type ComparePredictionsRequest,
+  type ComparePredictionsResult,
+  type ComparePredictionsSummary,
+  type RootCauseGroup,
+} from "./compare-predictions/index.js";
