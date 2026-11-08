@@ -147,6 +147,9 @@ export const TEST_IDS = {
   noReport: "lantern-no-report",
   // "Try it on your repo" call-to-action at the bottom of the report page.
   tryIt: "lantern-try-it",
+  // Page footer at the very bottom of every target.
+  footer: "lantern-footer",
+  footerCredit: "lantern-footer-credit",
 } as const;
 
 /* -------------------------------------------------------------------------- */
@@ -1491,6 +1494,70 @@ export function TryItSection(): ReactElement {
 }
 
 /* -------------------------------------------------------------------------- */
+/* ReportFooter                                                               */
+/* -------------------------------------------------------------------------- */
+
+/** The canonical spec-lantern repo URL shown in the footer. */
+const FOOTER_REPO_URL = "https://github.com/ikenyal/spec-lantern";
+
+/** Props for {@link ReportFooter}. */
+export interface ReportFooterProps {
+  /**
+   * The per-target credit line, taken VERBATIM from the shown report's
+   * {@link LanternStory.credit} (e.g. "writing-tracker by shateer (MIT)." /
+   * "MoodPlays by Gargi Sahu (MIT)."). Omitted when the report carries no
+   * credit, in which case the per-target credit line is simply not rendered.
+   */
+  credit?: string;
+}
+
+/**
+ * The page footer shown at the very bottom of EVERY target. It carries the
+ * project licence + attribution, the Kiroween disclaimer, the per-target credit
+ * line (from the shown report's `credit` field), and the standing promise that
+ * the original repositories were never modified. The credit is passed in from
+ * the rendered report's story so it tracks whichever target is shown; the rest
+ * is static project metadata.
+ */
+export function ReportFooter({ credit }: ReportFooterProps): ReactElement {
+  return (
+    <footer
+      className="lantern-footer"
+      data-testid={TEST_IDS.footer}
+      aria-label="About spec-lantern"
+    >
+      <p className="lantern-footer__line">
+        © 2026 ikenyal · spec-lantern is MIT licensed ·{" "}
+        <a
+          className="lantern-footer__link"
+          href={FOOTER_REPO_URL}
+          rel="noreferrer noopener"
+          target="_blank"
+        >
+          Source on GitHub
+        </a>
+      </p>
+      <p className="lantern-footer__line">
+        Built with Kiro for Kiroween 2026. Not affiliated with or endorsed by
+        AWS or Kiro.
+      </p>
+      {credit ? (
+        <p
+          className="lantern-footer__line lantern-footer__credit"
+          data-testid={TEST_IDS.footerCredit}
+        >
+          {credit}
+        </p>
+      ) : null}
+      <p className="lantern-footer__line">
+        The original repositories were never modified; fixes were applied only
+        to throwaway copies.
+      </p>
+    </footer>
+  );
+}
+
+/* -------------------------------------------------------------------------- */
 /* LanternReportView                                                          */
 /* -------------------------------------------------------------------------- */
 
@@ -1642,6 +1709,7 @@ export function LanternReportView({
       ) : null}
       <PropertyTable comparisons={report.comparisons} />
       <TryItSection />
+      <ReportFooter credit={story?.credit} />
     </section>
   );
 }

@@ -12,7 +12,8 @@
     "preview": "vite preview",
     "export:sample": "vite-node scripts/export-sample-report.ts",
     "generate:timeline": "vite-node scripts/generate-timeline.ts",
-    "build:demo": "npm run export:sample && npm run generate:timeline && vite build"
+    "generate:og": "vite-node scripts/generate-og-image.ts",
+    "build:demo": "npm run export:sample && npm run generate:timeline && npm run generate:og && vite build"
   },
   "dependencies": {
     "@spec-lantern/types": "*",
@@ -20,6 +21,7 @@
     "react-dom": "^18.3.1"
   },
   "devDependencies": {
+    "@resvg/resvg-js": "^2.6.2",
     "@vitejs/plugin-react": "^4.3.4",
     "vite": "^5.4.21"
   }

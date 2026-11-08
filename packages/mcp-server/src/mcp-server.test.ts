@@ -135,6 +135,46 @@ describe("execute_properties MCP tool (task 10.1)", () => {
     }
   });
 
+  it("defaults phase to \"initial\" when it is omitted", async () => {
+    const runner = fakeRunner({
+      "property-1.claim-a": {
+        propertyId: "property-1.claim-a",
+        outcome: "VERDICT",
+        verdict: "PASS",
+      },
+    });
+    const { client, close } = await connectClient(runner);
+    try {
+      const res = await client.callTool({
+        name: "execute_properties",
+        arguments: {
+          targetRepoRef: "target-repo-copy-abc",
+          properties: [
+            {
+              id: "property-1.claim-a",
+              claimId: "claim-a",
+              title: "p",
+              statement: "for all x, holds",
+              kind: "function",
+              validatesRequirements: ["5.1"],
+            },
+          ],
+          // NO `phase` — the server defaults it to "initial" (first-run case),
+          // so the call is accepted and dispatched rather than schema-rejected.
+        },
+      });
+
+      expect(res.isError).toBeFalsy();
+      const structured = res.structuredContent as PropertyExecutionResult;
+      expect(structured.results[0]?.outcome).toBe("VERDICT");
+      // The request still reached the runner (it was not rejected at the schema
+      // boundary for a missing phase).
+      expect(runner.calls).toHaveLength(1);
+    } finally {
+      await close();
+    }
+  });
+
   it("rejects a host-bound request as SAFETY_VIOLATION without using the runner", async () => {
     const runner = fakeRunner();
     const { client, close } = await connectClient(runner);
@@ -173,12 +213,14 @@ describe("execute_properties MCP tool (task 10.1)", () => {
       const res = await client.callTool({
         name: "execute_properties",
         arguments: {
-          // missing required `properties` and `phase`
+          // No `properties` and no `specRoot`, so nothing can be executed.
+          // (phase is optional and defaults to "initial".) The handler returns
+          // a structured schema error.
           targetRepoRef: "target-repo-copy-abc",
         },
       });
-      // The SDK validates against the input schema and returns a tool error
-      // (isError) rather than reaching the handler — so the runner is untouched.
+      // Without properties or a specRoot the handler returns a tool error
+      // (isError) rather than dispatching — so the runner is untouched.
       expect(res.isError).toBe(true);
       expect(runner.calls).toHaveLength(0);
     } finally {

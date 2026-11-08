@@ -36,6 +36,11 @@ __pycache__/
 # Hosted_Demo build (`npm run export:sample` / `build:demo`) regenerates them.
 /packages/ui/public/reports/
 
+# Generated social-share og:image PNG (packages/ui/scripts/generate-og-image.ts).
+# Derived, not source — the Hosted_Demo build (`npm run generate:og` /
+# `build:demo`) regenerates it from the lantern-style SVG template.
+/packages/ui/public/og-image.png
+
 # OS / editor
 .DS_Store
 *.log

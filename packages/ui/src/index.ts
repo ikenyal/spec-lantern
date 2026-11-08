@@ -38,6 +38,7 @@ export {
   SameStandardSection,
   ReportSections,
   TryItSection,
+  ReportFooter,
   TEST_IDS,
   getUiRenderLimitSeconds,
   formatPredicted,
@@ -64,6 +65,7 @@ export {
   type HowItStaysSafeSectionProps,
   type SameStandardSectionProps,
   type ReportSectionsProps,
+  type ReportFooterProps,
 } from "./components.js";
 
 /**

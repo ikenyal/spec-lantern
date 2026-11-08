@@ -113,8 +113,12 @@ const executePropertiesInputShape = {
    * properties/), so the caller need not hand-write them.
    */
   properties: z.array(correctnessPropertySchema).optional(),
-  /** Which pipeline phase this execution belongs to. */
-  phase: z.enum(["initial", "post_fix"]),
+  /**
+   * Which pipeline phase this execution belongs to. OPTIONAL: defaults to
+   * `"initial"` when omitted — the common first-run case — so a caller need not
+   * spell it out. `"post_fix"` must still be passed explicitly for a re-run.
+   */
+  phase: z.enum(["initial", "post_fix"]).optional(),
   /**
    * OPTIONAL spec root holding `properties/property-{n}.{claimId}.test.ts`. When
    * provided, the server stages each property's test file from here INTO the
@@ -580,7 +584,8 @@ export function createMcpServer(
       const request: PropertyExecutionRequest = {
         targetRepoRef: args.targetRepoRef,
         properties,
-        phase: args.phase,
+        // Default to the first-run phase when the caller omits it.
+        phase: args.phase ?? "initial",
       };
 
       // Merge a per-call specRoot (so the server stages property files into the

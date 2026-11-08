@@ -1147,3 +1147,90 @@ body {
   color: var(--ink);
   font-style: italic;
 }
+
+/* ----------------------------------------------------------- page footer -- */
+/* Shown at the very bottom of every target: licence + attribution, the       */
+/* Kiroween disclaimer, the per-target credit line, and the "never modified"   */
+/* promise. Muted text; the GitHub link is the only accent.                    */
+.lantern-footer {
+  margin-top: 2.5rem;
+  padding-top: 1.5rem;
+  border-top: 1px solid var(--charcoal-line);
+  color: var(--ink-muted);
+  font-size: 0.82rem;
+  line-height: 1.6;
+}
+.lantern-footer__line {
+  margin: 0 0 0.35rem;
+}
+.lantern-footer__line:last-child {
+  margin-bottom: 0;
+}
+.lantern-footer__credit {
+  color: var(--ink);
+}
+.lantern-footer__link {
+  color: var(--amber);
+}
+
+/* ======================================================================== */
+/* Narrow-viewport safety (<= 420px, covers the 375px phone width)          */
+/*                                                                          */
+/* Nothing may overflow the viewport horizontally: wide content (the fix    */
+/* diff, the raw-details JSON, evidence lines, long commit subjects, the    */
+/* "Try it" import URL) must scroll or wrap INSIDE its own container rather  */
+/* than widening the page. box-sizing:border-box is already global, so the  */
+/* work here is (a) letting flex/grid children actually shrink (min-width:0) */
+/* and (b) keeping each pre/code block's own scrollbar.                     */
+/* ======================================================================== */
+@media (max-width: 420px) {
+  .lantern,
+  .lantern-switcher {
+    padding-left: 1rem;
+    padding-right: 1rem;
+  }
+
+  /* Let flex/grid children shrink below their content width so a long child
+     (a <pre>, a <code>, a long word) never forces the row wider than the
+     viewport. Without min-width:0 a flex item defaults to min-content width. */
+  .lantern-story__step,
+  .lantern-story__step-body,
+  .lantern-contrast,
+  .lantern-contrast__side,
+  .lantern-timeline__step-body,
+  .lantern-isolation__phase,
+  .lantern-honesty__item {
+    min-width: 0;
+  }
+
+  /* Every monospaced block keeps its own horizontal scrollbar instead of
+     stretching the page. */
+  .lantern-story__diff,
+  .lantern-raw__value,
+  .lantern-story__evidence-line code {
+    max-width: 100%;
+    overflow-x: auto;
+  }
+
+  /* Long unbroken strings (commit subjects, import URL, hashes) wrap. */
+  .lantern-timeline__commit,
+  .lantern-timeline__commit-subject,
+  .lantern-honesty__link,
+  .lantern-try-it__link,
+  .lantern-footer__link {
+    word-break: break-word;
+    overflow-wrap: anywhere;
+  }
+
+  /* The story month-table mock can scroll within its own box if ever needed. */
+  .lantern-story__months {
+    display: block;
+    max-width: 100%;
+    overflow-x: auto;
+  }
+
+  /* Trim the generous card padding so content keeps more usable width. */
+  .lantern-try-it {
+    padding: 1.25rem 1.1rem;
+  }
+}

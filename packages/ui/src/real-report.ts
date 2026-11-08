@@ -208,6 +208,7 @@ export const WRITING_TRACKER_STORY: LanternStory = {
       "The other two checked claims (Recently Active Tasks, Most Active Stages) still pass after the fix — no regression.",
     reproducesSameFail: true,
   },
+  credit: "writing-tracker by shateer (MIT).",
 } as const;
 
 /**
