@@ -42,7 +42,7 @@ because it reads from Supabase with no deterministic path.
 
 | Lying comment (file:line) | Kiro predicted | Execution proved | Fix | Transition |
 |---|---|---|---|---|
-| `// Check for 24 hours` — [`openingHoursParser.ts:51`](./packages/mcp-server/skeleton/moodplays/claims.json) (code was `includes('24')`) | **PASS** | **FAIL** — a normal range like `10:00-22:00` whose closing time contains `24` (e.g. `13:24`) was dropped as "open 24h" ([counterexample](./packages/mcp-server/skeleton/moodplays/results/stage-c/property-1.claim-24h-to-minutes.json)) | match real 24h phrasing with a regex (1-line condition) — [diff](./packages/mcp-server/skeleton/moodplays/results/stage-d/fix-task-1.diff) | **FIXED** (FAIL→PASS) |
+| `// Check for 24 hours` — [`openingHoursParser.ts:51`](./packages/mcp-server/skeleton/moodplays/claims.json) (code was `includes('24')`) | **PASS** | **FAIL** — for the range `00:00-13:24` the closing time `13:24` was dropped, because the string contains `24`, so the place was treated as open 24 hours ([counterexample](./packages/mcp-server/skeleton/moodplays/results/stage-c/property-1.claim-24h-to-minutes.json)) | match real 24-hour phrasing with a regex (the condition line plus its comment) — [diff](./packages/mcp-server/skeleton/moodplays/results/stage-d/fix-task-1.diff) | **FIXED** (FAIL→PASS) |
 
 10 properties executed, 2 FAILs ([property-1](./packages/mcp-server/skeleton/moodplays/results/stage-c/property-1.claim-24h-to-minutes.json)
 and [property-6](./packages/mcp-server/skeleton/moodplays/results/stage-c/property-6.claim-stale-closed.json)) —
@@ -68,8 +68,7 @@ flowchart LR
    executable Correctness_Property, and records a read-only, comment-trusting
    verdict ([POWER.md](./packages/kiro-power/POWER.md)).
 2. **Lock** — every prediction is hashed and timestamped by the `lock_prediction`
-   MCP tool and committed **before execution**, so it can never be edited to
-   match the result ([prediction-lock](./packages/mcp-server/src/prediction-lock)).
+   MCP tool and committed **before execution**; any later change would show up as a hash mismatch and in git history ([prediction-lock](./packages/mcp-server/src/prediction-lock)).
    See the writing-tracker lock committed at Stage B in
    [`00191a6`](https://github.com/ikenyal/spec-lantern/commit/00191a6).
 3. **Execute** — properties run inside the two-phase isolated runner (below),
@@ -188,8 +187,8 @@ Then just ask:
     stop points for the two end-to-end targets.
 - **Kiro Power + MCP server.** A [Kiro Power](./packages/kiro-power) steers the
   authoring; an [MCP server](./packages/mcp-server) owns execution and exposes
-  `lock_prediction`, `execute_properties`, `apply_fixes_and_reexecute`, and
-  `replay_counterexample`.
+  `lock_prediction`, `execute_properties`, `replay_counterexample`,
+  `apply_fixes_and_reexecute`, and `compare_predictions`.
 - **Property-based tests.** Correctness_Properties use fast-check + Vitest, one
   property per claim, ≥100 iterations.
 - **Staged runs with stop points.** Both targets ran in stages (claims → lock →
@@ -238,8 +237,8 @@ headers and cache invalidation on every redeploy
 ([hosted-demo-stack.ts](./packages/infra/lib/hosted-demo-stack.ts)). Every
 resource is tagged `Project=spec-lantern` and `Event=Kiroween2026`.
 
-**Prerequisites.** AWS credentials for profile **`brightflow-sandbox-ikeda`**
-(account `402040564721`, region `ap-northeast-1`); all commands use this profile.
+**Prerequisites.** AWS credentials for the AWS profile the stack is pinned to
+(region `ap-northeast-1`; see [`packages/infra`](./packages/infra)); all commands pass that profile explicitly.
 A one-time `cdk bootstrap` of that account/region is required (run it after
 reviewing the diff).
 
@@ -271,9 +270,9 @@ bucket.
 
 ## 10. Credits and license
 
-- **writing-tracker** — © 2025 shateer, MIT ([sandbox/writing-tracker/LICENSE](./sandbox/writing-tracker/LICENSE)).
+- **writing-tracker** — [`shateers/writing-tracker`](https://github.com/shateers/writing-tracker), © 2025 shateer, MIT.
 - **MoodPlays** — `gargi04sahu/MoodPlays` @ `4b4152f`, © 2026 Gargi Sahu, MIT
-  ([sandbox/moodplays/LICENSE](./sandbox/moodplays/LICENSE)). Selected by fixed
+  ([LICENSE](https://github.com/gargi04sahu/MoodPlays/blob/4b4152f/LICENSE)). Selected by fixed
   criteria **before** any claim was verified — chosen for testability, not for a
   suspected bug ([docs/target-selection.md](./docs/target-selection.md)).
 - spec-lantern — © 2026 ikenyal, [MIT](./LICENSE).
