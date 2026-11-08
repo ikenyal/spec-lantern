@@ -274,7 +274,7 @@ Property-based tests use fast-check + Vitest, each implementing exactly one Corr
     - Assert the static demo is reachable without local install, serves pre-generated sample reports as static assets (no runner/no execution), and exposes the predicted-vs-actual, Counterexample, and Property_Transition views
     - _Requirements: 11.1, 11.2, 11.3_
 
-- [~] 20. Wire the full end-to-end pipeline on the writing-tracker reference Target_Repo (MVP completion)
+- [x] 20. Wire the full end-to-end pipeline on the writing-tracker reference Target_Repo (MVP completion)
   - [x] 20.1 Connect all components into the full pipeline
     - Wire Kiro_Power artifacts → Validator → prediction lock → Safety Gate → runner lifecycle → execution outcomes → Comparison Engine → Revive loop → Lantern_Report → UI, extending the walking skeleton to the full writing-tracker property set, and produce a pre-generated writing-tracker report for the Hosted_Demo
     - Demonstrate at least one Confirmed_Bug with a Counterexample and at least one FIXED (FAIL→PASS) Property_Transition applied to the Target_Repo_Copy and re-executed, with host-safety invariants holding throughout

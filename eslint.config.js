@@ -91,6 +91,21 @@ export default [
     },
   },
   {
+    // Node globals for the repo-root maintenance scripts (the package:power
+    // bundler and the power-tool verifier). These are Node-run `.mjs` scripts
+    // that use process / console / Buffer / timers.
+    files: ["scripts/**/*.mjs"],
+    languageOptions: {
+      globals: {
+        process: "readonly",
+        Buffer: "readonly",
+        console: "readonly",
+        setTimeout: "readonly",
+        clearTimeout: "readonly",
+      },
+    },
+  },
+  {
     files: ["**/*.{ts,tsx}"],
     languageOptions: {
       parser: tsparser,
