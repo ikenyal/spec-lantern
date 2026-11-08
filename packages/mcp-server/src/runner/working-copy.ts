@@ -38,6 +38,7 @@
  */
 import { cp, mkdir, rm } from "node:fs/promises";
 import { randomBytes } from "node:crypto";
+import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
@@ -62,16 +63,39 @@ export const WORKING_COPY_EXCLUDED_DIRS = new Set([
 ]);
 
 /**
- * The default parent that HOLDS per-run working copies. It MUST live under the
- * repo (under `/Users` on macOS) so the copy is visible inside the Podman
- * machine, which shares `/Users` but NOT `/tmp`. Resolved from the compiled
- * module (dist/runner → ../../skeleton) so it works from the built package too,
- * and matches the walking-skeleton working-copy location, whose `.worktree*`
- * gitignore pattern also covers these copies.
+ * The repo-relative working-copy parent (the walking-skeleton location, whose
+ * `.worktree*` gitignore pattern covers these copies). This is resolved from the
+ * compiled module (`dist/runner` → `../../skeleton`) and is CORRECT only when the
+ * server runs from inside this repo's checkout. The PACKAGED bundle runs via
+ * `npx` from the npm cache, where that relative path lands in a confusing place
+ * inside the cache (and is not reliably Podman-visible). So this is NOT the
+ * production default — it is exported only so the repo's OWN tests can pin copies
+ * to the in-repo, gitignored location when they want to. The production default
+ * is {@link WORKING_COPY_PARENT_DIR}.
  */
-export const WORKING_COPY_PARENT_DIR = resolve(here, "..", "..", "skeleton");
+export const REPO_WORKING_COPY_PARENT_DIR = resolve(here, "..", "..", "skeleton");
 
-/** Base name every per-run working copy starts with (gitignored via `.worktree*`). */
+/**
+ * The default parent that HOLDS per-run working copies.
+ *
+ * It MUST live somewhere the macOS Podman machine can bind-mount — Podman shares
+ * the user's home (`/Users/...`) but NOT the host `/tmp` — and it MUST be the
+ * same place whether the server runs from this repo's checkout OR from the
+ * packaged bundle launched via `npx` out of the npm cache. Resolving relative to
+ * the server file fails the second case (copies land inside the npm cache). So
+ * the default is anchored to the user's HOME:
+ *   - `SPEC_LANTERN_WORKDIR` when set (explicit override), else
+ *   - `~/.spec-lantern/worktrees`.
+ * The directory is created on demand (see {@link ensureParentDir}). `homedir()`
+ * is always under `/Users` on macOS, so the copy is visible inside the Podman VM.
+ */
+export const WORKING_COPY_PARENT_DIR = resolve(
+  process.env.SPEC_LANTERN_WORKDIR?.trim()
+    ? process.env.SPEC_LANTERN_WORKDIR.trim()
+    : join(homedir(), ".spec-lantern", "worktrees"),
+);
+
+/** Base name every per-run working copy starts with. */
 const WORKING_COPY_BASENAME = ".worktree";
 
 /**
@@ -115,9 +139,11 @@ export interface PreparedWorkingCopy {
 
 /**
  * Build a UNIQUE per-run working-copy directory path under
- * {@link WORKING_COPY_PARENT_DIR}. A per-run random token makes every run's copy
- * disjoint so concurrent runs cannot clobber each other mid-copy, and the
- * `.worktree` prefix keeps the `.worktree*` gitignore covering it.
+ * {@link WORKING_COPY_PARENT_DIR} (`~/.spec-lantern/worktrees` by default, or the
+ * `SPEC_LANTERN_WORKDIR` override). A per-run random token makes every run's copy
+ * disjoint so concurrent runs cannot clobber each other mid-copy. The `.worktree`
+ * prefix is kept for continuity (and so a copy pinned to the in-repo parent is
+ * still covered by the repo's `.worktree*` gitignore).
  */
 function makeUniqueWorkingCopyDir(): string {
   const token = randomBytes(6).toString("hex");
@@ -152,6 +178,9 @@ export async function prepareWorkingCopy(
   // Create the copy root fresh. mkdtemp is not used for the default path because
   // the name must keep the `.worktree-<token>` shape the gitignore covers; the
   // token already guarantees uniqueness.
+  // `recursive: true` creates the default parent (`~/.spec-lantern/worktrees`,
+  // or the SPEC_LANTERN_WORKDIR override) on demand along with the per-run copy
+  // root, so the workdir never has to pre-exist.
   await rm(parent, { recursive: true, force: true });
   await mkdir(parent, { recursive: true });
   const workingCopyDir = parent;

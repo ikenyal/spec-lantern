@@ -215,9 +215,27 @@ counterexamples.
    lifecycle scripts disabled; the test phase runs with **no network at all**.
 3. The Power itself **never executes** target code — it only writes artifacts
    and calls the four MCP tools.
-4. **The original is sacred**: fixes apply only to a throwaway copy of your repo.
+4. **The original is sacred**: every tool that runs your code
+   (\`execute_properties\`, \`replay_counterexample\`, \`apply_fixes_and_reexecute\`)
+   first copies the repo into a throwaway working copy and runs against the copy
+   — your original repo is never mounted or written to.
 5. \`apply_fixes_and_reexecute\` is **not auto-approved** — you confirm every
    fix-and-re-execute run.
+
+## Working copies (where your code is copied to)
+
+Because the original is never mounted, each run copies your repo into a fresh,
+throwaway working copy (excluding \`node_modules\`, \`.git\`, and build output) and
+removes it when the run finishes. Those copies live under:
+
+- \`$SPEC_LANTERN_WORKDIR\` when that environment variable is set, otherwise
+- \`~/.spec-lantern/worktrees\` (created automatically on first use).
+
+The default is anchored to your home directory on purpose: on macOS the Podman
+machine shares \`/Users\` but **not** \`/tmp\`, so the copy must live under your
+home to be visible inside the container. Set \`SPEC_LANTERN_WORKDIR\` to relocate
+the copies (for example to a larger volume), but keep it somewhere Podman can
+bind-mount — under your home on macOS.
 `;
 
 main().catch((error) => {

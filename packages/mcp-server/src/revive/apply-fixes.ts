@@ -210,13 +210,14 @@ export async function copyTargetRepo(
   const parent = options.copyParentDir
     ? resolve(options.copyParentDir)
     : WORKING_COPY_PARENT_DIR;
-  // Ensure the parent exists (the /Users-visible skeleton dir, or a caller-
-  // specified location).
+  // Ensure the parent exists (the Podman-visible default under the user's home,
+  // `~/.spec-lantern/worktrees` / SPEC_LANTERN_WORKDIR, or a caller-specified
+  // location); created on demand so the workdir never has to pre-exist.
   await mkdir(parent, { recursive: true });
 
   // Fresh, unique copy root. Nothing the original owns is ever written. The
   // `.worktree` prefix keeps the copy covered by the repo's `.worktree*`
-  // gitignore when it lands under the default /Users-visible parent.
+  // gitignore if a caller pins the parent to the in-repo location.
   const copyRoot = await mkdtemp(join(parent, ".worktree-fix-"));
   log(`Copying Target_Repo ${sourceAbs} → Target_Repo_Copy ${copyRoot}`);
 
