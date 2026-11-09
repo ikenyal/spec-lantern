@@ -33,6 +33,8 @@
 
 import { describe, expect, it } from "vitest";
 import {
+  createInstallTopology,
+  reapLeftoverInstallResources,
   runInstallPhase,
   teardownInstallTopology,
 } from "./install-phase.js";
@@ -128,6 +130,76 @@ describe("install-phase topology — robust teardown (task 9.1)", () => {
       await expect(teardownInstallTopology(missing)).resolves.toBeUndefined();
       // Calling it twice is also safe (idempotent).
       await expect(teardownInstallTopology(missing)).resolves.toBeUndefined();
+    },
+    140_000,
+  );
+
+  // Teardown must also resolve for a handle that carries the OUTBOUND network
+  // (the full per-run shape), not only the two-field partial. A never-created
+  // outbound network is likewise "already gone", not an error, so teardown of a
+  // complete-but-nonexistent topology still resolves. This guards the branch
+  // that removes `outboundNetworkName` when present.
+  it(
+    "tears down a never-created FULL topology (incl. outbound network) without throwing",
+    async () => {
+      const missingFull = {
+        proxyContainerName: "spec-lantern-proxy-missing-full",
+        networkName: "spec-lantern-install-net-missing-full",
+        outboundNetworkName: "spec-lantern-out-net-missing-full",
+      };
+
+      await expect(
+        teardownInstallTopology(missingFull),
+      ).resolves.toBeUndefined();
+    },
+    140_000,
+  );
+});
+
+describe("install-phase topology — setup failure still reaps (task 9.1, hardening)", () => {
+  // When the topology cannot be stood up, createInstallTopology must surface a
+  // CLOSED non-VERDICT result (RUNNER_UNAVAILABLE) and must NOT return a live
+  // handle — i.e. nothing is left half-built for a caller to leak. Combined with
+  // the module's try/catch-with-teardown around setup, this is the observable
+  // contract that "teardown runs even when setup fails/throws midway": the
+  // function never resolves to a dangling topology. Only assert this offline
+  // (no reachable Podman) so we never stand up a real proxy here; the live path
+  // is the task 10.5 container smoke test.
+  it.skipIf(PODMAN_REACHABLE)(
+    "returns a closed RUNNER_UNAVAILABLE (never a live handle) when setup cannot complete",
+    async () => {
+      const result = await createInstallTopology(PROPERTY_ID);
+
+      // A live handle would have a registryUrl/runToken; a failure is the closed
+      // ActualResult discriminated by `outcome`. We must get the failure shape.
+      expect("outcome" in result).toBe(true);
+      if (!("outcome" in result)) {
+        throw new Error("expected a closed RUNNER_UNAVAILABLE, got a live handle");
+      }
+      expect(result.outcome).toBe("RUNNER_UNAVAILABLE");
+      expect(result.propertyId).toBe(PROPERTY_ID);
+    },
+    30_000,
+  );
+});
+
+describe("install-phase topology — startup reaper (task 9.1, hardening)", () => {
+  // The startup reaper defends against a PRIOR hard-killed run whose own
+  // `finally` could never execute (SIGKILL on a hung podman). It is prefix/label
+  // scoped and no-throw/bounded, so it must RESOLVE regardless of whether Podman
+  // is reachable, absent, or hung — and never throw. It removes only resources
+  // matching this runner's own name prefixes (spec-lantern-proxy-* /
+  // spec-lantern-install-net-* / spec-lantern-out-net-*), so running it on a
+  // host with none of those present is a safe no-op that touches nothing else
+  // (notably not the persistent Verdaccio cache volume). Bounded by the module's
+  // 30s control-timeouts across up to a handful of podman calls, so the test
+  // ceiling clears a hung engine.
+  it(
+    "reaps leftover install resources prefix-scoped and no-throw (idempotent)",
+    async () => {
+      await expect(reapLeftoverInstallResources()).resolves.toBeUndefined();
+      // Idempotent: a second pass with nothing left is still a safe no-op.
+      await expect(reapLeftoverInstallResources()).resolves.toBeUndefined();
     },
     140_000,
   );

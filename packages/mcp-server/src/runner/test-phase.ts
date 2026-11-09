@@ -112,6 +112,10 @@ import {
   parseVitestJson,
 } from "./vitest-classify.js";
 import { propertyFileNeedsDom } from "./dom-detect.js";
+import {
+  COMPONENT_RENDER_SHIM_FILE,
+  buildDomInteractionShimModule,
+} from "./component-render.js";
 
 /* -------------------------------------------------------------------------- */
 /* Defaults                                                                   */
@@ -389,8 +393,24 @@ function buildTestScript(inContainerTestPath: string, ctx: ExecutionContext): st
  *
  * The generated config MERGES the target's own config (resolved from the
  * conventional config filenames inside the mount) so the target's aliases /
- * jsdom environment survive; spec-lantern only adds the setup module + the
+ * jsdom environment survive; spec-lantern only adds the setup modules + the
  * pinned TZ. See {@link ./execution-context.ts} for the seeding mechanism.
+ *
+ * TWO setup modules are staged and wired (in this order):
+ *  1. the reusable DOM-interaction shim ({@link buildDomInteractionShimModule},
+ *     the SINGLE source of truth also consumed by the walking-skeleton path and
+ *     the component-render harness) — the `waitFor`↔fake-timer bridge
+ *     (`globalThis.jest`), the jsdom pointer-capture shims, and the global
+ *     `activateTab`/`activate` Radix helpers the steering tells authors to call,
+ *     then
+ *  2. the seed/clock setup module ({@link buildSeedClockSetupModule}) — fast-check
+ *     seeding, the Controllable_Clock, and the jest-dom matchers.
+ * Wiring the shim FIRST means the `waitFor` bridge is in place before the clock
+ * is pinned, so a component property that activates a Radix control and polls
+ * with `waitFor` runs here exactly as it does on the skeleton path (previously
+ * the shim was skeleton-only, so a Radix-tab property hung to TIMEOUT on the
+ * generic path). The shim is a no-op when `@testing-library/react` is
+ * unresolvable, so a pure function property is unaffected.
  */
 async function stageSeedClockConfig(
   repoAbs: string,
@@ -412,8 +432,12 @@ async function stageSeedClockConfig(
 ): Promise<() => Promise<void>> {
   const setupHostPath = join(repoAbs, SEED_SETUP_FILE);
   const configHostPath = join(repoAbs, SEED_CONFIG_FILE);
+  const domShimHostPath = join(repoAbs, COMPONENT_RENDER_SHIM_FILE);
 
   await writeFile(setupHostPath, buildSeedClockSetupModule());
+  // Stage the reusable DOM-interaction shim (same builder the skeleton path and
+  // the component-render harness use — one source of truth, no divergent copy).
+  await writeFile(domShimHostPath, buildDomInteractionShimModule());
 
   // Probe the target's conventional config filenames and resolve the ONE that
   // actually exists on disk. The generated merge-config STATICALLY imports it
@@ -445,6 +469,10 @@ async function stageSeedClockConfig(
     buildSeedClockVitestConfig({
       // Setup module path relative to the mount root (the config sits there too).
       setupModuleRel: `./${SEED_SETUP_FILE}`,
+      // The DOM-interaction shim, wired FIRST so its waitFor bridge + pointer-
+      // capture shims + activateTab/activate globals are in place before the
+      // clock is pinned (same ordering the component-render config uses).
+      domShimModuleRel: `./${COMPONENT_RENDER_SHIM_FILE}`,
       // The single base config the target actually has (statically imported), or
       // null when it has none.
       baseConfigModule,
@@ -459,6 +487,7 @@ async function stageSeedClockConfig(
   return async () => {
     await rm(setupHostPath, { force: true }).catch(() => undefined);
     await rm(configHostPath, { force: true }).catch(() => undefined);
+    await rm(domShimHostPath, { force: true }).catch(() => undefined);
   };
 }
 

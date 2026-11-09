@@ -144,6 +144,20 @@ const NETWORK_RM_MAX_ATTEMPTS = 5;
 /** Backoff between network-removal retries (ms). */
 const NETWORK_RM_BACKOFF_MS = 500;
 
+/**
+ * Name prefixes of the PER-RUN install-phase resources (every name embeds a
+ * unique run token after the prefix). The startup reaper
+ * ({@link reapLeftoverInstallResources}) scopes itself to EXACTLY these
+ * prefixes so it can only ever touch this runner's own install-phase
+ * containers/networks — never an unrelated container or network a user happens
+ * to have. Keep these in lock-step with the names built in
+ * {@link createInstallTopology}.
+ */
+const PROXY_CONTAINER_PREFIX = "spec-lantern-proxy-";
+const INSTALL_NETWORK_PREFIX = "spec-lantern-install-net-";
+const OUTBOUND_NETWORK_PREFIX = "spec-lantern-out-net-";
+const INSTALL_CONTAINER_PREFIX = "spec-lantern-install-";
+
 /* -------------------------------------------------------------------------- */
 /* Raw process helper (podman only — never Target_Repo code)                  */
 /* -------------------------------------------------------------------------- */
@@ -322,10 +336,20 @@ export async function createInstallTopology(
     return { propertyId, outcome: "RUNNER_UNAVAILABLE", reason: unavailableReason };
   }
 
+  // Defense against a PRIOR hard-killed run (SIGKILL on a hung podman) whose
+  // own `finally` teardown could never run: before standing anything up, reap
+  // any leftover install-phase proxy containers / install networks by name
+  // prefix. Prefix-scoped and no-throw, so it can only touch THIS runner's own
+  // resources and never makes setup fail or hang (see
+  // {@link reapLeftoverInstallResources}). Leaving it here — rather than only in
+  // teardown — is what closes the hard-kill leak: the next run always starts by
+  // reaping what the killed one left behind.
+  await reapLeftoverInstallResources();
+
   const runToken = makeRunToken();
-  const networkName = `spec-lantern-install-net-${runToken}`;
-  const outboundNetworkName = `spec-lantern-out-net-${runToken}`;
-  const proxyContainerName = `spec-lantern-proxy-${runToken}`;
+  const networkName = `${INSTALL_NETWORK_PREFIX}${runToken}`;
+  const outboundNetworkName = `${OUTBOUND_NETWORK_PREFIX}${runToken}`;
+  const proxyContainerName = `${PROXY_CONTAINER_PREFIX}${runToken}`;
   const proxyImage = options.proxyImage ?? DEFAULT_PROXY_IMAGE;
 
   // A partial handle used so any early-exit cleanup goes through the hardened
@@ -333,95 +357,121 @@ export async function createInstallTopology(
   // removals) — this is what keeps a half-built topology from leaking.
   const partial = { proxyContainerName, networkName, outboundNetworkName };
 
-  // 1. Internal-only network — the crux of the R12.2 guarantee. `--internal`
-  //    means containers on it have NO direct route to the internet; the only
-  //    way out is through the proxy.
-  const netCreate = await runProcess(
-    "podman",
-    ["network", "create", "--internal", networkName],
-    { timeoutMs: CONTROL_TIMEOUT_MS },
-  );
-  if (netCreate.code !== 0) {
+  // Every setup step runs under this try so ANY failure mode — a non-zero
+  // podman exit handled explicitly below, OR an unexpected THROW partway
+  // through (e.g. podman spawns but the promise rejects, or a later step
+  // throws after the proxy is already up) — routes through the hardened
+  // teardown of the PARTIAL handle. Without this, a throw between "proxy
+  // started" and "return" would leave the proxy + both networks running with
+  // nothing to reap them. The teardown is no-throw and bounded, so the catch
+  // can never itself hang or mask the original error.
+  try {
+    // 1. Internal-only network — the crux of the R12.2 guarantee. `--internal`
+    //    means containers on it have NO direct route to the internet; the only
+    //    way out is through the proxy.
+    const netCreate = await runProcess(
+      "podman",
+      ["network", "create", "--internal", networkName],
+      { timeoutMs: CONTROL_TIMEOUT_MS },
+    );
+    if (netCreate.code !== 0) {
+      // The internal network is the FIRST piece; if it failed nothing stray was
+      // created yet, but route through teardown anyway (idempotent, no-throw) so
+      // a partially-created network is still reaped.
+      await teardownInstallTopology(partial).catch(() => undefined);
+      return {
+        propertyId,
+        outcome: "RUNNER_UNAVAILABLE",
+        reason: `could not create internal install network: ${netCreate.stderr.trim().slice(0, 500)}`,
+      };
+    }
+
+    // 2. Outbound network — NON-internal, so a container attached to it has a
+    //    route to the real registry. Only the proxy is ever attached here.
+    const outCreate = await runProcess(
+      "podman",
+      ["network", "create", outboundNetworkName],
+      { timeoutMs: CONTROL_TIMEOUT_MS },
+    );
+    if (outCreate.code !== 0) {
+      await teardownInstallTopology(partial).catch(() => undefined);
+      return {
+        propertyId,
+        outcome: "RUNNER_UNAVAILABLE",
+        reason: `could not create outbound proxy network: ${outCreate.stderr.trim().slice(0, 500)}`,
+      };
+    }
+
+    // 2b. Ensure the PERSISTENT Verdaccio cache volume exists. Idempotent: the
+    //     first run creates it, every later run reuses the warm cache. Mounted
+    //     into the proxy below so packages fetched once are not re-downloaded.
+    //     A failure here is non-fatal — we fall back to a cold (but correct)
+    //     proxy rather than failing the run, so the cache is a pure speed-up.
+    await runProcess("podman", ["volume", "create", VERDACCIO_CACHE_VOLUME], {
+      timeoutMs: CONTROL_TIMEOUT_MS,
+    }).catch(() => undefined);
+
+    // 3. Start the registry proxy, detached (`-d`) and DUAL-ATTACHED: the
+    //    internal network (so the install container reaches it at its container
+    //    name) AND the outbound network (so it — and only it — can reach the
+    //    real registry to upstream packages). Two `--network` flags attach both
+    //    at run time. The persistent cache volume is mounted at Verdaccio's
+    //    storage dir so the package cache survives across runs (the first
+    //    install is cold; later ones are warm). The volume is deliberately NOT
+    //    removed by teardown — it must outlive the per-run topology to be a cache.
+    const proxyRun = await runProcess(
+      "podman",
+      [
+        "run",
+        "-d",
+        "--rm",
+        "--name",
+        proxyContainerName,
+        "--network",
+        networkName,
+        "--network",
+        outboundNetworkName,
+        "-v",
+        `${VERDACCIO_CACHE_VOLUME}:${PROXY_STORAGE_DIR}`,
+        proxyImage,
+      ],
+      { timeoutMs: CONTROL_TIMEOUT_MS },
+    );
+    if (proxyRun.code !== 0) {
+      // Tear down what we created so nothing stray survives — route through the
+      // hardened teardown so BOTH networks are reaped even if the proxy
+      // half-started and briefly pins one (the retrying `network rm` closes that
+      // leak).
+      await teardownInstallTopology(partial).catch(() => undefined);
+      return {
+        propertyId,
+        outcome: "RUNNER_UNAVAILABLE",
+        reason: `could not start registry proxy: ${proxyRun.stderr.trim().slice(0, 500)}`,
+      };
+    }
+
     return {
-      propertyId,
-      outcome: "RUNNER_UNAVAILABLE",
-      reason: `could not create internal install network: ${netCreate.stderr.trim().slice(0, 500)}`,
-    };
-  }
-
-  // 2. Outbound network — NON-internal, so a container attached to it has a
-  //    route to the real registry. Only the proxy is ever attached here.
-  const outCreate = await runProcess(
-    "podman",
-    ["network", "create", outboundNetworkName],
-    { timeoutMs: CONTROL_TIMEOUT_MS },
-  );
-  if (outCreate.code !== 0) {
-    await teardownInstallTopology(partial).catch(() => undefined);
-    return {
-      propertyId,
-      outcome: "RUNNER_UNAVAILABLE",
-      reason: `could not create outbound proxy network: ${outCreate.stderr.trim().slice(0, 500)}`,
-    };
-  }
-
-  // 2b. Ensure the PERSISTENT Verdaccio cache volume exists. Idempotent: the
-  //     first run creates it, every later run reuses the warm cache. Mounted
-  //     into the proxy below so packages fetched once are not re-downloaded.
-  //     A failure here is non-fatal — we fall back to a cold (but correct)
-  //     proxy rather than failing the run, so the cache is a pure speed-up.
-  await runProcess("podman", ["volume", "create", VERDACCIO_CACHE_VOLUME], {
-    timeoutMs: CONTROL_TIMEOUT_MS,
-  }).catch(() => undefined);
-
-  // 3. Start the registry proxy, detached (`-d`) and DUAL-ATTACHED: the internal
-  //    network (so the install container reaches it at its container name) AND
-  //    the outbound network (so it — and only it — can reach the real registry
-  //    to upstream packages). Two `--network` flags attach both at run time.
-  //    The persistent cache volume is mounted at Verdaccio's storage dir so the
-  //    package cache survives across runs (the first install is cold; later ones
-  //    are warm). The volume is deliberately NOT removed by teardown — it must
-  //    outlive the per-run topology to be a cache.
-  const proxyRun = await runProcess(
-    "podman",
-    [
-      "run",
-      "-d",
-      "--rm",
-      "--name",
-      proxyContainerName,
-      "--network",
       networkName,
-      "--network",
       outboundNetworkName,
-      "-v",
-      `${VERDACCIO_CACHE_VOLUME}:${PROXY_STORAGE_DIR}`,
-      proxyImage,
-    ],
-    { timeoutMs: CONTROL_TIMEOUT_MS },
-  );
-  if (proxyRun.code !== 0) {
-    // Tear down what we created so nothing stray survives — route through the
-    // hardened teardown so BOTH networks are reaped even if the proxy
-    // half-started and briefly pins one (the retrying `network rm` closes that
-    // leak).
+      proxyContainerName,
+      // The install container resolves the proxy by its container name on the
+      // shared internal network.
+      registryUrl: `http://${proxyContainerName}:${PROXY_PORT}`,
+      runToken,
+    };
+  } catch (err) {
+    // An UNEXPECTED throw partway through setup (not a handled non-zero exit).
+    // Reap the partial topology so the proxy + both networks can never survive
+    // a mid-setup failure, then surface the failure as a closed
+    // RUNNER_UNAVAILABLE (never a host fallback). teardown is no-throw/bounded.
     await teardownInstallTopology(partial).catch(() => undefined);
+    const message = err instanceof Error ? err.message : String(err);
     return {
       propertyId,
       outcome: "RUNNER_UNAVAILABLE",
-      reason: `could not start registry proxy: ${proxyRun.stderr.trim().slice(0, 500)}`,
+      reason: `could not stand up install topology: ${message.slice(0, 500)}`,
     };
   }
-
-  return {
-    networkName,
-    outboundNetworkName,
-    proxyContainerName,
-    // The install container resolves the proxy by its container name on the
-    // shared internal network.
-    registryUrl: `http://${proxyContainerName}:${PROXY_PORT}`,
-    runToken,
-  };
 }
 
 /* -------------------------------------------------------------------------- */
@@ -679,6 +729,99 @@ async function networkExists(networkName: string): Promise<boolean> {
   ).catch(() => undefined);
   // `podman network exists` exits 0 when present, non-zero when absent.
   return probe?.code === 0;
+}
+
+/* -------------------------------------------------------------------------- */
+/* Startup reaper — defensive cleanup of a PRIOR hard-killed run              */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Reap any leftover install-phase resources a PRIOR run left behind.
+ *
+ * WHY THIS EXISTS. {@link runInstallPhase} already tears its topology down in a
+ * `finally`, and {@link createInstallTopology} reaps a partially-built topology
+ * on any failure or throw. But a `finally` cannot run when the client process
+ * is KILLED HARD — the observed leak was exactly this: podman hung on a control
+ * query, the client was SIGKILLed, and a `spec-lantern-proxy-<token>` container
+ * plus its internal + outbound networks were left running with nothing left to
+ * reap them. No in-process guard can survive its own SIGKILL, so the only place
+ * to recover from it is the NEXT run: {@link createInstallTopology} calls this
+ * first, so every run begins by clearing whatever a hard-killed predecessor
+ * orphaned.
+ *
+ * SCOPING (never touches unrelated resources). The reaper lists containers and
+ * networks by this runner's own NAME PREFIXES only
+ * ({@link PROXY_CONTAINER_PREFIX}, {@link INSTALL_CONTAINER_PREFIX},
+ * {@link INSTALL_NETWORK_PREFIX}, {@link OUTBOUND_NETWORK_PREFIX}) and removes
+ * ONLY names that still start with one of those prefixes after the listing
+ * returns — a belt-and-suspenders check so a loose `--filter` match can never
+ * widen the blast radius. It therefore can only ever remove this runner's own
+ * per-run install topology, never a user's container or network.
+ *
+ * VOLUME SAFETY. It removes NO volumes. The persistent Verdaccio cache volume
+ * ({@link VERDACCIO_CACHE_VOLUME}) is intentionally kept across runs and is
+ * never listed or removed here.
+ *
+ * NO-THROW / BOUNDED. Every podman call is bounded by the module's
+ * {@link CONTROL_TIMEOUT_MS} control-timeout (SIGKILL on the client) and every
+ * error is swallowed, so a hung or absent podman makes the reaper return
+ * promptly rather than hang — identical discipline to {@link teardownInstallTopology}.
+ * It resolves `undefined` in all cases and never throws, so calling it at the
+ * start of a run can never make setup fail.
+ */
+export async function reapLeftoverInstallResources(): Promise<void> {
+  // 1. Reap leftover install-phase CONTAINERS (the proxy and any stray install
+  //    container) by name prefix. `podman ps -a` lists running AND exited ones
+  //    so a hung-then-killed proxy is caught whatever state it is in. The
+  //    `--filter name=` is a convenience; the authoritative scoping is the
+  //    prefix re-check below.
+  const containerPrefixes = [PROXY_CONTAINER_PREFIX, INSTALL_CONTAINER_PREFIX];
+  const psArgs = ["ps", "-a", "--format", "{{.Names}}"];
+  for (const prefix of containerPrefixes) {
+    psArgs.push("--filter", `name=${prefix}`);
+  }
+  const ps = await runProcess("podman", psArgs, {
+    timeoutMs: CONTROL_TIMEOUT_MS,
+  }).catch(() => undefined);
+  if (ps && ps.code === 0) {
+    const names = ps.stdout
+      .split(/\r?\n/)
+      .map((n) => n.trim())
+      .filter((n) => n.length > 0)
+      // Belt-and-suspenders: only remove names that still match one of OUR
+      // prefixes, so a loose filter match can never reach an unrelated container.
+      .filter((n) => containerPrefixes.some((p) => n.startsWith(p)));
+    for (const name of names) {
+      await runProcess("podman", ["rm", "-f", name], {
+        timeoutMs: CONTROL_TIMEOUT_MS,
+      }).catch(() => undefined);
+    }
+  }
+
+  // 2. Reap leftover install-phase NETWORKS (internal + outbound) by name
+  //    prefix, each through the hardened removal that detaches any lingering
+  //    container and retries the `network rm` (rootless Podman can briefly keep
+  //    a just-freed network pinned). No volume is ever listed or removed, so the
+  //    persistent Verdaccio cache volume is untouched.
+  const networkPrefixes = [INSTALL_NETWORK_PREFIX, OUTBOUND_NETWORK_PREFIX];
+  const lsArgs = ["network", "ls", "--format", "{{.Name}}"];
+  for (const prefix of networkPrefixes) {
+    lsArgs.push("--filter", `name=${prefix}`);
+  }
+  const ls = await runProcess("podman", lsArgs, {
+    timeoutMs: CONTROL_TIMEOUT_MS,
+  }).catch(() => undefined);
+  if (ls && ls.code === 0) {
+    const names = ls.stdout
+      .split(/\r?\n/)
+      .map((n) => n.trim())
+      .filter((n) => n.length > 0)
+      // Same belt-and-suspenders prefix re-check as for containers.
+      .filter((n) => networkPrefixes.some((p) => n.startsWith(p)));
+    for (const name of names) {
+      await removeNetworkHard(name);
+    }
+  }
 }
 
 /* -------------------------------------------------------------------------- */

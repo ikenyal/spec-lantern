@@ -333,6 +333,22 @@ try {
 export function buildSeedClockVitestConfig(options: {
   setupModuleRel: string;
   /**
+   * POSIX-relative path (inside the mount) to the reusable DOM-interaction shim
+   * module ({@link ./component-render.ts} `buildDomInteractionShimModule`), or
+   * `undefined` to wire no shim. When present it is wired as the FIRST
+   * `setupFiles` entry — BEFORE {@link setupModuleRel} — so its
+   * `waitFor`↔fake-timer bridge (`globalThis.jest`) and the jsdom
+   * pointer-capture shims are installed before the seed/clock setup module
+   * pins the Controllable_Clock. This is what lets a `component_rendered`
+   * property that activates a Radix control (via the global `activateTab`/
+   * `activate` helpers the shim installs) and polls with `waitFor` run on the
+   * GENERIC execute path exactly as it does on the walking-skeleton path —
+   * there is ONE shim source of truth, not two. The shim itself is a no-op when
+   * `@testing-library/react` is unresolvable, so a pure function property is
+   * unaffected.
+   */
+  domShimModuleRel?: string;
+  /**
    * POSIX-relative path (inside the mount) to the ONE base Vitest/Vite config
    * the target actually has on disk, or `null` when the target has none. The
    * caller (the test-phase stager) probes the conventional filenames and passes
@@ -360,11 +376,21 @@ export function buildSeedClockVitestConfig(options: {
 }): string {
   const {
     setupModuleRel,
+    domShimModuleRel,
     baseConfigModule,
     timezone,
     propertyTestFileRel,
     autoJsdom = false,
   } = options;
+  // Wire the DOM-interaction shim FIRST (when present) so its waitFor↔fake-timer
+  // bridge + pointer-capture shims are installed before the seed/clock setup
+  // module pins the Controllable_Clock — the same ordering the component-render
+  // config uses. Omitted for a run with no shim (then only the seed/clock module
+  // runs, exactly as before).
+  const setupFilesList =
+    domShimModuleRel === undefined
+      ? [setupModuleRel]
+      : [domShimModuleRel, setupModuleRel];
   // Either statically import the resolved base config (Vite transpiles TS), or
   // use an empty base when the target has no base config. A static import is
   // what lets a `.ts` base config load through Vite instead of escaping to Node.
@@ -416,7 +442,7 @@ ${tsxPluginDecl}
 export default mergeConfig(base, {
   plugins: specLanternTsxPlugins,
   test: {${environmentEntry}
-    setupFiles: [${JSON.stringify(setupModuleRel)}],
+    setupFiles: ${JSON.stringify(setupFilesList)},
     env: { TZ: ${JSON.stringify(timezone)} },
   },
 });

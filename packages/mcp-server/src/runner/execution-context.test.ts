@@ -313,6 +313,38 @@ describe("buildSeedClockVitestConfig — merges the target's own config", () => 
     });
     expect(withoutJsdom).not.toContain('environment: "jsdom"');
   });
+
+  it("wires the DOM-interaction shim FIRST in setupFiles when domShimModuleRel is given", () => {
+    // The generic path must install the reusable DOM shim (the waitFor↔fake-timer
+    // bridge + pointer-capture shims + activateTab/activate globals) BEFORE the
+    // seed/clock setup module, so the bridge is in place before the clock is
+    // pinned — the same ordering the component-render config uses. Without this
+    // a Radix-tab component property hangs in waitFor → TIMEOUT on this path.
+    const cfg = buildSeedClockVitestConfig({
+      setupModuleRel: "./.spec-lantern-seed-setup.mjs",
+      domShimModuleRel: "./.spec-lantern-render-shim.mjs",
+      baseConfigModule: null,
+      timezone: "UTC",
+    });
+    // Both modules are wired, with the shim first.
+    expect(cfg).toContain(
+      'setupFiles: ["./.spec-lantern-render-shim.mjs","./.spec-lantern-seed-setup.mjs"]',
+    );
+    expect(cfg.indexOf(".spec-lantern-render-shim.mjs")).toBeLessThan(
+      cfg.indexOf(".spec-lantern-seed-setup.mjs"),
+    );
+  });
+
+  it("wires ONLY the seed/clock module when no DOM shim is given (back-compat)", () => {
+    const cfg = buildSeedClockVitestConfig({
+      setupModuleRel: "./.spec-lantern-seed-setup.mjs",
+      baseConfigModule: null,
+      timezone: "UTC",
+    });
+    // Single-element setupFiles — no shim, exactly as before this wiring landed.
+    expect(cfg).toContain('setupFiles: ["./.spec-lantern-seed-setup.mjs"]');
+    expect(cfg).not.toContain(".spec-lantern-render-shim.mjs");
+  });
 });
 
 describe("buildTsxLoaderPluginSource — scoped tsx parsing of the property file", () => {
