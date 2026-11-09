@@ -32,8 +32,10 @@
 // required integration smoke test in task 10.5; it is intentionally not here.
 
 import { describe, expect, it } from "vitest";
+import { spawn, spawnSync } from "node:child_process";
 import {
   createInstallTopology,
+  isProvablyOrphaned,
   reapLeftoverInstallResources,
   runInstallPhase,
   teardownInstallTopology,
@@ -200,6 +202,77 @@ describe("install-phase topology — startup reaper (task 9.1, hardening)", () =
       await expect(reapLeftoverInstallResources()).resolves.toBeUndefined();
       // Idempotent: a second pass with nothing left is still a safe no-op.
       await expect(reapLeftoverInstallResources()).resolves.toBeUndefined();
+    },
+    140_000,
+  );
+});
+
+describe("install-phase reaper — overlapping runs (regression)", () => {
+  // Regression: the reaper once removed every prefixed resource, deleting the
+  // network of another run that was still active ("unable to find network").
+  // Two overlapping runs: A is alive (this process), B's owner has exited.
+  const NET = "spec-lantern-install-net-";
+  const OUT = "spec-lantern-out-net-";
+
+  /** Spawn a short-lived child and return its pid once it has fully exited. */
+  async function deadPid(): Promise<number> {
+    const child = spawn(process.execPath, ["-e", ""], { stdio: "ignore" });
+    const pid = child.pid as number;
+    await new Promise((r) => child.on("close", r));
+    return pid;
+  }
+
+  const never = async (): Promise<number | undefined> => undefined;
+
+  it("keeps resources of a live owner and reaps those of a dead owner", async () => {
+    const dead = await deadPid();
+    const deps = {
+      isPidAlive: (pid: number) => {
+        try {
+          process.kill(pid, 0);
+          return true;
+        } catch {
+          return false;
+        }
+      },
+      getCreatedMs: never,
+      now: () => Date.now(),
+    };
+    const live = `${NET}${process.pid}-abcdef0123456789`;
+    const gone = `${NET}${dead}-abcdef0123456789`;
+    expect(await isProvablyOrphaned(live, NET, deps)).toBe(false);
+    expect(await isProvablyOrphaned(gone, NET, deps)).toBe(true);
+    expect(await isProvablyOrphaned(`${OUT}${process.pid}-0123456789abcdef`, OUT, deps)).toBe(false);
+  });
+
+  it("keeps legacy/unknown names unless provably old", async () => {
+    const now = 1_000_000_000_000;
+    const base = { isPidAlive: () => true, now: () => now };
+    const legacy = `${NET}0123456789abcdef`;
+    expect(await isProvablyOrphaned(legacy, NET, { ...base, getCreatedMs: never })).toBe(false);
+    expect(await isProvablyOrphaned(legacy, NET, { ...base, getCreatedMs: async () => now - 60_000 })).toBe(false);
+    expect(await isProvablyOrphaned(legacy, NET, { ...base, getCreatedMs: async () => now - 4 * 3_600_000 })).toBe(true);
+  });
+
+  it(
+    "with real podman, a live run's network survives the reaper and a dead run's is removed",
+    async (ctx) => {
+      if (spawnSync("podman", ["info"], { timeout: 15_000 }).status !== 0) ctx.skip();
+      const dead = await deadPid();
+      const live = `${NET}${process.pid}-feedfacefeedface`;
+      const gone = `${NET}${dead}-feedfacefeedface`;
+      const exists = (n: string) =>
+        spawnSync("podman", ["network", "exists", n]).status === 0;
+      try {
+        for (const n of [live, gone]) {
+          expect(spawnSync("podman", ["network", "create", "--internal", n]).status).toBe(0);
+        }
+        await reapLeftoverInstallResources();
+        expect(exists(live)).toBe(true);
+        expect(exists(gone)).toBe(false);
+      } finally {
+        for (const n of [live, gone]) spawnSync("podman", ["network", "rm", "-f", n]);
+      }
     },
     140_000,
   );

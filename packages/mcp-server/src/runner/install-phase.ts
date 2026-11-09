@@ -296,10 +296,13 @@ export interface InstallTopology {
 
 /** Build a short unique token used to name this run's network + containers. */
 function makeRunToken(): string {
-  return createHash("sha1")
+  const unique = createHash("sha1")
     .update(`${Date.now()}:${randomBytes(6).toString("hex")}`)
     .digest("hex")
     .slice(0, 16);
+  // The owning process id is embedded so the startup reaper can PROVE a
+  // resource is orphaned (its owner no longer exists) instead of guessing.
+  return `${process.pid}-${unique}`;
 }
 
 /**
@@ -338,12 +341,10 @@ export async function createInstallTopology(
 
   // Defense against a PRIOR hard-killed run (SIGKILL on a hung podman) whose
   // own `finally` teardown could never run: before standing anything up, reap
-  // any leftover install-phase proxy containers / install networks by name
-  // prefix. Prefix-scoped and no-throw, so it can only touch THIS runner's own
-  // resources and never makes setup fail or hang (see
-  // {@link reapLeftoverInstallResources}). Leaving it here — rather than only in
-  // teardown — is what closes the hard-kill leak: the next run always starts by
-  // reaping what the killed one left behind.
+  // leftover install-phase resources that are PROVABLY orphaned (owner process
+  // gone, or older than a safe age). Resources of a live, overlapping run are
+  // never touched (see {@link reapLeftoverInstallResources}). No-throw and
+  // bounded, so it never makes setup fail or hang.
   await reapLeftoverInstallResources();
 
   const runToken = makeRunToken();
@@ -736,46 +737,129 @@ async function networkExists(networkName: string): Promise<boolean> {
 /* -------------------------------------------------------------------------- */
 
 /**
- * Reap any leftover install-phase resources a PRIOR run left behind.
- *
- * WHY THIS EXISTS. {@link runInstallPhase} already tears its topology down in a
- * `finally`, and {@link createInstallTopology} reaps a partially-built topology
- * on any failure or throw. But a `finally` cannot run when the client process
- * is KILLED HARD — the observed leak was exactly this: podman hung on a control
- * query, the client was SIGKILLed, and a `spec-lantern-proxy-<token>` container
- * plus its internal + outbound networks were left running with nothing left to
- * reap them. No in-process guard can survive its own SIGKILL, so the only place
- * to recover from it is the NEXT run: {@link createInstallTopology} calls this
- * first, so every run begins by clearing whatever a hard-killed predecessor
- * orphaned.
- *
- * SCOPING (never touches unrelated resources). The reaper lists containers and
- * networks by this runner's own NAME PREFIXES only
- * ({@link PROXY_CONTAINER_PREFIX}, {@link INSTALL_CONTAINER_PREFIX},
- * {@link INSTALL_NETWORK_PREFIX}, {@link OUTBOUND_NETWORK_PREFIX}) and removes
- * ONLY names that still start with one of those prefixes after the listing
- * returns — a belt-and-suspenders check so a loose `--filter` match can never
- * widen the blast radius. It therefore can only ever remove this runner's own
- * per-run install topology, never a user's container or network.
- *
- * VOLUME SAFETY. It removes NO volumes. The persistent Verdaccio cache volume
- * ({@link VERDACCIO_CACHE_VOLUME}) is intentionally kept across runs and is
- * never listed or removed here.
- *
- * NO-THROW / BOUNDED. Every podman call is bounded by the module's
- * {@link CONTROL_TIMEOUT_MS} control-timeout (SIGKILL on the client) and every
- * error is swallowed, so a hung or absent podman makes the reaper return
- * promptly rather than hang — identical discipline to {@link teardownInstallTopology}.
- * It resolves `undefined` in all cases and never throws, so calling it at the
- * start of a run can never make setup fail.
+ * A resource younger than this is never reaped on age alone. It exceeds the
+ * longest sensible install (default timeout 600s, callers may raise it), so a
+ * slow-but-live run is never mistaken for a leftover.
  */
-export async function reapLeftoverInstallResources(): Promise<void> {
-  // 1. Reap leftover install-phase CONTAINERS (the proxy and any stray install
-  //    container) by name prefix. `podman ps -a` lists running AND exited ones
-  //    so a hung-then-killed proxy is caught whatever state it is in. The
-  //    `--filter name=` is a convenience; the authoritative scoping is the
-  //    prefix re-check below.
+const ORPHAN_MIN_AGE_MS = 3 * 60 * 60 * 1000;
+
+/** Dependencies of the orphan decision, injectable so tests are deterministic. */
+export interface OrphanCheckDeps {
+  /** True iff a process with this pid currently exists. */
+  isPidAlive: (pid: number) => boolean;
+  /** Creation time (epoch ms) of the named resource, or undefined if unknown. */
+  getCreatedMs: (name: string) => Promise<number | undefined>;
+  /** Current time (epoch ms). */
+  now: () => number;
+}
+
+/** Default liveness probe: signal 0 checks existence without sending anything. */
+function defaultIsPidAlive(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (err) {
+    // ESRCH = no such process (provably gone). EPERM = exists but not ours, so
+    // alive. Anything else is unknown, which must be treated as alive.
+    return (err as NodeJS.ErrnoException).code !== "ESRCH";
+  }
+}
+
+/**
+ * Decide whether a prefixed resource name is PROVABLY orphaned.
+ *
+ *  - Token `<pid>-<hex>`: orphaned iff that pid no longer exists. A live pid
+ *    (including this process, or an overlapping run) is never orphaned. A
+ *    reused pid errs on the safe side: the resource is kept.
+ *  - Any other token (legacy names without an owner): orphaned only when its
+ *    creation time is known AND older than {@link ORPHAN_MIN_AGE_MS}.
+ *
+ * Unknown means keep. The reaper must never remove a live run's resources.
+ */
+export async function isProvablyOrphaned(
+  name: string,
+  prefix: string,
+  deps: OrphanCheckDeps,
+): Promise<boolean> {
+  if (!name.startsWith(prefix)) return false;
+  const token = name.slice(prefix.length);
+  const owned = /^(\d+)-[0-9a-f]+$/.exec(token);
+  if (owned) {
+    const pid = Number(owned[1]);
+    if (!Number.isSafeInteger(pid) || pid <= 0) return false;
+    return !deps.isPidAlive(pid);
+  }
+  const created = await deps.getCreatedMs(name);
+  if (created === undefined || !Number.isFinite(created)) return false;
+  return deps.now() - created > ORPHAN_MIN_AGE_MS;
+}
+
+/** Read a container/network creation time via `inspect` (undefined on any failure). */
+async function inspectCreatedMs(
+  kind: "container" | "network",
+  name: string,
+): Promise<number | undefined> {
+  const res = await runProcess(
+    "podman",
+    [kind, "inspect", name, "--format", "{{.Created.Unix}}"],
+    { timeoutMs: CONTROL_TIMEOUT_MS },
+  ).catch(() => undefined);
+  if (!res || res.code !== 0) return undefined;
+  const secs = Number(res.stdout.trim());
+  return Number.isFinite(secs) && secs > 0 ? secs * 1000 : undefined;
+}
+
+/**
+ * Reap install-phase resources that are PROVABLY orphaned.
+ *
+ * WHY THIS EXISTS. A `finally` cannot run when the client is KILLED HARD (e.g.
+ * SIGKILL on a hung podman), which once left a `spec-lantern-proxy-<token>`
+ * container plus its internal and outbound networks behind. The next run
+ * clears them.
+ *
+ * LIVE RUNS ARE NEVER TOUCHED. An earlier version removed every resource with
+ * our name prefix, which deleted the network of another run that was still
+ * active (observed: RUNNER_UNAVAILABLE "unable to find network"). Now a
+ * resource is removed only when {@link isProvablyOrphaned} says so: its owner
+ * pid (embedded in the name) no longer exists, or, for legacy names with no
+ * owner, it is older than {@link ORPHAN_MIN_AGE_MS}. Unknown means keep.
+ *
+ * SCOPING. Only this runner's name prefixes are listed, and names are
+ * re-checked against them after listing. No volume is ever removed, so the
+ * persistent Verdaccio cache survives.
+ *
+ * NO-THROW / BOUNDED. Every podman call is bounded by {@link CONTROL_TIMEOUT_MS}
+ * and every error is swallowed; it always resolves `undefined`.
+ *
+ * @param deps overrides for the orphan decision (tests only).
+ */
+export async function reapLeftoverInstallResources(
+  deps: Partial<OrphanCheckDeps> = {},
+): Promise<void> {
   const containerPrefixes = [PROXY_CONTAINER_PREFIX, INSTALL_CONTAINER_PREFIX];
+  const networkPrefixes = [INSTALL_NETWORK_PREFIX, OUTBOUND_NETWORK_PREFIX];
+  const now = deps.now ?? Date.now;
+  const isPidAlive = deps.isPidAlive ?? defaultIsPidAlive;
+
+  // Longest prefix first: "spec-lantern-install-net-" must win over the
+  // shorter "spec-lantern-install-" so a network token is parsed correctly.
+  const orphaned = async (
+    name: string,
+    prefixes: string[],
+    kind: "container" | "network",
+  ): Promise<boolean> => {
+    const prefix = [...prefixes]
+      .sort((a, b) => b.length - a.length)
+      .find((p) => name.startsWith(p));
+    if (!prefix) return false;
+    return isProvablyOrphaned(name, prefix, {
+      isPidAlive,
+      now,
+      getCreatedMs: deps.getCreatedMs ?? ((n) => inspectCreatedMs(kind, n)),
+    });
+  };
+
+  // 1. Containers (`ps -a` so exited ones are seen too).
   const psArgs = ["ps", "-a", "--format", "{{.Names}}"];
   for (const prefix of containerPrefixes) {
     psArgs.push("--filter", `name=${prefix}`);
@@ -787,23 +871,16 @@ export async function reapLeftoverInstallResources(): Promise<void> {
     const names = ps.stdout
       .split(/\r?\n/)
       .map((n) => n.trim())
-      .filter((n) => n.length > 0)
-      // Belt-and-suspenders: only remove names that still match one of OUR
-      // prefixes, so a loose filter match can never reach an unrelated container.
-      .filter((n) => containerPrefixes.some((p) => n.startsWith(p)));
+      .filter((n) => n.length > 0);
     for (const name of names) {
+      if (!(await orphaned(name, containerPrefixes, "container"))) continue;
       await runProcess("podman", ["rm", "-f", name], {
         timeoutMs: CONTROL_TIMEOUT_MS,
       }).catch(() => undefined);
     }
   }
 
-  // 2. Reap leftover install-phase NETWORKS (internal + outbound) by name
-  //    prefix, each through the hardened removal that detaches any lingering
-  //    container and retries the `network rm` (rootless Podman can briefly keep
-  //    a just-freed network pinned). No volume is ever listed or removed, so the
-  //    persistent Verdaccio cache volume is untouched.
-  const networkPrefixes = [INSTALL_NETWORK_PREFIX, OUTBOUND_NETWORK_PREFIX];
+  // 2. Networks, through the hardened removal.
   const lsArgs = ["network", "ls", "--format", "{{.Name}}"];
   for (const prefix of networkPrefixes) {
     lsArgs.push("--filter", `name=${prefix}`);
@@ -815,10 +892,9 @@ export async function reapLeftoverInstallResources(): Promise<void> {
     const names = ls.stdout
       .split(/\r?\n/)
       .map((n) => n.trim())
-      .filter((n) => n.length > 0)
-      // Same belt-and-suspenders prefix re-check as for containers.
-      .filter((n) => networkPrefixes.some((p) => n.startsWith(p)));
+      .filter((n) => n.length > 0);
     for (const name of names) {
+      if (!(await orphaned(name, networkPrefixes, "network"))) continue;
       await removeNetworkHard(name);
     }
   }
