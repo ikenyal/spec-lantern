@@ -25,10 +25,12 @@
  * stdin/stdout. {@link createMcpServer} builds and configures the server
  * (testable without a transport); {@link startStdioServer} connects it to stdio.
  *
- * SCOPE. Five tools are wired here, each delegating to its pure orchestrator
+ * SCOPE. Six tools are wired here, each delegating to its pure orchestrator
  * behind this same transport seam: `execute_properties` (task 10.1),
  * `replay_counterexample` (task 11.1), `apply_fixes_and_reexecute` (task 15.2),
- * `lock_prediction` (the prediction lock, R3.4/R3.5), and `compare_predictions`
+ * `lock_prediction` (the prediction lock, R3.4/R3.5),
+ * `supersede_prediction_lock` (archive a lock + re-lock an edited property file,
+ * keeping the predicted verdict), and `compare_predictions`
  * (locks vs a persisted execution result). The `apply_fixes_and_reexecute`
  * handler delegates to {@link applyFixesAndReexecute}, which copies the
  * Target_Repo, applies fixes to the copy (task 15.1), and re-executes the
@@ -41,6 +43,7 @@ import {
   SPEC_LANTERN,
   type ActualResult,
   type PropertyExecutionRequest,
+  type PropertyExecutionResult,
 } from "@spec-lantern/types";
 import {
   executeProperties,
@@ -58,9 +61,11 @@ import {
 } from "./revive/apply-fixes-reexecute.js";
 import {
   lockPrediction,
+  supersedePredictionLock,
   type LockPredictionOptions,
   type LockTarget,
 } from "./prediction-lock/index.js";
+import { checkPropertyLockDrift } from "./execute-lock-guard/index.js";
 import { deriveProperties, deriveProperty } from "./spec-derive/index.js";
 import { writeToolResult } from "./results/persist.js";
 import {
@@ -323,6 +328,23 @@ const lockPredictionInputShape = {
   claimId: z.string(),
   /** The property number (`property-{n}.{claimId}.*`). */
   propertyNumber: z.number().int().positive(),
+} as const;
+
+/**
+ * Zod shape for the `supersede_prediction_lock` tool input (GAP 1). A supersede
+ * archives the active lock and re-locks the EDITED property source keeping the
+ * predicted verdict, so it is located by the same coordinates as a lock plus a
+ * non-empty `reason` recording why the property source legitimately changed.
+ */
+const supersedePredictionLockInputShape = {
+  /** Spec root holding claims/properties/predictions/locks. */
+  specRoot: z.string(),
+  /** The Claim id whose property lock is being superseded. */
+  claimId: z.string(),
+  /** The property number (`property-{n}.{claimId}.*`). */
+  propertyNumber: z.number().int().positive(),
+  /** Why the property test file legitimately changed. Required, non-empty. */
+  reason: z.string().min(1),
 } as const;
 
 /**
@@ -591,9 +613,31 @@ export function createMcpServer(
         properties = derived.properties;
       }
 
+      // GAP 1 — execute-time lock guard. When a spec root is known, refuse to
+      // run any property whose current test-file source drifted from its locked
+      // `propertyContentHash` (an edit after locking with no supersede). Only
+      // the allowed properties are dispatched; each refused property gets a
+      // distinct NON-verdict EXECUTION_ERROR result so it is surfaced honestly
+      // and never mistaken for PASS/FAIL. The hashes actually run against are
+      // attached to the result so a persisted run is traceable to the exact
+      // source.
+      let dispatchProperties = properties;
+      let refusedResults: ActualResult[] = [];
+      let propertyContentHashes: Record<string, string> | undefined;
+      if (specRoot !== undefined) {
+        const drift = await checkPropertyLockDrift({ specRoot, properties });
+        dispatchProperties = drift.allowed;
+        refusedResults = drift.refused.map((r) => ({
+          propertyId: r.propertyId,
+          outcome: "EXECUTION_ERROR" as const,
+          reason: r.reason,
+        }));
+        propertyContentHashes = drift.propertyContentHashes;
+      }
+
       const request: PropertyExecutionRequest = {
         targetRepoRef: args.targetRepoRef,
-        properties,
+        properties: dispatchProperties,
         // Default to the first-run phase when the caller omits it.
         phase: args.phase ?? "initial",
       };
@@ -602,11 +646,23 @@ export function createMcpServer(
       // working copy) and an optional per-call timeout over the
       // construction-time options. An explicit timeout wins; otherwise the
       // orchestrator/runner default (30s, R5.7) applies.
-      const result = await executeProperties(request, {
+      const executed = await executeProperties(request, {
         ...options.execute,
         specRoot,
         timeoutSeconds: args.timeoutSeconds ?? options.execute?.timeoutSeconds,
       });
+
+      // Merge the refused properties' non-verdict results into the response and
+      // attach the recorded property-file hashes (GAP 1). Refusals are appended
+      // so every requested property is represented exactly once.
+      const result: PropertyExecutionResult = {
+        results: [...executed.results, ...refusedResults],
+        executionContexts: executed.executionContexts,
+        ...(propertyContentHashes &&
+        Object.keys(propertyContentHashes).length > 0
+          ? { propertyContentHashes }
+          : {}),
+      };
 
       return finalizeToolResult("execute_properties", result, specRoot, options);
     },
@@ -795,6 +851,49 @@ export function createMcpServer(
   );
 
   server.registerTool(
+    "supersede_prediction_lock",
+    {
+      title: "Supersede a Prediction_Lock after a legitimate property-file edit",
+      description:
+        "Record an auditable SUPERSEDE of an active Prediction_Lock and re-lock " +
+        "the EDITED Correctness_Property test file, KEEPING the predicted " +
+        "verdict unchanged (R3.5). Use this ONLY when a property test file was " +
+        "changed after locking to fix a harness defect — never the asserted " +
+        "claim and never the prediction. It moves the previous lock verbatim " +
+        "into locks/superseded/ under a timestamped name, writes a sibling note " +
+        "recording the reason and the previous hashes, then re-locks the " +
+        "current source with a fresh contentHash/propertyContentHash/timestamp. " +
+        "If the Predicted_Result now records a different verdict than the locked " +
+        "one, it REFUSES (structured issue) rather than changing the verdict. " +
+        "execute_properties refuses to run a property whose source drifted from " +
+        "its lock until a supersede is recorded.",
+      inputSchema: supersedePredictionLockInputShape,
+    },
+    async (args) => {
+      const target: LockTarget = {
+        specRoot: args.specRoot,
+        claimId: args.claimId,
+        propertyNumber: args.propertyNumber,
+      };
+
+      const result = await supersedePredictionLock(target, {
+        reason: args.reason,
+        now: options.lockPrediction?.now,
+      });
+
+      return {
+        structuredContent: result as unknown as Record<string, unknown>,
+        content: [
+          {
+            type: "text" as const,
+            text: JSON.stringify(result),
+          },
+        ],
+      };
+    },
+  );
+
+  server.registerTool(
     "compare_predictions",
     {
       title: "Compare LOCKED predictions against a persisted execution result",
@@ -805,9 +904,13 @@ export function createMcpServer(
         "Prediction_Locks — never from the caller — so comparison uses the " +
         "originally recorded value (R3.5). Classifies each property " +
         "(MATCH / PREDICTION_MISMATCH / NOT_COMPARED_TIMEOUT / NOT_EXECUTED) " +
-        "and counts lies (confirmed prediction mismatches). When a rootCauses " +
-        "map is given, symptom comparisons are grouped under their root cause " +
-        "and a lie is counted once per root cause rather than once per symptom. " +
+        "and reports two distinct counts: lieCount = confirmed bugs (actual " +
+        "FAIL) grouped by root cause (a confirmed bug is a lie even when its " +
+        "prediction matched), and predictionMismatchCount = rows where the " +
+        "locked predicted verdict differs from the actual one; confirmedBugCount " +
+        "is the ungrouped number of confirmed bugs. When a rootCauses map is " +
+        "given, symptom comparisons are grouped under their root cause and a lie " +
+        "is counted once per root cause rather than once per symptom. " +
         "Writes <specRoot>/comparison.json and returns the summary plus the " +
         "written path.",
       inputSchema: comparePredictionsInputShape,

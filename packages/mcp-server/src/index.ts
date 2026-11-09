@@ -358,12 +358,15 @@ export {
 
 /**
  * The MCP transport + tool wiring (tasks 10.1, 11.1, 15.2, 20). Exposes the
- * MCP_Server over the MCP TypeScript SDK and registers five tools:
+ * MCP_Server over the MCP TypeScript SDK and registers six tools:
  * `execute_properties`, `replay_counterexample`, `apply_fixes_and_reexecute`,
- * `lock_prediction` (the prediction lock, R3.4/R3.5), and
+ * `lock_prediction` (the prediction lock, R3.4/R3.5),
+ * `supersede_prediction_lock` (archive a lock + re-lock an edited property file,
+ * keeping the predicted verdict), and
  * `compare_predictions` (locks vs a persisted execution result), whose handlers
  * delegate to {@link executeProperties}, {@link replayCounterexample},
- * {@link applyFixesAndReexecute}, {@link lockPrediction}, and
+ * {@link applyFixesAndReexecute}, {@link lockPrediction},
+ * {@link supersedePredictionLock}, and
  * {@link comparePredictions} respectively.
  * {@link createMcpServer} builds the configured server (transport-agnostic, for
  * tests); {@link startStdioServer} connects it to the stdio transport so a local

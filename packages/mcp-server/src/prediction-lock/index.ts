@@ -46,10 +46,12 @@
  */
 import { createHash } from "node:crypto";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
-import { dirname } from "node:path";
+import { dirname, join } from "node:path";
 import type { PredictedResult, PredictionLock, Verdict } from "@spec-lantern/types";
 import {
+  ARTIFACT_PATHS,
   PREDICTION_LOCK_HASH_ALGORITHM,
+  predictionLockFileName,
   resolveClaimLinkage,
 } from "@spec-lantern/types";
 
@@ -165,6 +167,19 @@ function computeContentHash(
   hash.update("\nproperty\n");
   hash.update(propertySource);
   return hash.digest("hex");
+}
+
+/**
+ * Compute the lock's `propertyContentHash`: a plain sha256 over JUST the RAW
+ * Correctness_Property test file bytes, with no prediction projection folded
+ * in. This is what the execute-time lock guard (GAP 1) recomputes to detect a
+ * property-file edit after locking — the guard never re-reads the prediction,
+ * so it needs a hash over the property source alone.
+ *
+ * HOST SAFETY: `propertySource` is the file's TEXT; this only hashes it.
+ */
+export function computePropertyContentHash(propertySource: string): string {
+  return createHash(PREDICTION_LOCK_HASH_ALGORITHM).update(propertySource).digest("hex");
 }
 
 /* -------------------------------------------------------------------------- */
@@ -286,6 +301,8 @@ function isPredictionLock(value: unknown): value is PredictionLock {
     lock.hashAlgorithm === PREDICTION_LOCK_HASH_ALGORITHM &&
     typeof lock.contentHash === "string" &&
     /^[0-9a-f]{64}$/.test(lock.contentHash) &&
+    typeof lock.propertyContentHash === "string" &&
+    /^[0-9a-f]{64}$/.test(lock.propertyContentHash) &&
     isNonEmptyString(lock.lockedAt)
   );
 }
@@ -359,11 +376,14 @@ export async function lockPrediction(
     };
   }
 
-  // 3. Compute the content hash over (prediction + property artifact).
+  // 3. Compute the content hash over (prediction + property artifact) AND a
+  //    plain hash over just the property source, so the execute-time guard can
+  //    detect a property-file edit without re-reading the prediction.
   const contentHash = computeContentHash(
     { propertyId, verdict: loaded.prediction.verdict },
     propertySource,
   );
+  const propertyContentHash = computePropertyContentHash(propertySource);
 
   // 4. Persist the lock under locks/.
   const lock: PredictionLock = {
@@ -371,6 +391,7 @@ export async function lockPrediction(
     verdict: loaded.prediction.verdict,
     hashAlgorithm: PREDICTION_LOCK_HASH_ALGORITHM,
     contentHash,
+    propertyContentHash,
     lockedAt: now(),
   };
 
@@ -382,6 +403,185 @@ export async function lockPrediction(
   );
 
   return { lock, issue: null };
+}
+
+/* -------------------------------------------------------------------------- */
+/* Superseding a lock (GAP 1 — re-lock an edited property, keep the verdict)  */
+/* -------------------------------------------------------------------------- */
+
+/** Options for {@link supersedePredictionLock}. */
+export interface SupersedePredictionLockOptions {
+  /** Human-readable reason the property source legitimately changed. Required. */
+  reason: string;
+  /**
+   * The timestamp used for the new lock's `lockedAt` and the collision-free
+   * archive filename. Defaults to `new Date().toISOString()`. Injectable so
+   * tests get a deterministic stamp.
+   */
+  now?: () => string;
+}
+
+/** Turn an ISO timestamp into a filesystem-safe, collision-resistant stamp. */
+function fileStamp(iso: string): string {
+  // Keep it sortable and path-safe: 2025-02-02T00:00:00.000Z -> 2025-02-02T00-00-00-000Z
+  return iso.replace(/:/g, "-").replace(/\./g, "-");
+}
+
+/**
+ * Record a SUPERSEDE of an active Prediction_Lock (GAP 1).
+ *
+ * A property test file legitimately changes after locking only when the author
+ * fixes a HARNESS defect in the test (never the asserted claim and never the
+ * predicted verdict). The execute-time lock guard refuses to run a property
+ * whose source drifted from its lock; this is the auditable act that records
+ * the change and re-locks the edited source so the guard allows it again.
+ *
+ * Discipline (predictions are immutable — report-data-fidelity):
+ *  (a) read the CURRENT active lock; if missing/malformed, return a structured
+ *      {@link LockIssue} — never throw;
+ *  (b) move the OLD lock file verbatim into `<specRoot>/locks/superseded/`
+ *      under a timestamped, collision-free name so the audit trail is intact;
+ *  (c) write a sibling `*.note.txt` (NOT `*.lock.json`, so the UI timeline does
+ *      not treat it as a lock) recording the reason and the PREVIOUS
+ *      `contentHash` + `propertyContentHash`;
+ *  (d) re-lock the CURRENT property source via {@link lockPrediction}, which
+ *      reads the predicted verdict from the prediction file. The re-lock must
+ *      carry the SAME verdict the superseded lock held — if the prediction file
+ *      now disagrees, the verdict would change, so REFUSE with a structured
+ *      issue rather than silently rewriting it.
+ *
+ * Returns the NEW lock in {@link LockResult} on success.
+ */
+export async function supersedePredictionLock(
+  target: LockTarget,
+  options: SupersedePredictionLockOptions,
+): Promise<LockResult> {
+  const { specRoot, claimId, propertyNumber } = target;
+  const linkage = resolveClaimLinkage(specRoot, claimId, propertyNumber);
+  const propertyId = `property-${propertyNumber}.${claimId}`;
+  const now = options.now ?? (() => new Date().toISOString());
+
+  if (!isNonEmptyString(options.reason)) {
+    return {
+      lock: null,
+      issue: {
+        code: "LOCK_MALFORMED",
+        message:
+          `A supersede for "${propertyId}" requires a non-empty reason ` +
+          `recording why the property source legitimately changed.`,
+        propertyId,
+        path: linkage.predictionLockFile,
+      },
+    };
+  }
+
+  // (a) Read the CURRENT active lock (reuse the same loader path as reads).
+  const activeRaw = await readTextOrNull(linkage.predictionLockFile);
+  if (activeRaw === null) {
+    return {
+      lock: null,
+      issue: {
+        code: "LOCK_MISSING",
+        message:
+          `No active Prediction_Lock at ${linkage.predictionLockFile} to ` +
+          `supersede; lock the prediction first.`,
+        propertyId,
+        path: linkage.predictionLockFile,
+      },
+    };
+  }
+
+  let activeParsed: unknown;
+  try {
+    activeParsed = JSON.parse(activeRaw);
+  } catch {
+    return {
+      lock: null,
+      issue: {
+        code: "LOCK_INVALID_JSON",
+        message: `Active Prediction_Lock at ${linkage.predictionLockFile} is not valid JSON.`,
+        propertyId,
+        path: linkage.predictionLockFile,
+      },
+    };
+  }
+
+  if (!isPredictionLock(activeParsed) || activeParsed.propertyId !== propertyId) {
+    return {
+      lock: null,
+      issue: {
+        code: "LOCK_MALFORMED",
+        message:
+          `Active Prediction_Lock at ${linkage.predictionLockFile} is not a ` +
+          `well-formed lock for property "${propertyId}".`,
+        propertyId,
+        path: linkage.predictionLockFile,
+      },
+    };
+  }
+  const oldLock = activeParsed;
+
+  // (d-precheck) The prediction file must still carry the SAME verdict the old
+  // lock held — a supersede NEVER changes the verdict. Load it and refuse if it
+  // would change. (loadPrediction validates shape + propertyId.)
+  const loaded = await loadPrediction(linkage.predictedResultFile, propertyId);
+  if (loaded.prediction === null) {
+    return { lock: null, issue: loaded.issue };
+  }
+  if (loaded.prediction.verdict !== oldLock.verdict) {
+    return {
+      lock: null,
+      issue: {
+        code: "LOCK_CONTENT_DRIFT",
+        message:
+          `Refusing to supersede the lock for "${propertyId}": the ` +
+          `Predicted_Result now records ${loaded.prediction.verdict} but the ` +
+          `locked verdict is ${oldLock.verdict}. A supersede must keep the ` +
+          `predicted verdict unchanged (R3.5); re-lock only to record an ` +
+          `edit to the property test file, never to change the prediction.`,
+        propertyId,
+        path: linkage.predictedResultFile,
+      },
+    };
+  }
+
+  // (b) Archive the OLD lock verbatim under locks/superseded/ with a
+  //     timestamped, collision-free name.
+  const stamp = fileStamp(oldLock.lockedAt ?? now());
+  const supersededDir = join(specRoot, ARTIFACT_PATHS.locksDir, "superseded");
+  await mkdir(supersededDir, { recursive: true });
+  const baseName = predictionLockFileName(propertyNumber, claimId).replace(
+    /\.lock\.json$/,
+    "",
+  );
+  const archivedLockPath = join(
+    supersededDir,
+    `${baseName}.${stamp}.lock.json`,
+  );
+  // Preserve the exact bytes: rename the file into the archive (same volume).
+  await writeFile(archivedLockPath, activeRaw, "utf8");
+
+  // (c) Write a sibling note (NOT *.lock.json) recording reason + prev hashes.
+  const notePath = join(supersededDir, `${baseName}.${stamp}.note.txt`);
+  const note =
+    `Superseded lock for ${propertyId}\n` +
+    `supersededAt: ${now()}\n` +
+    `reason: ${options.reason}\n` +
+    `previousContentHash: ${oldLock.contentHash}\n` +
+    `previousPropertyContentHash: ${oldLock.propertyContentHash}\n` +
+    `previousLockedAt: ${oldLock.lockedAt}\n` +
+    `archivedLock: ${archivedLockPath}\n`;
+  await writeFile(notePath, note, "utf8");
+
+  // (d) Re-lock the CURRENT (edited) property source, keeping the same verdict.
+  //     lockPrediction reads the prediction (verdict already confirmed equal)
+  //     and overwrites the active lock with a fresh hash set + timestamp.
+  const relocked = await lockPrediction(target, { now });
+  if (relocked.lock === null) {
+    return relocked;
+  }
+
+  return { lock: relocked.lock, issue: null };
 }
 
 /* -------------------------------------------------------------------------- */

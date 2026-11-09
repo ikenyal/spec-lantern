@@ -225,7 +225,10 @@ export const PREDICTED_RESULT_SCHEMA: JsonSchemaDocument = {
  * `hashAlgorithm` is pinned so a reader hashes with the same algorithm the
  * writer used; `verdict` is duplicated out of the hashed prediction so a reader
  * has the originally recorded value directly, without re-reading (and
- * re-trusting) the prediction file.
+ * re-trusting) the prediction file. `propertyContentHash` additionally captures
+ * a sha256 over JUST the raw property test file bytes, so the execute-time lock
+ * guard (GAP 1) can detect a property-file edit after locking and refuse the
+ * run unless a supersede re-locks the edited source.
  */
 export const PREDICTION_LOCK_SCHEMA: JsonSchemaDocument = {
   $schema: JSON_SCHEMA_DIALECT,
@@ -238,6 +241,7 @@ export const PREDICTION_LOCK_SCHEMA: JsonSchemaDocument = {
     "verdict",
     "hashAlgorithm",
     "contentHash",
+    "propertyContentHash",
     "lockedAt",
   ],
   properties: {
@@ -249,6 +253,9 @@ export const PREDICTION_LOCK_SCHEMA: JsonSchemaDocument = {
     hashAlgorithm: { type: "string", const: "sha256" },
     // Hex digest over (serialized Predicted_Result + Correctness_Property bytes).
     contentHash: { type: "string", pattern: "^[0-9a-f]{64}$" },
+    // Hex sha256 over JUST the raw Correctness_Property test file bytes, so the
+    // execute-time lock guard can detect a property-file edit after locking.
+    propertyContentHash: { type: "string", pattern: "^[0-9a-f]{64}$" },
     // When the lock was written (execution-start boundary).
     lockedAt: { type: "string", format: "date-time", minLength: 1 },
   },

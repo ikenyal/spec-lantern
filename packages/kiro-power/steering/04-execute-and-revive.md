@@ -49,7 +49,13 @@ on-disk Prediction_Locks (never from you), runs the Comparison Engine against
 the persisted Actual_Results, and writes `<specRoot>/comparison.json`.
 
 Read its summary: each property's `status` (`MATCH` / `PREDICTION_MISMATCH` /
-`NOT_COMPARED_TIMEOUT` / `NOT_EXECUTED`), `confirmedBug`, and the `lieCount`.
+`NOT_COMPARED_TIMEOUT` / `NOT_EXECUTED`), `confirmedBug`, and two distinct
+counts. `lieCount` is the number of **lies** — Confirmed_Bugs (actual FAIL)
+grouped by root cause; a confirmed bug is a lie even when its prediction
+matched (a predicted-FAIL / actual-FAIL row is still a lie). `predictionMismatchCount`
+is the number of rows whose predicted verdict differs from the actual one
+(`PREDICTION_MISMATCH`); `confirmedBugCount` is the ungrouped number of confirmed
+bugs. A lie is NOT the same as a prediction mismatch.
 A `PREDICTION_MISMATCH` (predicted ≠ actual, both PASS/FAIL) is the core finding;
 a property whose Actual_Result is FAIL is a **Confirmed_Bug** carrying its
 Counterexample. Your job here is to drive the fix loop for each Confirmed_Bug.
@@ -127,11 +133,14 @@ and at least one `FIXED` (FAIL → PASS) transition applied to the copy.
   Fix only the test, keep the predicted verdict unchanged, move the old lock to
   `locks/superseded/` with a README (what was wrong, when relative to
   execution, original lock time), and re-lock.
-- **Count lies by root cause via `compare_predictions`.** If one defect makes
-  several properties fail, pass `rootCauses` so the tool counts one lie per root
-  cause and groups the symptoms — do not tally lies by hand. State honestly
-  whether each symptom's own comment is wrong or only failed because of the root
-  cause.
+- **Count lies by root cause via `compare_predictions`.** A lie is a
+  Confirmed_Bug (actual FAIL), independent of whether its prediction matched —
+  not a prediction mismatch. If one defect makes several properties fail, pass
+  `rootCauses` so the tool's `lieCount` counts one lie per root cause and groups
+  the symptoms — do not tally lies by hand. The separate `predictionMismatchCount`
+  tells you where your read-only prediction disagreed with execution. State
+  honestly whether each symptom's own comment is wrong or only failed because of
+  the root cause.
 - **Re-run all properties after a fix** (not only the failing ones) so the
   report can show STILL_PASSING vs REGRESSION. `apply_fixes_and_reexecute`
   re-runs the full derived property set for you.

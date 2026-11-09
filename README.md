@@ -124,6 +124,11 @@ the times spec-lantern caught **its own** mistakes:
 - **Root-cause counting.** MoodPlays' two FAILs were both symptoms of one
   `includes('24')` bug and are counted as a single lie, not two — the UI labels
   the second as a symptom ([`18043de`](https://github.com/ikenyal/spec-lantern/commit/18043de)).
+  `compare_predictions` reports two separate quantities: `lieCount` — confirmed
+  bugs (actual FAIL) grouped by root cause, counted as a lie even when the
+  prediction matched — and `predictionMismatchCount` — the rows where the locked
+  prediction disagreed with the actual verdict. A confirmed lying comment Kiro
+  correctly predicted would FAIL is a lie but not a prediction mismatch.
 
 Cases where spec-lantern caught its own errors:
 
@@ -187,8 +192,8 @@ Then just ask:
     stop points for the two end-to-end targets.
 - **Kiro Power + MCP server.** A [Kiro Power](./packages/kiro-power) steers the
   authoring; an [MCP server](./packages/mcp-server) owns execution and exposes
-  `lock_prediction`, `execute_properties`, `replay_counterexample`,
-  `apply_fixes_and_reexecute`, and `compare_predictions`.
+  `lock_prediction`, `supersede_prediction_lock`, `execute_properties`,
+  `replay_counterexample`, `apply_fixes_and_reexecute`, and `compare_predictions`.
 - **Property-based tests.** Correctness_Properties use fast-check + Vitest, one
   property per claim, ≥100 iterations.
 - **Staged runs with stop points.** Both targets ran in stages (claims → lock →

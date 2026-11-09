@@ -296,10 +296,136 @@ export default client;
 /* The DOM-interaction shims (waitFor + Radix) — reusable render plumbing      */
 /* -------------------------------------------------------------------------- */
 
+/* -------------------------------------------------------------------------- */
+/* Radix activation — ONE source of truth, shipped as a string AND unit-tested */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * The jsdom pointer-capture shim, as the SINGLE source of truth. jsdom does not
+ * implement the Pointer Capture API (`Element.prototype.hasPointerCapture`,
+ * `setPointerCapture`, `releasePointerCapture`), and Radix primitives call those
+ * methods during a pointer interaction — so without these shims a real pointer
+ * sequence throws `TypeError: target.hasPointerCapture is not a function` before
+ * Radix ever switches the tab. The shim installs inert implementations (capture
+ * is never held in jsdom) ONLY when absent, so a jsdom that already provides them
+ * is left alone.
+ *
+ * It is an ordinary exported function the unit test calls directly against the
+ * real jsdom `Element.prototype`, and whose BODY (via {@link Function#toString})
+ * is embedded verbatim into {@link buildDomInteractionShimModule}'s emitted
+ * string — so the exact code the host test exercises is the code that ships.
+ */
+export function installJsdomPointerCaptureShims(elementCtor: typeof Element): void {
+  const proto = elementCtor.prototype as unknown as Record<string, unknown>;
+  if (typeof proto.hasPointerCapture !== "function") {
+    proto.hasPointerCapture = function hasPointerCapture() {
+      // jsdom never actually holds pointer capture; Radix only needs a boolean.
+      return false;
+    };
+  }
+  if (typeof proto.setPointerCapture !== "function") {
+    proto.setPointerCapture = function setPointerCapture() {
+      // No-op: capturing a pointer has no effect in jsdom.
+    };
+  }
+  if (typeof proto.releasePointerCapture !== "function") {
+    proto.releasePointerCapture = function releasePointerCapture() {
+      // No-op: there is never a captured pointer to release in jsdom.
+    };
+  }
+}
+
+/**
+ * The event dependencies {@link activateElement}/{@link activateTabByName} need,
+ * so the logic stays pure and host-testable: pass the real `fireEvent` from
+ * `@testing-library/react`. The emitted shim module supplies the identical
+ * `fireEvent`, so the host test and the shipped helper run the SAME sequence.
+ */
+export interface ActivationDeps {
+  fireEvent: {
+    focus(element: Element): void;
+    keyDown(element: Element, init?: Record<string, unknown>): void;
+    pointerDown(element: Element, init?: Record<string, unknown>): void;
+    mouseDown(element: Element, init?: Record<string, unknown>): void;
+    click(element: Element, init?: Record<string, unknown>): void;
+  };
+}
+
+/**
+ * Activate a single Radix control element through the proven sequence that
+ * reliably mounts Radix `TabsContent` in jsdom: FOCUS the element, send a
+ * KEYBOARD activation (Enter then Space, which Radix accepts for a focused
+ * trigger), then the POINTER sequence Radix listens for (`pointerDown` +
+ * `mouseDown`, with the pointer-capture shims already installed), and finally a
+ * `click`. Any one path alone has proven flaky across Radix versions; firing all
+ * of them is idempotent (activating an already-active tab is a no-op) and is what
+ * took four manual attempts to discover.
+ *
+ * This is the lower-level `activate(element)` the FEAT names. Its body is both
+ * exercised by the host unit test and embedded verbatim into the emitted shim.
+ */
+export function activateElement(element: Element, deps: ActivationDeps): void {
+  const { fireEvent } = deps;
+  fireEvent.focus(element);
+  // Keyboard activation for a focused trigger (Radix accepts Enter/Space).
+  fireEvent.keyDown(element, { key: "Enter", code: "Enter" });
+  fireEvent.keyDown(element, { key: " ", code: "Space" });
+  // Pointer sequence Radix activates on (needs the pointer-capture shims).
+  fireEvent.pointerDown(element, { button: 0 });
+  fireEvent.mouseDown(element, { button: 0 });
+  // Finally the plain click a real pointer release produces.
+  fireEvent.click(element);
+}
+
+/**
+ * Locate a Radix tab trigger by its accessible name (its role is `tab`) and
+ * activate it via {@link activateElement}. Scans every `[role="tab"]` under the
+ * given root and matches the one whose trimmed text content equals `name`; if
+ * none matches it throws a readable error naming the tab that was asked for, so a
+ * mis-typed tab name is an obvious harness error rather than a silent no-op.
+ *
+ * This is the `activateTab(name)` helper the FEAT names. Its body is both
+ * exercised by the host unit test and embedded verbatim into the emitted shim.
+ */
+export function activateTabByName(
+  name: string,
+  deps: ActivationDeps,
+  root: ParentNode,
+): void {
+  const triggers = Array.from(root.querySelectorAll('[role="tab"]'));
+  const target = triggers.find(
+    (el) => (el.textContent ?? "").trim() === name,
+  );
+  if (!target) {
+    const names = triggers
+      .map((el) => JSON.stringify((el.textContent ?? "").trim()))
+      .join(", ");
+    throw new Error(
+      `activateTab: no tab trigger with accessible name ${JSON.stringify(name)} ` +
+        `found (available tabs: ${names || "none"})`,
+    );
+  }
+  activateElement(target, deps);
+}
+
+/**
+ * Serialize an exported function's BODY (between its outermost braces) so it can
+ * be embedded verbatim into an emitted module and keep ONE source of truth. The
+ * functions it is used on reference only their parameters and other embedded
+ * helpers (never a module closure), so the extracted body behaves identically
+ * inside the shim as it does when the host unit test imports it directly.
+ */
+function functionBody(fn: (...args: never[]) => unknown): string {
+  const source = fn.toString();
+  const open = source.indexOf("{");
+  const close = source.lastIndexOf("}");
+  return source.slice(open + 1, close).trim();
+}
+
 /**
  * Build the source of the DOM-interaction shim module — the reusable render
  * PLUMBING a jsdom render needs that is independent of any one target. It
- * patches two gaps that only appear when rendering a real component in jsdom,
+ * patches the gaps that only appear when rendering a real component in jsdom,
  * and it NEVER touches a property's assertion:
  *
  *  1. `waitFor` + fake timers. `@testing-library`'s `waitFor` polls on real
@@ -308,23 +434,41 @@ export default client;
  *     and hang the render. A minimal `jest` shim proxying `advanceTimersByTime`
  *     to `vi` lets `waitFor` drive the fake clock forward.
  *
- *  2. Radix activation. Radix UI primitives (Tabs, Select, etc.) activate on
- *     pointerdown/mousedown, not a bare synthetic `click`. The shim makes
- *     `fireEvent.click` first dispatch the pointerdown/mousedown Radix listens
- *     for, exactly as a real pointer click would, so a property that clicks a
- *     Radix control switches it in jsdom.
+ *  2. jsdom pointer-capture shims. jsdom does not implement
+ *     `Element.prototype.hasPointerCapture`/`setPointerCapture`/
+ *     `releasePointerCapture`, which Radix calls during a pointer interaction.
+ *     {@link installJsdomPointerCaptureShims} installs inert versions (only when
+ *     absent) so the pointer sequence does not throw before Radix switches.
  *
- * This is the generalized form of the walking skeleton's `WORKTREE_SETUP`. It is
- * emitted as its OWN module so it composes with the Controllable_Clock setup —
- * both are listed in the component-render config's `setupFiles`. It is tolerant:
- * if `@testing-library/react` is unresolvable the Radix shim is skipped rather
- * than crashing the run.
+ *  3. Radix activation helpers. `activate(element)` and `activateTab(name)` are
+ *     installed as globals and encode the proven FOCUS → KEYBOARD → POINTER →
+ *     CLICK sequence ({@link activateElement}/{@link activateTabByName}) that
+ *     reliably mounts Radix `TabsContent` in jsdom. The existing
+ *     `fireEvent.click` pointerdown/mousedown wrapper is kept so a bare click on
+ *     a Radix control still switches it.
+ *
+ * SINGLE SOURCE OF TRUTH. The shim bodies are not re-typed here: the pure
+ * functions above are serialized with {@link functionBody} and embedded verbatim,
+ * so the exact sequence the host unit test exercises is the exact sequence that
+ * ships. It is tolerant: if `@testing-library/react` is unresolvable the Radix
+ * parts are skipped rather than crashing the run.
  */
 export function buildDomInteractionShimModule(): string {
-  return `// Generated by spec-lantern (task 12.1): reusable jsdom render PLUMBING.
-// (1) make waitFor cooperate with Vitest fake timers; (2) make fireEvent.click
-// emit the pointerdown/mousedown Radix primitives activate on. Never touches a
-// property's assertion. Loaded via \`setupFiles\`.
+  const pointerCaptureBody = functionBody(installJsdomPointerCaptureShims);
+  const activateElementBody = functionBody(activateElement);
+  const activateTabBody = functionBody(activateTabByName);
+
+  return `// Generated by spec-lantern (task 12.1 / FEAT-003): reusable jsdom render
+// PLUMBING. (1) make waitFor cooperate with Vitest fake timers; (2) install the
+// jsdom pointer-capture shims Radix needs; (3) make fireEvent.click emit the
+// pointerdown/mousedown Radix activates on AND install global activate()/
+// activateTab() helpers encoding the proven focus+keyboard+pointer+click
+// sequence. Never touches a property's assertion. Loaded via \`setupFiles\`.
+//
+// The pointer-capture + activation bodies below are embedded VERBATIM from the
+// exported functions in component-render.ts (installJsdomPointerCaptureShims /
+// activateElement / activateTabByName), so the exact sequence a host unit test
+// exercises is the exact sequence that ships here.
 import { vi } from "vitest";
 
 // (1) Make waitFor cooperate with Vitest fake timers (the Controllable_Clock).
@@ -332,9 +476,28 @@ globalThis.jest = {
   advanceTimersByTime: (ms) => vi.advanceTimersByTime(ms),
 };
 
-// (2) Radix primitives activate on pointerdown/mousedown, not a bare click.
+// (2) jsdom does not implement the Pointer Capture API Radix calls; shim it
+// (inert, only when absent) so a real pointer sequence does not throw.
+function installJsdomPointerCaptureShims(elementCtor) {
+  ${pointerCaptureBody}
+}
+if (typeof Element !== "undefined") {
+  installJsdomPointerCaptureShims(Element);
+}
+
+// (3) Radix activation helpers (same bodies the host unit test exercises).
+function activateElement(element, deps) {
+  ${activateElementBody}
+}
+function activateTabByName(name, deps, root) {
+  ${activateTabBody}
+}
+
 try {
   const { fireEvent } = await import("@testing-library/react");
+
+  // Keep the existing bare-click wrapper: a plain fireEvent.click on a Radix
+  // control still emits the pointerdown/mousedown Radix listens for.
   const originalClick = fireEvent.click.bind(fireEvent);
   fireEvent.click = (element, init) => {
     if (element instanceof Element) {
@@ -343,8 +506,14 @@ try {
     }
     return originalClick(element, init);
   };
+
+  // Global helpers a property can call to mount a Radix tab's content reliably.
+  const deps = { fireEvent };
+  globalThis.activate = (element) => activateElement(element, deps);
+  globalThis.activateTab = (name, root) =>
+    activateTabByName(name, deps, root ?? document);
 } catch {
-  // @testing-library/react not resolvable — the Radix shim is a no-op.
+  // @testing-library/react not resolvable — the Radix parts are a no-op.
 }
 `;
 }

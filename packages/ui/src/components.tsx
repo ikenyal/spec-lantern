@@ -334,6 +334,12 @@ export interface ReportSummary {
   revived: number;
 }
 
+/**
+ * Summarize a report's comparisons: claims checked, LIES exposed, and revived
+ * properties. `exposed` is {@link countLies} — confirmed bugs grouped by root
+ * cause (a confirmed bug is a lie even when its prediction matched),
+ * consistent with the compare_predictions tool's `lieCount`.
+ */
 export function summarize(
   comparisons: readonly PropertyComparison[],
 ): ReportSummary {
@@ -341,12 +347,16 @@ export function summarize(
 }
 
 /**
- * The number of distinct LIES in a report: Confirmed_Bugs whose OWN comment is
- * the lie — i.e. excluding rows marked `display.symptomOf`, which are additional
- * symptoms of another row's root-cause lie, not separate lies. This is the
- * single source of truth for the lie count, used by {@link summarize} AND by a
- * story's stat line (via {@link formatLieCount}) so the UI can never show a
- * symptom as its own lie (e.g. MoodPlays must read "1 lie", not "2").
+ * The number of distinct LIES in a report: Confirmed_Bugs grouped by root cause.
+ * A lie is a `confirmedBug` row (actual FAIL) — independent of whether its
+ * prediction matched, so a predicted-FAIL / actual-FAIL confirmed lying comment
+ * still counts — EXCLUDING rows marked `display.symptomOf`, which are additional
+ * symptoms of another row's root-cause lie, not separate lies. This matches the
+ * compare_predictions tool's `lieCount` (confirmed bugs grouped by root cause),
+ * NOT its `predictionMismatchCount`. It is the single source of truth for the
+ * lie count, used by {@link summarize} AND by a story's stat line (via
+ * {@link formatLieCount}) so the UI can never show a symptom as its own lie
+ * (e.g. MoodPlays must read "1 lie", not "2").
  */
 export function countLies(comparisons: readonly PropertyComparison[]): number {
   let lies = 0;
@@ -367,7 +377,11 @@ export function countRevived(
   return revived;
 }
 
-/** Render "N lie" / "N lies" for a lie count — the shared pluralization. */
+/**
+ * Render "N lie" / "N lies" for a lie count — the shared pluralization. The
+ * count is a LIE count (confirmed bugs grouped by root cause, see
+ * {@link countLies}), not a prediction-mismatch count.
+ */
 export function formatLieCount(count: number): string {
   return `${count} ${count === 1 ? "lie" : "lies"}`;
 }
@@ -808,11 +822,14 @@ export interface StorySectionProps {
   /** The headline story to render above the table. */
   story: LanternStory;
   /**
-   * The lie count COMPUTED from the report ({@link countLies}). When the story's
-   * `stats` text contains the token `{lies}`, it is substituted with
-   * `formatLieCount(lieCount)` so the lie number is derived from the data, never
-   * hand-written — the UI can never show "2 lies" when one row is a symptom.
-   * A `stats` string with no `{lies}` token renders verbatim (writing-tracker).
+   * The lie count COMPUTED from the report ({@link countLies}) — confirmed bugs
+   * grouped by root cause (a confirmed bug is a lie even when its prediction
+   * matched), consistent with the compare_predictions tool's `lieCount`, not its
+   * prediction-mismatch count. When the story's `stats` text contains the token
+   * `{lies}`, it is substituted with `formatLieCount(lieCount)` so the lie number
+   * is derived from the data, never hand-written — the UI can never show
+   * "2 lies" when one row is a symptom. A `stats` string with no `{lies}` token
+   * renders verbatim (writing-tracker).
    */
   lieCount?: number;
   /**

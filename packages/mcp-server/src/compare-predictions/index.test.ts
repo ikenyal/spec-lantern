@@ -87,7 +87,9 @@ describe("comparePredictions (change 3)", () => {
     expect(row?.predicted).toBe("PASS");
     expect(row?.status).toBe("PREDICTION_MISMATCH");
     expect(row?.confirmedBug).toBe(true);
+    // A confirmed bug is a lie; a predicted!=actual row is a prediction mismatch.
     expect(result.lieCount).toBe(1);
+    expect(result.predictionMismatchCount).toBe(1);
     expect(result.confirmedBugCount).toBe(1);
 
     // comparison.json was written verbatim.
@@ -95,7 +97,42 @@ describe("comparePredictions (change 3)", () => {
       await readFile(join(specRoot, "comparison.json"), "utf8"),
     );
     expect(written.lieCount).toBe(1);
+    expect(written.predictionMismatchCount).toBe(1);
     expect(result.comparisonPath).toBe(join(specRoot, "comparison.json"));
+  });
+
+  it("counts a confirmed lying comment (predicted FAIL, actual FAIL) as a lie with NO prediction mismatch", async () => {
+    // Kiro read the code and predicted FAIL; execution also FAILs. The
+    // prediction MATCHED, but the comment is still a confirmed bug → a lie.
+    await lockProperty(specRoot, 1, "claim-liar", "FAIL");
+
+    const resultsPath = join(specRoot, "results", "run.json");
+    await writeFile(
+      resultsPath,
+      JSON.stringify({
+        results: [
+          {
+            propertyId: "property-1.claim-liar",
+            outcome: "VERDICT",
+            verdict: "FAIL",
+          },
+        ],
+        executionContexts: {},
+      }),
+    );
+
+    const result = await comparePredictions({ specRoot, resultsPath });
+
+    const row = result.comparisons.find(
+      (c) => c.propertyId === "property-1.claim-liar",
+    );
+    expect(row?.predicted).toBe("FAIL");
+    expect(row?.status).toBe("MATCH");
+    expect(row?.confirmedBug).toBe(true);
+    // A MATCH on a confirmed bug: a lie, but not a prediction mismatch.
+    expect(result.lieCount).toBe(1);
+    expect(result.predictionMismatchCount).toBe(0);
+    expect(result.confirmedBugCount).toBe(1);
   });
 
   it("groups symptoms under a root cause and counts the lie ONCE", async () => {
@@ -128,6 +165,8 @@ describe("comparePredictions (change 3)", () => {
 
     // Counted ONCE per root cause, not once per symptom.
     expect(result.lieCount).toBe(1);
+    // All three predicted PASS but FAILed → three prediction mismatches.
+    expect(result.predictionMismatchCount).toBe(3);
     expect(result.confirmedBugCount).toBe(3);
     expect(result.rootCauseGroups).toHaveLength(1);
     const group = result.rootCauseGroups[0];
@@ -139,10 +178,11 @@ describe("comparePredictions (change 3)", () => {
     expect(group.isLie).toBe(true);
   });
 
-  it("shows an actual with NO locked prediction as NO_LOCKED_PREDICTION — confirms a FAIL bug but is NOT a lie", async () => {
+  it("shows an actual with NO locked prediction as NO_LOCKED_PREDICTION — confirms a FAIL bug (a lie) but is NOT a prediction mismatch", async () => {
     // No lock authored for this property → readLockedVerdict yields null. The
     // row must surface explicitly as "no locked prediction" (never MATCH/PASS/
-    // FAIL), still confirm the bug on a FAIL actual, and NOT inflate lieCount.
+    // FAIL), confirm the bug on a FAIL actual (a lie), and NOT be a prediction
+    // mismatch (there is no prediction to disagree with).
     const resultsPath = join(specRoot, "results", "run.json");
     await writeFile(
       resultsPath,
@@ -167,11 +207,12 @@ describe("comparePredictions (change 3)", () => {
     expect(row?.status).toBe("NO_LOCKED_PREDICTION");
     expect(row?.status).not.toBe("MATCH");
     expect(row?.status).not.toBe("PREDICTION_MISMATCH");
-    // FAIL actual still confirms a bug…
+    // FAIL actual confirms a bug → it is a lie…
     expect(row?.confirmedBug).toBe(true);
     expect(result.confirmedBugCount).toBe(1);
-    // …but with no locked prediction it is NOT a prediction lie.
-    expect(result.lieCount).toBe(0);
+    expect(result.lieCount).toBe(1);
+    // …but with no locked prediction there is no prediction mismatch.
+    expect(result.predictionMismatchCount).toBe(0);
   });
 
   it("reads actuals from .postFixExecution.results for an apply-fixes result", async () => {
@@ -190,11 +231,13 @@ describe("comparePredictions (change 3)", () => {
       }),
     );
     const result = await comparePredictions({ specRoot, resultsPath });
-    // Predicted FAIL (lock), actual FAIL → MATCH, confirmed bug, no lie.
+    // Predicted FAIL (lock), actual FAIL → MATCH, confirmed bug (a lie),
+    // but the prediction matched so there is no prediction mismatch.
     const row = result.comparisons[0];
     expect(row.predicted).toBe("FAIL");
     expect(row.status).toBe("MATCH");
-    expect(result.lieCount).toBe(0);
+    expect(result.lieCount).toBe(1);
+    expect(result.predictionMismatchCount).toBe(0);
     expect(result.confirmedBugCount).toBe(1);
   });
 });

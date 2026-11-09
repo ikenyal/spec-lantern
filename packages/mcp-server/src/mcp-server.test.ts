@@ -871,6 +871,8 @@ describe("MCP power improvements (spec-derive / persist / compare)", () => {
       });
       const structured = res.structuredContent as {
         lieCount: number;
+        predictionMismatchCount: number;
+        confirmedBugCount: number;
         comparisons: { predicted: string | null; status: string }[];
         comparisonPath: string;
         resultsPath: string;
@@ -878,15 +880,182 @@ describe("MCP power improvements (spec-derive / persist / compare)", () => {
       // Predicted PASS came from the lock; the caller never supplied it.
       expect(structured.comparisons[0]?.predicted).toBe("PASS");
       expect(structured.comparisons[0]?.status).toBe("PREDICTION_MISMATCH");
+      // A confirmed bug is a lie; a predicted!=actual row is a mismatch too.
       expect(structured.lieCount).toBe(1);
+      expect(structured.predictionMismatchCount).toBe(1);
+      expect(structured.confirmedBugCount).toBe(1);
 
       // comparison.json written, and the tool persisted its own result too.
       const comparison = JSON.parse(await readFile(join(specRoot, "comparison.json"), "utf8"));
       expect(comparison.lieCount).toBe(1);
+      expect(comparison.predictionMismatchCount).toBe(1);
       expect(structured.resultsPath).toContain("compare_predictions.json");
     } finally {
       await client.close();
       await server.close();
+    }
+  });
+});
+
+// Feature: spec-lantern — execute-time lock guard + supersede_prediction_lock
+// wiring (GAP 1)
+//
+// execute_properties must refuse to run a property whose test-file source
+// drifted from its lock's `propertyContentHash` (an edit after locking with no
+// supersede), run the undrifted properties, surface the drift as a non-verdict
+// EXECUTION_ERROR, and attach the `propertyContentHashes` it ran against to the
+// persisted result. After supersede_prediction_lock re-locks the edited source,
+// the same property runs. Backed by a real on-disk spec; a FAKE runner keeps the
+// run deterministic without Podman.
+
+describe("execute_properties lock guard + supersede_prediction_lock (GAP 1)", () => {
+  let guardSpecRoot: string;
+
+  beforeEach(async () => {
+    guardSpecRoot = await mkdtemp(join(tmpdir(), "spec-lantern-gap1-"));
+  });
+
+  afterEach(async () => {
+    await rm(guardSpecRoot, { recursive: true, force: true });
+  });
+
+  async function connect(
+    runner: IsolatedRunner,
+  ): Promise<{ client: Client; close: () => Promise<void> }> {
+    const server = createMcpServer({
+      execute: { runner, mountInPlace: true },
+      lockPrediction: { now: () => "2025-01-01T00:00:00.000Z" },
+      resultsClock: PINNED_CLOCK,
+    });
+    const [ct, st] = InMemoryTransport.createLinkedPair();
+    const client = new Client({ name: "t", version: "0.0.0" });
+    await Promise.all([client.connect(ct), server.connect(st)]);
+    return {
+      client,
+      close: async () => {
+        await client.close();
+        await server.close();
+      },
+    };
+  }
+
+  it("lists supersede_prediction_lock as an available tool", async () => {
+    const runner = fakeRunner();
+    const { client, close } = await connect(runner);
+    try {
+      const { tools } = await client.listTools();
+      expect(tools.map((t) => t.name)).toContain("supersede_prediction_lock");
+    } finally {
+      await close();
+    }
+  });
+
+  it("refuses a drifted property, runs the rest, and records property hashes; supersede makes it run", async () => {
+    // Two locked properties under the same spec.
+    await authorSpec(guardSpecRoot, 1, "claim-a", "a holds", "FAIL");
+    await authorSpec(guardSpecRoot, 2, "claim-b", "b holds", "PASS");
+
+    // Edit property-1's source AFTER locking, with no supersede -> drift.
+    await writeFile(
+      join(guardSpecRoot, "properties", "property-1.claim-a.test.ts"),
+      `// Feature: spec-lantern, Property 1: a holds\nexport {}; // edited\n`,
+    );
+
+    const runner = fakeRunner({
+      "property-2.claim-b": {
+        propertyId: "property-2.claim-b",
+        outcome: "VERDICT",
+        verdict: "PASS",
+      },
+    });
+    const { client, close } = await connect(runner);
+    try {
+      const res = await client.callTool({
+        name: "execute_properties",
+        arguments: { targetRepoRef: "target-repo-copy-abc", specRoot: guardSpecRoot },
+      });
+      const structured = res.structuredContent as PropertyExecutionResult & {
+        propertyContentHashes?: Record<string, string>;
+        resultsPath: string;
+      };
+
+      // property-2 ran (VERDICT); property-1 was refused with a non-verdict.
+      const byId = Object.fromEntries(
+        structured.results.map((r) => [r.propertyId, r]),
+      );
+      expect(byId["property-2.claim-b"]?.outcome).toBe("VERDICT");
+      expect(byId["property-1.claim-a"]?.outcome).toBe("EXECUTION_ERROR");
+      expect(
+        (byId["property-1.claim-a"] as { reason: string }).reason,
+      ).toContain("supersede_prediction_lock");
+
+      // Only property-2 reached the runner (the drifted one did not).
+      expect(runner.calls.map((c) => c.propertyId)).toEqual(["property-2.claim-b"]);
+
+      // The run records the hash it ran property-2 against; not the refused one.
+      expect(structured.propertyContentHashes?.["property-2.claim-b"]).toMatch(
+        /^[0-9a-f]{64}$/,
+      );
+      expect(structured.propertyContentHashes?.["property-1.claim-a"]).toBeUndefined();
+
+      // The PERSISTED result carries the propertyContentHashes map verbatim.
+      const persisted = JSON.parse(await readFile(structured.resultsPath, "utf8"));
+      expect(persisted.propertyContentHashes?.["property-2.claim-b"]).toMatch(
+        /^[0-9a-f]{64}$/,
+      );
+    } finally {
+      await close();
+    }
+
+    // Record a supersede re-locking property-1's edited source, then re-run:
+    // now it is allowed and reaches the runner.
+    const runner2 = fakeRunner({
+      "property-1.claim-a": {
+        propertyId: "property-1.claim-a",
+        outcome: "VERDICT",
+        verdict: "FAIL",
+      },
+      "property-2.claim-b": {
+        propertyId: "property-2.claim-b",
+        outcome: "VERDICT",
+        verdict: "PASS",
+      },
+    });
+    const second = await connect(runner2);
+    try {
+      const sup = await second.client.callTool({
+        name: "supersede_prediction_lock",
+        arguments: {
+          specRoot: guardSpecRoot,
+          claimId: "claim-a",
+          propertyNumber: 1,
+          reason: "fixed a harness defect in property-1",
+        },
+      });
+      const supStructured = sup.structuredContent as {
+        lock: { verdict: string } | null;
+        issue: unknown;
+      };
+      expect(supStructured.issue).toBeNull();
+      expect(supStructured.lock?.verdict).toBe("FAIL");
+
+      const res = await second.client.callTool({
+        name: "execute_properties",
+        arguments: { targetRepoRef: "target-repo-copy-abc", specRoot: guardSpecRoot },
+      });
+      const structured = res.structuredContent as PropertyExecutionResult;
+      const byId = Object.fromEntries(
+        structured.results.map((r) => [r.propertyId, r]),
+      );
+      // property-1 is no longer refused; it reached the runner and produced a
+      // verdict.
+      expect(byId["property-1.claim-a"]?.outcome).toBe("VERDICT");
+      expect(runner2.calls.map((c) => c.propertyId).sort()).toEqual([
+        "property-1.claim-a",
+        "property-2.claim-b",
+      ]);
+    } finally {
+      await second.close();
     }
   });
 });

@@ -37,6 +37,28 @@ export default [
     },
   },
   {
+    // DOM globals for the jsdom component-render harness and its jsdom unit
+    // test. `component-render.ts` builds the render shim and references DOM
+    // types (Element/ParentNode) the shim installs into the container's jsdom;
+    // `component-render.radix.test.tsx` renders a real Radix Tabs in jsdom
+    // (@testing-library/react) to prove the shipped activateTab sequence. Both
+    // run in jsdom, so these globals are valid there; declared here so the host
+    // lint recognizes them without loosening the other server files.
+    files: [
+      "packages/mcp-server/src/runner/component-render.ts",
+      "packages/mcp-server/src/runner/component-render.radix.test.tsx",
+    ],
+    languageOptions: {
+      globals: {
+        HTMLElement: "readonly",
+        Element: "readonly",
+        ParentNode: "readonly",
+        document: "readonly",
+        window: "readonly",
+      },
+    },
+  },
+  {
     // Browser / jsdom globals for the spec-lantern property test files staged
     // into the Isolated_Runner (writing-tracker-full/properties/*.test.ts). These
     // render real React components in jsdom (@testing-library/react), so they

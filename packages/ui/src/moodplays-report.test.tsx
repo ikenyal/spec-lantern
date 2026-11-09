@@ -109,6 +109,21 @@ describe("computed lie count (excludes symptomOf rows)", () => {
     expect(countLies(comparisons)).toBe(1);
     expect(summarize(comparisons).exposed).toBe(1);
   });
+
+  it("a confirmed bug whose predicted == actual (MATCH) still counts as a lie", () => {
+    // Kiro predicted FAIL and execution FAILed, so the prediction MATCHED — but
+    // the comment is still a confirmed lying claim. Lie counting is
+    // confirmedBug-based, not mismatch-based, so this row is a lie.
+    const matchedBug: PropertyComparison = {
+      propertyId: "matched-bug",
+      predicted: "FAIL",
+      actual: { propertyId: "matched-bug", outcome: "VERDICT", verdict: "FAIL" },
+      status: "MATCH",
+      confirmedBug: true,
+    };
+    expect(countLies([matchedBug])).toBe(1);
+    expect(summarize([matchedBug]).exposed).toBe(1);
+  });
 });
 
 describe("MoodPlays story", () => {

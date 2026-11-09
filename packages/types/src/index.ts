@@ -81,8 +81,11 @@ export interface PredictedResult {
  * `contentHash` is computed over the serialized Predicted_Result AND the bytes
  * of the Correctness_Property test file it refers to; a later edit to either
  * makes a recomputed hash disagree with `contentHash`, so drift is detectable.
- * `verdict` is the originally recorded value, surfaced directly so comparison
- * (R7) reads it without re-trusting the (possibly edited) prediction file.
+ * `propertyContentHash` is a plain sha256 over JUST the raw property test file
+ * bytes, so a guard can detect a property-file edit after locking WITHOUT
+ * re-reading the prediction (the execute-time lock guard, GAP 1). `verdict` is
+ * the originally recorded value, surfaced directly so comparison (R7) reads it
+ * without re-trusting the (possibly edited) prediction file.
  */
 export interface PredictionLock {
   propertyId: string;
@@ -92,6 +95,13 @@ export interface PredictionLock {
   hashAlgorithm: "sha256";
   /** Hex digest over (Predicted_Result + Correctness_Property bytes). */
   contentHash: string;
+  /**
+   * Hex sha256 over the RAW Correctness_Property test file bytes alone
+   * (distinct from `contentHash`, which also folds in the prediction
+   * projection). Lets the execute-time lock guard detect a property-file edit
+   * after locking and refuse the run unless a supersede re-locks it.
+   */
+  propertyContentHash: string;
   /** Execution-start boundary: when the prediction was locked. */
   lockedAt: string;
 }
@@ -153,6 +163,14 @@ export interface PropertyExecutionResult {
   results: ActualResult[];
   /** Per propertyId. */
   executionContexts: Record<string, ExecutionContext>;
+  /**
+   * Per propertyId: the sha256 of the RAW property test file the execution
+   * actually ran against, as recorded by the execute-time lock guard (GAP 1).
+   * Present only for properties that had a lock (so the run is traceable to the
+   * exact locked property source); absent for properties with no lock. Omitted
+   * entirely when no spec root was supplied (no locks to consult).
+   */
+  propertyContentHashes?: Record<string, string>;
 }
 
 /** Revive loop. (R8) */

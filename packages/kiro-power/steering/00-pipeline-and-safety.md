@@ -61,7 +61,7 @@ This Power never runs Target_Repo code. It calls these MCP_Server tools:
 | --- | --- | --- | --- |
 | prediction-lock tool | the Predicted_Result files + the properties they refer to | a persisted lock (hash + timestamp) | locking predictions before execution (R3.4, R3.5) |
 | `execute_properties` | `{ targetRepoRef, phase: "initial", specRoot, properties?[] }` | `PropertyExecutionResult` + `resultsPath` | running every property against the Target_Repo in the runner (R5, R6) |
-| `compare_predictions` | `{ specRoot, resultsPath, rootCauses? }` | comparison summary (`lieCount`, per-property status) + `comparison.json` path | comparing the locked predictions against a persisted execution result (R7) |
+| `compare_predictions` | `{ specRoot, resultsPath, rootCauses? }` | comparison summary (`lieCount` = confirmed bugs grouped by root cause; `predictionMismatchCount` = predicted ≠ actual rows; `confirmedBugCount`; per-property status) + `comparison.json` path | comparing the locked predictions against a persisted execution result (R7) |
 | `apply_fixes_and_reexecute` | `{ targetRepoRef, applications[], preFixResults, specRoot, properties?[] }` | Pre/Post results + `unifiedDiff` + `resultsPath` | applying Fix_Tasks to a throwaway copy and re-running (R8.3) |
 | `replay_counterexample` | `{ targetRepoRef, executionContext, specRoot, propertyId or property }` | `Actual_Result` + `resultsPath` | reproducing a counterexample exactly (R6.3) |
 

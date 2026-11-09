@@ -4,13 +4,15 @@
  *
  * This is the thin executable the Kiro runtime launches as a subprocess and
  * speaks MCP over stdin/stdout. It builds and connects the server via
- * {@link startStdioServer}, which registers the five tools the Kiro_Power
+ * {@link startStdioServer}, which registers the six tools the Kiro_Power
  * drives:
- *   - `execute_properties`        (run Correctness_Properties in the runner)
- *   - `replay_counterexample`     (replay under a recorded Execution_Context)
- *   - `apply_fixes_and_reexecute` (Revive loop on the Target_Repo_Copy)
- *   - `lock_prediction`           (prediction lock over the on-disk artifacts)
- *   - `compare_predictions`       (locks vs a persisted execution result)
+ *   - `execute_properties`         (run Correctness_Properties in the runner)
+ *   - `replay_counterexample`      (replay under a recorded Execution_Context)
+ *   - `apply_fixes_and_reexecute`  (Revive loop on the Target_Repo_Copy)
+ *   - `lock_prediction`            (prediction lock over the on-disk artifacts)
+ *   - `supersede_prediction_lock`  (archive a lock + re-lock an edited property
+ *                                   file, keeping the predicted verdict)
+ *   - `compare_predictions`        (locks vs a persisted execution result)
  *
  * The entry adds NO execution logic of its own. With no options it uses the
  * default MVP-scope Isolated_Runner (local rootless Podman, selected by

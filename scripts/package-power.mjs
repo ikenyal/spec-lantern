@@ -22,7 +22,7 @@
  *
  * RUNTIME DATA FILES: the MCP server reads NO external data files at runtime.
  * Verified by grepping the server's source (src/mcp-server.ts and everything it
- * imports): the four tools take their inputs as parameters (targetRepoRef,
+ * imports): the tools take their inputs as parameters (targetRepoRef,
  * specRoot, properties, ...); the runner emits every vitest config, setup
  * module, and stub as INLINE string constants (WORKTREE_*, COMPONENT_RENDER_*,
  * SEED_* builders); and the Verdaccio proxy runs the stock
@@ -142,6 +142,7 @@ async function main() {
         disabled: false,
         autoApprove: [
           "lock_prediction",
+          "supersede_prediction_lock",
           "execute_properties",
           "replay_counterexample",
         ],
@@ -195,8 +196,9 @@ In Kiro:
 Kiro reads \`POWER.md\` and registers the \`spec-lantern\` MCP server from
 \`mcp.json\` (launched with \`npx -y github:ikenyal/spec-lantern-power#v0.1.0\`).
 No build step runs — the server ships as one bundled file. Confirm Kiro lists all
-four tools (\`lock_prediction\`, \`execute_properties\`, \`replay_counterexample\`,
-\`apply_fixes_and_reexecute\`) before you start.
+six tools (\`lock_prediction\`, \`supersede_prediction_lock\`,
+\`execute_properties\`, \`replay_counterexample\`, \`apply_fixes_and_reexecute\`,
+\`compare_predictions\`) before you start.
 
 ## Use it
 
@@ -214,7 +216,7 @@ counterexamples.
 2. Dependencies install behind an internal-only network + registry proxy with
    lifecycle scripts disabled; the test phase runs with **no network at all**.
 3. The Power itself **never executes** target code — it only writes artifacts
-   and calls the four MCP tools.
+   and calls the six MCP tools.
 4. **The original is sacred**: every tool that runs your code
    (\`execute_properties\`, \`replay_counterexample\`, \`apply_fixes_and_reexecute\`)
    first copies the repo into a throwaway working copy and runs against the copy

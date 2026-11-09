@@ -36,11 +36,25 @@ via props). An internally-fetching component is recorded `unverifiable`
    clock. `TZ` is pinned by the runner, but set `process.env.TZ = "UTC"` at the
    top too so the file is self-consistent when run directly.
 
-3. **Activate Radix-style controls with a real pointer sequence.** Radix UI
-   primitives (Tabs, Select, Dropdown, ...) switch on `pointerdown`/`mousedown`,
-   not a bare synthetic `click`. Fire the pointer events before the click (the
-   `activate()` helper in the template does this) or the control never changes
-   in jsdom and your query finds the wrong panel.
+3. **Activate Radix-style controls with the runner's `activateTab` helper.**
+   Radix UI primitives (Tabs, Select, Dropdown, ...) switch on
+   `pointerdown`/`mousedown` AND expect the jsdom Pointer Capture API, not a bare
+   synthetic `click`. The combination that reliably mounts a Radix `TabsContent`
+   in jsdom is: install the pointer-capture shims, then FOCUS the trigger, send a
+   KEYBOARD activation, fire the POINTER sequence, then CLICK. **Do not rebuild
+   that sequence by hand** — the runner shim already installs the pointer-capture
+   shims and exposes two globals you call directly:
+
+   - `activateTab("Monthly")` — find the tab trigger by its accessible name and
+     run the full proven sequence. This is the one to reach for.
+   - `activate(element)` — the lower-level form when you already hold the element.
+
+   (These are `activateTabByName`/`activateElement` in the runner's
+   `component-render.ts`, embedded verbatim into the render shim, and covered by a
+   jsdom unit test that renders a real Radix Tabs and asserts a previously
+   unmounted `TabsContent` becomes queryable after `activateTab`.) It took four
+   manual attempts to discover this exact combination; use the helper and skip
+   the rediscovery.
 
 4. **Query safely, then assert explicitly.** Never let a missing element throw a
    raw harness error. Use `queryAll*` (which returns `[]` rather than throwing),
@@ -48,6 +62,39 @@ via props). An internally-fetching component is recorded `unverifiable`
    read the value you assert on. A missing element then becomes a readable
    assertion FAIL ("expected a data row, found none"), not an opaque crash the
    runner must classify as an execution error.
+
+## Render ONCE outside the generated-input loop when the claim is input-independent
+
+If the claim you are verifying does NOT depend on the generated inputs — e.g. a
+claim about tab ORDERING, which panel is shown first, or which control is
+labelled "latest" — render the component and activate the tab ONCE, OUTSIDE the
+`fc.assert` loop (in a `beforeAll`, or just before `fc.assert`), and only QUERY
+the already-rendered DOM inside the property. Re-rendering and re-activating a
+real component on every one of the ≥100 fast-check iterations is pure overhead
+when the DOM does not change with the input, and it is the slow path that pushes
+component properties into `TIMEOUT`.
+
+When the asserted value IS derived from the generated input (a date the
+component formats, a count it sums), render inside the loop as the template
+shows and pin the clock per iteration. The rule is: render where the thing you
+assert on actually varies, and no more often than that.
+
+## NEVER report a FAIL that is only "content not mounted" — that is a HARNESS bug
+
+A Radix tab panel that is not mounted is NOT a Confirmed_Bug. Radix unmounts
+inactive `TabsContent` by default, so if you query for a panel's content before
+activating its tab you will find nothing — and that absence is a property of
+YOUR harness not having activated the tab, not a lie in the target's code. If a
+property FAILs or errors only because the panel it reads was never mounted:
+
+- Fix it by calling `activateTab("<name>")` (above) before the query. Do not
+  weaken the oracle, and do not record the absence as a counterexample.
+- A genuine FAIL is one where the tab WAS activated (its content IS mounted and
+  queryable) and the rendered value still contradicts the claim. Only that is a
+  Confirmed_Bug worth a counterexample.
+
+Treat an empty `queryAll*` after a correct `activateTab` as a signal to check the
+accessible name you passed and the activation, not as a verdict.
 
 ## Helpers the runner already provides — rely on them, don't rebuild them
 
@@ -151,17 +198,11 @@ import Component from "@/TODO/path/to/Component";
 // Self-consistent zone when run directly; the runner also pins TZ.
 process.env.TZ = "UTC";
 
-// Bridge so @testing-library's waitFor can drive Vitest fake timers instead of
-// hanging on a frozen clock (see "Do NOT use waitFor under fake timers").
-globalThis.jest = { advanceTimersByTime: (ms) => vi.advanceTimersByTime(ms) };
-
-// Radix primitives activate on pointerdown/mousedown, not a bare click. Fire the
-// pointer sequence a real pointer click would, then the click.
-function activate(element: Element): void {
-  fireEvent.pointerDown(element);
-  fireEvent.mouseDown(element);
-  fireEvent.click(element);
-}
+// The runner shim already installs globalThis.jest (the waitFor fake-timer
+// bridge), the jsdom pointer-capture shims, and the global activate(element) /
+// activateTab(name) helpers encoding the proven focus+keyboard+pointer+click
+// sequence. Call activateTab("<tab name>") to mount a Radix TabsContent — do NOT
+// rebuild the pointer sequence by hand here.
 
 afterEach(() => {
   // Tear down the tree and restore the real clock so one iteration cannot leak
@@ -190,9 +231,11 @@ test("{property_text}", async () => {
           // TODO 2: inject the mocked data via props (props-driven only).
           render(createElement(Component, { /* ...props */ }));
 
-          // TODO 3: if the claim is behind a Radix tab/select, activate it.
-          // Radix Tabs switch SYNCHRONOUSLY in jsdom, so no waitFor is needed.
-          // activate(screen.getByRole("tab", { name: "Monthly" }));
+          // TODO 3: if the claim is behind a Radix tab/select, activate it with
+          // the runner's helper. Radix Tabs switch SYNCHRONOUSLY in jsdom, so no
+          // waitFor is needed. For an input-INDEPENDENT claim render + activate
+          // ONCE outside this loop instead (see "Render ONCE ...").
+          // activateTab("Monthly");
 
           // TODO 4: read the asserted value with SAFE queries + explicit checks
           // so a missing element is a readable assertion FAIL, not a crash.

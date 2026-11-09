@@ -6,7 +6,7 @@
  * the published Power would (node over stdio), performs the MCP handshake, and
  * lists its tools. This is a pure protocol check: it does the initialize +
  * tools/list round-trip and NEVER calls a tool, so no target code runs. The
- * server must report all four tools.
+ * server must report all six tools.
  */
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
@@ -25,9 +25,11 @@ const serverPath = resolve(
 
 const EXPECTED = [
   "lock_prediction",
+  "supersede_prediction_lock",
   "execute_properties",
   "replay_counterexample",
   "apply_fixes_and_reexecute",
+  "compare_predictions",
 ].sort();
 
 async function main() {
@@ -56,7 +58,7 @@ async function main() {
     process.exitCode = 1;
     return;
   }
-  process.stdout.write("OK — all 4 tools present over stdio from the bundle\n");
+  process.stdout.write("OK — all 6 tools present over stdio from the bundle\n");
 }
 
 main().catch((error) => {

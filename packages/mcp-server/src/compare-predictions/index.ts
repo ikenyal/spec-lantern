@@ -10,13 +10,22 @@
  * a persisted result, reading each predicted verdict ONLY from the locks (never
  * from the caller), and writes `<specRoot>/comparison.json`.
  *
+ * TWO DISTINCT QUANTITIES. A LIE is a confirmed bug — a property whose actual
+ * verdict is FAIL — regardless of whether the read-only prediction happened to
+ * match it. A predicted-FAIL / actual-FAIL confirmed lying comment is still a
+ * lie even though its prediction MATCHED. That is separate from a PREDICTION
+ * MISMATCH, which is only the rows where the predicted verdict differs from the
+ * actual one. The summary reports both: `lieCount` (confirmed bugs, grouped by
+ * root cause) and `predictionMismatchCount` (rows with status
+ * PREDICTION_MISMATCH).
+ *
  * ROOT-CAUSE GROUPING. A single root-cause lie can make several downstream
  * properties fail as SYMPTOMS. Counting each symptom as its own "lie" overstates
  * the number of lies. When the caller supplies `rootCauses` (a map
  * `rootCausePropertyId → [symptomPropertyId, ...]`), each symptom's comparison
- * is grouped under its root cause and a confirmed mismatch is counted ONCE PER
+ * is grouped under its root cause and a confirmed bug is counted ONCE PER
  * ROOT CAUSE rather than once per symptom. Without `rootCauses`, every confirmed
- * mismatch is counted separately.
+ * bug is counted separately.
  *
  * HOST SAFETY & FIDELITY. This reads JSON (the persisted result, the locks) and
  * writes JSON (`comparison.json`); it executes nothing. Predicted verdicts come
@@ -67,8 +76,9 @@ export interface RootCauseGroup {
   /** The symptom comparisons attributed to this root cause. */
   symptoms: PropertyComparison[];
   /**
-   * Whether this root-cause group counts as a lie: true when the root cause OR
-   * any of its symptoms is a confirmed prediction mismatch. Counts as ONE lie.
+   * Whether this root-cause group contains a lie: true when the root cause OR
+   * any of its symptoms is a confirmed bug (actual FAIL), independent of whether
+   * any prediction matched. Counts as ONE lie.
    */
   isLie: boolean;
 }
@@ -80,12 +90,26 @@ export interface ComparePredictionsSummary {
   /** Root-cause groups (empty when no `rootCauses` was given). */
   rootCauseGroups: RootCauseGroup[];
   /**
-   * The number of LIES — confirmed prediction mismatches. Without `rootCauses`,
-   * one per `PREDICTION_MISMATCH` comparison. With `rootCauses`, one per
-   * root-cause group that is a lie PLUS any ungrouped confirmed mismatch.
+   * The number of LIES — confirmed bugs (actual FAIL) grouped by root cause. A
+   * confirmed bug is a lie independent of whether its read-only prediction
+   * matched (a predicted-FAIL / actual-FAIL row is still a lie). Without
+   * `rootCauses`, one per confirmed-bug comparison. With `rootCauses`, one per
+   * root-cause group that contains a confirmed bug PLUS any ungrouped confirmed
+   * bug.
    */
   lieCount: number;
-  /** The number of confirmed bugs (actual FAIL), independent of grouping. */
+  /**
+   * The number of PREDICTION MISMATCHES — comparisons whose status is
+   * `PREDICTION_MISMATCH`, i.e. rows where the locked predicted verdict differs
+   * from the actual verdict. This is the OLD meaning of `lieCount`; it is NOT
+   * the lie count (a matched prediction on a confirmed bug is a lie but not a
+   * mismatch).
+   */
+  predictionMismatchCount: number;
+  /**
+   * The number of confirmed bugs (actual FAIL), ungrouped — one per row with
+   * `confirmedBug === true`, regardless of root-cause grouping.
+   */
   confirmedBugCount: number;
 }
 
@@ -178,13 +202,22 @@ export async function comparePredictions(
 
   const comparisons = await comparePropertiesFromLocks(inputs);
 
-  // 3. Count confirmed bugs (actual FAIL) and lies (confirmed PREDICTION_MISMATCH).
+  // 3. Count three distinct quantities:
+  //    - confirmedBugCount: every row that is a confirmed bug (actual FAIL).
+  //    - predictionMismatchCount: every row whose locked prediction != actual.
+  //    - lieCount: confirmed bugs grouped by root cause (a lie is a confirmed
+  //      bug independent of whether its prediction matched).
   const byId = new Map<string, PropertyComparison>();
   for (const c of comparisons) byId.set(c.propertyId, c);
   const confirmedBugCount = comparisons.filter((c) => c.confirmedBug).length;
+  const predictionMismatchCount = comparisons.filter(
+    (c) => c.status === "PREDICTION_MISMATCH",
+  ).length;
 
+  // A row is a lie when it is a confirmed bug (actual FAIL) — NOT when the
+  // prediction merely mismatched.
   const isLie = (c: PropertyComparison | undefined): boolean =>
-    c?.status === "PREDICTION_MISMATCH";
+    c?.confirmedBug === true;
 
   const { rootCauseGroups, lieCount } = rootCauses
     ? groupByRootCause(comparisons, byId, rootCauses, isLie)
@@ -197,6 +230,7 @@ export async function comparePredictions(
     comparisons,
     rootCauseGroups,
     lieCount,
+    predictionMismatchCount,
     confirmedBugCount,
   };
 
@@ -214,7 +248,7 @@ export async function comparePredictions(
 /**
  * Group symptom comparisons under their root cause and count a lie ONCE PER
  * root-cause group (the group is a lie when the root cause or any symptom is a
- * confirmed mismatch), plus any confirmed mismatch that belongs to no group.
+ * confirmed bug, per `isLie`), plus any confirmed bug that belongs to no group.
  */
 function groupByRootCause(
   comparisons: PropertyComparison[],
@@ -246,7 +280,7 @@ function groupByRootCause(
     });
   }
 
-  // Any confirmed mismatch NOT part of a root-cause group counts on its own.
+  // Any confirmed bug NOT part of a root-cause group counts on its own.
   for (const c of comparisons) {
     if (!grouped.has(c.propertyId) && isLie(c)) lieCount += 1;
   }

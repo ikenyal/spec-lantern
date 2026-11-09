@@ -23,11 +23,14 @@ import {
   propertyTag,
 } from "@spec-lantern/types";
 import {
+  computePropertyContentHash,
   lockPrediction,
   readPredictionLock,
   readLockedVerdict,
+  supersedePredictionLock,
   type LockTarget,
 } from "./index.js";
+import { readdir } from "node:fs/promises";
 
 /* -------------------------------------------------------------------------- */
 /* Fixture helpers                                                            */
@@ -104,6 +107,10 @@ describe("lockPrediction (task 7.1, R3.4)", () => {
     expect(result.lock?.verdict).toBe("PASS");
     expect(result.lock?.hashAlgorithm).toBe("sha256");
     expect(result.lock?.contentHash).toMatch(/^[0-9a-f]{64}$/);
+    expect(result.lock?.propertyContentHash).toMatch(/^[0-9a-f]{64}$/);
+    // The property-only hash is a DISTINCT digest from the combined content
+    // hash (it folds in no prediction projection).
+    expect(result.lock?.propertyContentHash).not.toBe(result.lock?.contentHash);
     expect(result.lock?.lockedAt).toBe("2025-02-02T00:00:00.000Z");
 
     // Persisted on disk at the canonical layout path.
@@ -285,5 +292,115 @@ describe("readPredictionLock (task 7.1, R3.5)", () => {
     );
     const read = await readPredictionLock(target());
     expect(read.issue?.code).toBe("LOCK_INVALID_JSON");
+  });
+});
+
+/* -------------------------------------------------------------------------- */
+/* Superseding a lock (GAP 1 — re-lock an edited property, keep the verdict)  */
+/* -------------------------------------------------------------------------- */
+
+describe("supersedePredictionLock (GAP 1)", () => {
+  it("archives the old lock, writes a note, and re-locks with same verdict + new hashes", async () => {
+    await writeFixtures(prediction("FAIL"));
+    const original = await lockPrediction(target(), {
+      now: () => "2025-02-02T00:00:00.000Z",
+    });
+    expect(original.lock).not.toBeNull();
+
+    // The property source legitimately changes (a harness fix).
+    await writeFile(
+      propertyTestFilePath(specRoot, PROPERTY_NUMBER, CLAIM_ID),
+      `${propertySource()}// harness fix\n`,
+      "utf8",
+    );
+    const editedSource = await readFile(
+      propertyTestFilePath(specRoot, PROPERTY_NUMBER, CLAIM_ID),
+      "utf8",
+    );
+
+    const result = await supersedePredictionLock(target(), {
+      reason: "fixed a harness defect in the property test",
+      now: () => "2025-03-03T00:00:00.000Z",
+    });
+
+    // Re-locked with the SAME verdict and FRESH hashes/timestamp.
+    expect(result.issue).toBeNull();
+    expect(result.lock?.verdict).toBe("FAIL");
+    expect(result.lock?.lockedAt).toBe("2025-03-03T00:00:00.000Z");
+    expect(result.lock?.propertyContentHash).toBe(
+      computePropertyContentHash(editedSource),
+    );
+    expect(result.lock?.contentHash).not.toBe(original.lock?.contentHash);
+
+    // The active lock on disk is the NEW one.
+    const active = JSON.parse(
+      await readFile(
+        predictionLockFilePath(specRoot, PROPERTY_NUMBER, CLAIM_ID),
+        "utf8",
+      ),
+    );
+    expect(active.lockedAt).toBe("2025-03-03T00:00:00.000Z");
+
+    // The OLD lock was archived verbatim under locks/superseded/ with a
+    // timestamped name, alongside a *.note.txt (not a *.lock.json).
+    const supersededDir = join(specRoot, "locks", "superseded");
+    const names = await readdir(supersededDir);
+    const archivedLock = names.find(
+      (n) => n.endsWith(".lock.json") && n.includes("2025-02-02"),
+    );
+    const note = names.find((n) => n.endsWith(".note.txt"));
+    expect(archivedLock).toBeDefined();
+    expect(note).toBeDefined();
+
+    const archived = JSON.parse(
+      await readFile(join(supersededDir, archivedLock!), "utf8"),
+    );
+    // The archived bytes are the ORIGINAL lock verbatim.
+    expect(archived).toEqual(original.lock);
+
+    const noteText = await readFile(join(supersededDir, note!), "utf8");
+    expect(noteText).toContain("fixed a harness defect");
+    expect(noteText).toContain(original.lock!.contentHash);
+    expect(noteText).toContain(original.lock!.propertyContentHash);
+  });
+
+  it("refuses (never changes the verdict) when the prediction now disagrees", async () => {
+    await writeFixtures(prediction("PASS"));
+    await lockPrediction(target(), { now: () => "2025-02-02T00:00:00.000Z" });
+
+    // The prediction file is rewritten PASS -> FAIL. A supersede must NOT carry
+    // the changed verdict; it refuses structurally.
+    await writeFile(
+      predictedResultFilePath(specRoot, PROPERTY_NUMBER, CLAIM_ID),
+      `${JSON.stringify(prediction("FAIL"), null, 2)}\n`,
+      "utf8",
+    );
+
+    const result = await supersedePredictionLock(target(), {
+      reason: "attempted verdict change",
+    });
+    expect(result.lock).toBeNull();
+    expect(result.issue?.code).toBe("LOCK_CONTENT_DRIFT");
+
+    // The active lock still holds the ORIGINAL verdict.
+    const read = await readPredictionLock(target());
+    expect(read.verdict).toBe("PASS");
+  });
+
+  it("reports LOCK_MISSING when there is no active lock to supersede", async () => {
+    await writeFixtures();
+    const result = await supersedePredictionLock(target(), {
+      reason: "no lock yet",
+    });
+    expect(result.lock).toBeNull();
+    expect(result.issue?.code).toBe("LOCK_MISSING");
+  });
+
+  it("requires a non-empty reason", async () => {
+    await writeFixtures();
+    await lockPrediction(target());
+    const result = await supersedePredictionLock(target(), { reason: "  " });
+    expect(result.lock).toBeNull();
+    expect(result.issue?.code).toBe("LOCK_MALFORMED");
   });
 });
