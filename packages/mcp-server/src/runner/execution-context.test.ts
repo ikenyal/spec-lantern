@@ -16,7 +16,11 @@
 //   - The generated Vitest config MERGES the target's own config and only adds
 //     the seed/clock setup module + pinned TZ.
 
-import { describe, expect, it } from "vitest";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { pathToFileURL } from "node:url";
+import { afterAll, describe, expect, it } from "vitest";
 import type { ExecutionContext } from "@spec-lantern/types";
 import {
   FIXED_TIME_ENV,
@@ -118,6 +122,94 @@ describe("buildSeedClockSetupModule — seeds fast-check + pins TZ in-container"
     // Wrapped in try/catch so a non-fast-check property is not perturbed.
     expect(module).toContain("try");
     expect(module).toContain("catch");
+  });
+
+  // GAP 1 (runner-fixedclock-helpers): a property on the GENERIC execute path —
+  // including a jsdom component render — must observe the recorded
+  // Fixed_Current_Time on new Date()/Date.now(), NOT the host wall clock, or the
+  // monthly-order verdict is nondeterministic and needs re-locks. The generic
+  // setup module therefore installs a Controllable_Clock pinned to the recorded
+  // instant (read from FIXED_TIME_ENV), mirroring the component-render path.
+  describe("installs a Controllable_Clock pinned to the recorded Fixed_Current_Time (GAP 1)", () => {
+    it("reads the Fixed_Current_Time from the recorded env var (not the host clock)", () => {
+      // The clock is driven by the RECORDED instant threaded in as FIXED_TIME_ENV,
+      // so a replay reproduces the exact same date — never the real wall clock.
+      expect(module).toContain(`process.env[${JSON.stringify(FIXED_TIME_ENV)}]`);
+    });
+
+    it("pins Vitest fake timers to that recorded instant so new Date()/Date.now() are fixed", () => {
+      // Installing fake timers + setSystemTime(fixedInstant) is what makes
+      // new Date()/Date.now() return the recorded date instead of the host clock.
+      expect(module).toContain("useFakeTimers");
+      expect(module).toContain("setSystemTime");
+      expect(module).toContain("fixedInstant");
+    });
+
+    it("pins the clock per-test as an overridable default (beforeEach/afterEach), not a forced global", () => {
+      // beforeEach/afterEach gives a sane default a property can still override
+      // with its own vi.useFakeTimers()/vi.setSystemTime() per fast-check
+      // iteration (the walking-skeleton path), exactly like the component-render
+      // Controllable_Clock. afterEach restores real timers so nothing leaks.
+      expect(module).toContain("beforeEach");
+      expect(module).toContain("afterEach");
+      expect(module).toContain("useRealTimers");
+    });
+
+    it("only pins the clock when a valid Fixed_Current_Time is present (degrades to a no-op otherwise)", () => {
+      // An absent/unparseable instant must not pin a clock; a run with no fixed
+      // time is unaffected and classification is never perturbed.
+      expect(module).toContain("hasFixedInstant");
+      expect(module).toContain("Number.isNaN");
+    });
+
+    it("imports vitest tolerantly so a non-Vitest run is never crashed by the clock default", () => {
+      // The clock install is wrapped so vitest being unresolvable degrades to a
+      // no-op rather than throwing (same tolerance as the fast-check seeding).
+      expect(module).toContain('await import("vitest")');
+    });
+  });
+});
+
+// GAP 1 BEHAVIORAL TEST (runner-fixedclock-helpers): the string-builder checks
+// above prove the mechanism is EMITTED; this one proves it WORKS. It writes the
+// generated setup module to a temp .mjs with FIXED_TIME_ENV set to a recorded
+// instant that is NOT the host wall clock, imports it so its beforeEach/afterEach
+// register for this suite, and then asserts a property observing
+// new Date()/Date.now() sees the RECORDED instant. It FAILS if the property ever
+// sees a date other than the recorded one (e.g. the real Nov-2026 wall clock).
+describe("buildSeedClockSetupModule — the recorded fixed clock actually drives Date (GAP 1)", async () => {
+  // A recorded instant deliberately far from any plausible host wall clock, so
+  // "sees the recorded date" and "sees the host clock" can never coincide.
+  const RECORDED_FIXED_TIME = "2025-01-01T00:00:00.000Z";
+  const tmpDir = mkdtempSync(join(tmpdir(), "spec-lantern-seed-clock-"));
+  const prevFixedTime = process.env[FIXED_TIME_ENV];
+
+  // The generated module reads FIXED_TIME_ENV at import time — set it first.
+  process.env[FIXED_TIME_ENV] = RECORDED_FIXED_TIME;
+
+  const modulePath = join(tmpDir, "seed-clock-setup.mjs");
+  writeFileSync(modulePath, buildSeedClockSetupModule());
+
+  // Import the generated module here (top of the suite body) so the
+  // beforeEach/afterEach it registers via vitest apply to the it()s below.
+  await import(pathToFileURL(modulePath).href);
+
+  afterAll(() => {
+    if (prevFixedTime === undefined) {
+      delete process.env[FIXED_TIME_ENV];
+    } else {
+      process.env[FIXED_TIME_ENV] = prevFixedTime;
+    }
+    rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  it("makes new Date() return the recorded Fixed_Current_Time, not the host wall clock", () => {
+    // Under the pinned clock, new Date() is the recorded instant exactly.
+    expect(new Date().toISOString()).toBe(RECORDED_FIXED_TIME);
+  });
+
+  it("makes Date.now() return the recorded Fixed_Current_Time epoch, not the host clock", () => {
+    expect(Date.now()).toBe(Date.parse(RECORDED_FIXED_TIME));
   });
 });
 

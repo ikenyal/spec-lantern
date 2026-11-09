@@ -49,6 +49,36 @@ via props). An internally-fetching component is recorded `unverifiable`
    assertion FAIL ("expected a data row, found none"), not an opaque crash the
    runner must classify as an execution error.
 
+## Helpers the runner already provides — rely on them, don't rebuild them
+
+The runner wires two common testing-library helpers into the test phase, so you
+do NOT need to register matchers or install anything yourself:
+
+- **`@testing-library/jest-dom` matchers are already registered.** DOM matchers
+  such as `toHaveAttribute`, `toBeInTheDocument`, `toHaveTextContent`, and
+  `toHaveClass` work out of the box — just call them on `expect(...)`. (They used
+  to fail with "Invalid Chai property" because the package was installed but
+  never registered; the generic execute path now registers them for you.) Do NOT
+  add your own `import "@testing-library/jest-dom"` / `expect.extend(...)` — it
+  is redundant.
+- **`@testing-library/user-event` is available.** `import userEvent from
+  "@testing-library/user-event"` resolves inside the runner (it is part of the
+  pinned toolchain fetched during the install phase). Use it for realistic
+  pointer/keyboard interactions when `fireEvent` is not enough. Note that under
+  the pinned fake clock you must advance timers for user-event's delays, or
+  create it with `userEvent.setup({ advanceTimers: vi.advanceTimersByTime })`.
+
+Both are fetched through the same registry proxy during the install phase; the
+no-network test phase never installs, so do not add them to the property file as
+if they were missing.
+
+The recorded fixed clock is also applied for you: `new Date()`/`Date.now()`
+return the recorded Fixed_Current_Time on the generic execute path even before
+you call `vi.useFakeTimers()` yourself, so a component that reads the clock
+renders deterministically. Pinning your own clock per iteration (below) still
+takes precedence and is the right thing to do when the asserted date is derived
+from the generated input.
+
 ### Do NOT use `waitFor` under fake timers without the bridge
 
 `@testing-library`'s `waitFor` polls on real timers unless it detects a

@@ -67,6 +67,14 @@ export const PINNED_TEST_TOOLCHAIN = [
   "jsdom@^25.0.1",
   "@testing-library/react@^16.1.0",
   "@testing-library/jest-dom@^6.6.3",
+  // user-event is the standard way a component property drives real pointer /
+  // keyboard interactions. It is on the 14.x line — the current stable major
+  // that pairs with @testing-library/react@16 and @testing-library/jest-dom@6
+  // (each testing-library package versions independently). Pinned here so the
+  // no-network test phase (which cannot install) finds it already on disk, and
+  // fetched through the same registry proxy as the rest of the toolchain during
+  // the install phase.
+  "@testing-library/user-event@^14.5.2",
 ].join(" ");
 
 /**
