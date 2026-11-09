@@ -174,12 +174,23 @@ export {
   buildExecutionContextEnv,
   buildSeedClockSetupModule,
   buildSeedClockVitestConfig,
+  buildTsxLoaderPluginSource,
   SEED_ENV,
   FIXED_TIME_ENV,
   TIMEZONE_ENV,
   SEED_SETUP_FILE,
   SEED_CONFIG_FILE,
 } from "./runner/execution-context.js";
+
+/**
+ * Auto-jsdom detection for a property test file (packaged-Power stumble #2).
+ * {@link propertyFileNeedsDom} reports whether a property imports react-dom /
+ * `@testing-library/*` / a `.tsx` module and set no `// @vitest-environment`
+ * pragma; the test phase then defaults the generated config to jsdom so a
+ * forgotten pragma does not crash with "document is not defined" (an explicit
+ * pragma still wins).
+ */
+export { propertyFileNeedsDom } from "./runner/dom-detect.js";
 
 /**
  * jsdom component rendering under a Controllable_Clock (task 12.1). The GENERIC

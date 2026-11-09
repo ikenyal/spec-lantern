@@ -25,6 +25,7 @@ import {
   buildExecutionContextEnv,
   buildSeedClockSetupModule,
   buildSeedClockVitestConfig,
+  buildTsxLoaderPluginSource,
   recordExecutionContext,
 } from "./execution-context.js";
 
@@ -159,5 +160,91 @@ describe("buildSeedClockVitestConfig — merges the target's own config", () => 
     // Still wires the setup module + pinned TZ.
     expect(cfg).toContain("./.spec-lantern-seed-setup.mjs");
     expect(cfg).toContain('TZ: "UTC"');
+  });
+
+  it("emits a tsx-loader plugin scoped to the staged property file (JSX in a .test.ts)", () => {
+    // Stumble #1: a `.test.ts` property containing JSX failed to load because
+    // esbuild parsed it with the `ts` loader. The generated config must install
+    // a plugin that parses EXACTLY the staged property file with the tsx loader.
+    const cfg = buildSeedClockVitestConfig({
+      setupModuleRel: "./.spec-lantern-seed-setup.mjs",
+      baseConfigModule: null,
+      timezone: "UTC",
+      propertyTestFileRel:
+        ".spec-lantern/pc/properties/property-1.claim-x.test.ts",
+    });
+
+    // Imports esbuild's transform and wires a plugin keyed to the property file.
+    expect(cfg).toContain('import { transform as __specLanternEsbuildTransform } from "esbuild"');
+    expect(cfg).toContain("spec-lantern-tsx-property-loader");
+    expect(cfg).toContain('loader: "tsx"');
+    expect(cfg).toContain(
+      ".spec-lantern/pc/properties/property-1.claim-x.test.ts",
+    );
+    // The plugin is registered in the merged config's `plugins`.
+    expect(cfg).toContain("plugins: specLanternTsxPlugins");
+    expect(cfg).toContain(
+      "const specLanternTsxPlugins = [specLanternTsxLoaderPlugin]",
+    );
+  });
+
+  it("emits no tsx plugin and does not set jsdom when neither option is given (back-compat)", () => {
+    const cfg = buildSeedClockVitestConfig({
+      setupModuleRel: "./.spec-lantern-seed-setup.mjs",
+      baseConfigModule: null,
+      timezone: "UTC",
+    });
+
+    // Empty plugins array, no esbuild transform import, no forced environment.
+    expect(cfg).toContain("const specLanternTsxPlugins = []");
+    expect(cfg).not.toContain("spec-lantern-tsx-property-loader");
+    expect(cfg).not.toContain('environment: "jsdom"');
+  });
+
+  it("defaults environment to jsdom only when autoJsdom is set", () => {
+    // Stumble #2: a DOM-touching property with no pragma crashed under node.
+    const withJsdom = buildSeedClockVitestConfig({
+      setupModuleRel: "./.spec-lantern-seed-setup.mjs",
+      baseConfigModule: null,
+      timezone: "UTC",
+      propertyTestFileRel: "properties/property-1.claim-x.test.ts",
+      autoJsdom: true,
+    });
+    expect(withJsdom).toContain('environment: "jsdom"');
+
+    const withoutJsdom = buildSeedClockVitestConfig({
+      setupModuleRel: "./.spec-lantern-seed-setup.mjs",
+      baseConfigModule: null,
+      timezone: "UTC",
+      propertyTestFileRel: "properties/property-1.claim-x.test.ts",
+      autoJsdom: false,
+    });
+    expect(withoutJsdom).not.toContain('environment: "jsdom"');
+  });
+});
+
+describe("buildTsxLoaderPluginSource — scoped tsx parsing of the property file", () => {
+  it("matches the property file by path suffix, strips a leading ./, and uses the tsx loader", () => {
+    const src = buildTsxLoaderPluginSource(
+      "./.spec-lantern/pc/properties/property-1.claim-x.test.ts",
+    );
+
+    // The leading "./" is stripped so the suffix match is stable.
+    expect(src).toContain(
+      '".spec-lantern/pc/properties/property-1.claim-x.test.ts"',
+    );
+    // Matches either the exact relative path or any absolute path ending in it.
+    expect(src).toContain("path === __specLanternPropRel");
+    expect(src).toContain('path.endsWith("/" + __specLanternPropRel)');
+    // Runs "pre" so it claims the file before the default .ts loader, and parses
+    // it as tsx via esbuild's transform.
+    expect(src).toContain('enforce: "pre"');
+    expect(src).toContain('loader: "tsx"');
+    // Uses the AUTOMATIC JSX runtime so the property file needs no `import React`
+    // (the classic runtime's React.createElement would throw "React is not defined").
+    expect(src).toContain('jsx: "automatic"');
+    expect(src).toContain('jsxImportSource: "react"');
+    // Reads the file itself in its load hook (does not rely on Vite's ts loader).
+    expect(src).toContain("__specLanternReadFile");
   });
 });

@@ -236,6 +236,35 @@ if (seed !== undefined && Number.isFinite(seed)) {
  * `setupModuleRel` and `baseConfigModule` are POSIX-relative paths inside the
  * mount (the caller resolves them against `CONTAINER_WORKDIR`), so this stays a
  * pure string builder and the config is relocatable with the mount.
+ *
+ * JSX IN A `.test.ts` PROPERTY FILE (the first packaged-Power stumble). A
+ * `component_rendered` property authored by hand commonly contains JSX (it
+ * renders the component with `<Foo .../>`), yet the spec layout names every
+ * property file `property-{n}.{claimId}.test.ts` — a `.ts` extension, not
+ * `.tsx`. esbuild (Vite's transformer) picks its loader from the file
+ * extension, so a `.ts` file is parsed with the `ts` loader, which REJECTS JSX
+ * ("Expected '>', got 'books'") and the whole file fails to load as an
+ * EXECUTION_ERROR before any test registers. Renaming to `.tsx` is not an
+ * option — the layout, the derivation loader, and the filename regex all key
+ * off `.test.ts`. The fix keeps the naming and instead tells esbuild to parse
+ * the STAGED PROPERTY FILES with the `tsx` loader via a tiny inline Vite plugin
+ * (`load`-hook that re-runs esbuild with `loader: "tsx"` only for those files),
+ * so JSX in a `.test.ts` property works without touching how the target's own
+ * `.ts` sources are transformed. See {@link buildTsxLoaderPluginSource}.
+ *
+ * AUTO-JSDOM WHEN THE PROPERTY TOUCHES THE DOM (the second stumble). A property
+ * that imports `react-dom`, `@testing-library/*`, or a `.tsx` module needs a
+ * browser-like DOM, which under the generic execute path's config is NOT set
+ * (`test.environment` is left to the target, usually `node`). Forgetting the
+ * `// @vitest-environment jsdom` pragma then crashes with
+ * "ReferenceError: document is not defined". When the caller detects those
+ * imports and passes `autoJsdom: true`, this builder sets `test.environment =
+ * "jsdom"` in the generated config so the property runs under jsdom
+ * automatically. Vitest's per-file `// @vitest-environment` pragma OVERRIDES
+ * the config environment, so an explicit pragma still wins; this only supplies
+ * a DOM when the author set none. The clear DOM hint
+ * ({@link ./vitest-classify.ts} `domEnvironmentHint`) still catches any case
+ * the import scan cannot see.
  */
 export function buildSeedClockVitestConfig(options: {
   setupModuleRel: string;
@@ -247,19 +276,66 @@ export function buildSeedClockVitestConfig(options: {
    */
   baseConfigModule: string | null;
   timezone: string;
+  /**
+   * POSIX-relative path (inside the mount) to the ONE staged property test file
+   * this run executes. The emitted config installs a `tsx` esbuild loader
+   * scoped to EXACTLY this file (so JSX in a `.test.ts` property parses) while
+   * leaving the target's own `.ts` transforms untouched. Optional for
+   * back-compat; when omitted no tsx-loader plugin is emitted.
+   */
+  propertyTestFileRel?: string;
+  /**
+   * When `true`, set `test.environment = "jsdom"` in the generated config so a
+   * property that touches the DOM runs under jsdom WITHOUT an explicit
+   * `// @vitest-environment jsdom` pragma. The caller sets this after scanning
+   * the property file for DOM imports (`react-dom`, `@testing-library/*`, a
+   * `.tsx` import). A per-file pragma still overrides this (Vitest precedence),
+   * so an explicit author choice always wins.
+   */
+  autoJsdom?: boolean;
 }): string {
-  const { setupModuleRel, baseConfigModule, timezone } = options;
+  const {
+    setupModuleRel,
+    baseConfigModule,
+    timezone,
+    propertyTestFileRel,
+    autoJsdom = false,
+  } = options;
   // Either statically import the resolved base config (Vite transpiles TS), or
-  // use an empty base when the target has no config. A static import is what
-  // lets a `.ts` base config load through Vite instead of escaping to Node.
+  // use an empty base when the target has no base config. A static import is
+  // what lets a `.ts` base config load through Vite instead of escaping to Node.
   const baseImport =
     baseConfigModule === null
       ? "const baseRaw = {};"
       : `import baseRaw from ${JSON.stringify(baseConfigModule)};`;
+
+  // The inline tsx-loader plugin (scoped to the one staged property file) so
+  // JSX in a `.test.ts` property parses. Emitted only when the caller passed a
+  // property file path; otherwise the `plugins` entry is empty.
+  const tsxPluginDecl =
+    propertyTestFileRel === undefined
+      ? "const specLanternTsxPlugins = [];"
+      : `${buildTsxLoaderPluginSource(propertyTestFileRel)}\n` +
+        "const specLanternTsxPlugins = [specLanternTsxLoaderPlugin];";
+
+  // Auto-jsdom: merge `environment: "jsdom"` only when the caller detected DOM
+  // imports in the property file. A per-file `// @vitest-environment` pragma
+  // still overrides this at load time, so an explicit author choice wins.
+  const environmentEntry = autoJsdom
+    ? `\n    // Auto-selected because the property imports react-dom /
+    // @testing-library/* / a .tsx module and set no environment pragma. A
+    // per-file "// @vitest-environment" pragma still overrides this.
+    environment: "jsdom",`
+    : "";
+
   return `// Generated by spec-lantern (task 10.3). Merges the target's own Vitest
 // config (preserving aliases / the jsdom environment) and only adds the
 // seed/clock setup module + the pinned TZ so the execution is deterministic.
+// Also parses the staged property file with the tsx loader (so JSX in a
+// .test.ts property works) and, when the property touches the DOM, defaults the
+// environment to jsdom (a per-file pragma still overrides it).
 import { mergeConfig } from "vitest/config";
+import { transform as __specLanternEsbuildTransform } from "esbuild";
 ${baseImport}
 
 // A Vite/Vitest config may be an object OR a (possibly async) factory function.
@@ -271,11 +347,77 @@ const base =
     ? await baseExport({ mode: "test", command: "serve" })
     : (baseExport ?? {});
 
+${tsxPluginDecl}
+
 export default mergeConfig(base, {
-  test: {
+  plugins: specLanternTsxPlugins,
+  test: {${environmentEntry}
     setupFiles: [${JSON.stringify(setupModuleRel)}],
     env: { TZ: ${JSON.stringify(timezone)} },
   },
 });
 `;
+}
+
+/**
+ * Build the source of the inline Vite plugin that parses the ONE staged
+ * property file with esbuild's `tsx` loader, so JSX in a `.test.ts` property
+ * file loads.
+ *
+ * WHY A SCOPED PLUGIN RATHER THAN A GLOBAL `esbuild.loader`. Setting Vite's
+ * top-level `esbuild.loader = "tsx"` with an `include` narrows esbuild to that
+ * include for EVERY file, which risks dropping the target's own `.ts`/`.tsx`
+ * transforms (especially when a React plugin in the base config already owns
+ * `.tsx`). This plugin instead touches EXACTLY the staged property file: its
+ * `load` hook reads that one file and runs esbuild's `transform` with
+ * `loader: "tsx"` on it, returning transformed JS; every other module is left
+ * to Vite's normal pipeline (the plugin returns `null`, meaning "not handled").
+ * The plugin runs with `enforce: "pre"` so it claims the file before Vite's
+ * default `.ts` loader does.
+ *
+ * It keys off the file's absolute path ending with the POSIX-relative property
+ * path, so it matches regardless of where the mount is rooted. esbuild is
+ * already a transitive dependency of Vite/Vitest (installed into the target's
+ * `node_modules` by the install phase), so importing `esbuild`'s `transform`
+ * needs no extra network or dependency.
+ *
+ * @param propertyTestFileRel POSIX-relative path (inside the mount) to the one
+ *   staged property test file to parse as tsx.
+ */
+export function buildTsxLoaderPluginSource(propertyTestFileRel: string): string {
+  // Strip any leading "./" so the suffix match is stable, then match on the
+  // path ending with "/<rel>" (or exactly <rel>) regardless of the mount root.
+  const normalizedRel = propertyTestFileRel.replace(/^\.?\//, "");
+  return `import { readFile as __specLanternReadFile } from "node:fs/promises";
+// spec-lantern tsx-loader plugin: parse the staged property file as TSX so JSX
+// in a .test.ts property loads. Scoped to EXACTLY this one file; every other
+// module is left to Vite's normal pipeline. Runs "pre" so it claims the file
+// before the default .ts loader.
+const __specLanternPropRel = ${JSON.stringify(normalizedRel)};
+const __specLanternMatches = (id) => {
+  const path = id.split("?")[0].split("\\\\").join("/");
+  return path === __specLanternPropRel || path.endsWith("/" + __specLanternPropRel);
+};
+const specLanternTsxLoaderPlugin = {
+  name: "spec-lantern-tsx-property-loader",
+  enforce: "pre",
+  async load(id) {
+    if (!__specLanternMatches(id)) return null;
+    const filePath = id.split("?")[0];
+    const source = await __specLanternReadFile(filePath, "utf8");
+    const result = await __specLanternEsbuildTransform(source, {
+      loader: "tsx",
+      format: "esm",
+      // Use the AUTOMATIC JSX runtime so JSX compiles to react/jsx-runtime
+      // calls and the property file does NOT need \`import React\` in scope
+      // (the classic runtime's \`React.createElement\` would throw
+      // "React is not defined"). jsxImportSource defaults to "react".
+      jsx: "automatic",
+      jsxImportSource: "react",
+      sourcefile: filePath,
+      sourcemap: true,
+    });
+    return { code: result.code, map: result.map };
+  },
+};`;
 }

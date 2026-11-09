@@ -632,3 +632,170 @@ describe("execute_properties — relative-path import from a spec root inside th
     E2E_TIMEOUT_MS,
   );
 });
+
+/* -------------------------------------------------------------------------- */
+/* Part 5 — a JSX property in a `.test.ts` file with NO environment pragma     */
+/*          parses as tsx AND runs under jsdom automatically (two stumbles)    */
+/* -------------------------------------------------------------------------- */
+
+// This part proves BOTH packaged-Power stumbles are closed end-to-end in a REAL
+// container, in the exact shape that bit a second real run:
+//
+//   1. The property file is named `property-{n}.{claimId}.test.ts` — a `.ts`
+//      extension — yet contains JSX (it renders a React component with
+//      `<Foo .../>`). Before the fix esbuild parsed it with the `ts` loader and
+//      the file failed to load ("Expected '>', got 'books'"). The generated
+//      config now installs a tsx-loader plugin scoped to the staged property
+//      file, so the JSX parses.
+//
+//   2. The property imports `@testing-library/react` and a `.tsx` component but
+//      sets NO `// @vitest-environment jsdom` pragma. Before the fix it ran
+//      under the default `node` environment and crashed with
+//      "ReferenceError: document is not defined". The runner now scans the
+//      property file for DOM imports and defaults the environment to jsdom when
+//      the author set no pragma.
+//
+// A VERDICT (not EXECUTION_ERROR) therefore proves the file both PARSED (tsx
+// loader) and RENDERED into a DOM (auto-jsdom) inside the container on the FIRST
+// execution. We assert VERDICT PASS (the component renders the book title it was
+// given). Skipped unless SPEC_LANTERN_SMOKE=1 and Podman is reachable.
+
+describe("execute_properties — JSX in a .test.ts with no pragma parses as tsx AND auto-selects jsdom (stumbles #1 and #2)", () => {
+  it.skipIf(!RUN_SMOKE)(
+    "a JSX property file (no // @vitest-environment pragma) yields a VERDICT, not an EXECUTION_ERROR, on the first execution",
+    async () => {
+      // The target source is only READ (copied out of) on the host, so tmpdir is
+      // fine; the Podman-visible working copy is made under ~/.spec-lantern.
+      const target = await mkdtemp(join(tmpdir(), "spec-lantern-jsx-nopragma-"));
+      try {
+        // A minimal React target: package.json declaring react/react-dom so the
+        // install phase fetches them (plus the pinned test toolchain) through the
+        // proxy, and a tiny props-driven component the property renders.
+        await writeFile(
+          join(target, "package.json"),
+          JSON.stringify(
+            {
+              name: "jsx-nopragma-target",
+              version: "1.0.0",
+              private: true,
+              dependencies: {
+                react: "^18.3.1",
+                "react-dom": "^18.3.1",
+              },
+            },
+            null,
+            2,
+          ) + "\n",
+        );
+        // A minimal Vite config selecting the AUTOMATIC JSX runtime, so the
+        // target's own `.tsx` component compiles without needing `import React`
+        // — exactly what a real Vite/React target gets from
+        // `@vitejs/plugin-react`. (spec-lantern's own tsx-loader plugin handles
+        // the PROPERTY file's JSX; this handles the component the property imports.)
+        await writeFile(
+          join(target, "vite.config.ts"),
+          [
+            'import { defineConfig } from "vite";',
+            "export default defineConfig({",
+            '  esbuild: { jsx: "automatic" },',
+            "});",
+            "",
+          ].join("\n"),
+        );
+        await mkdir(join(target, "src", "components"), { recursive: true });
+        // A plain props-driven component. `.tsx` so the property's import of it
+        // is itself a DOM signal, and so it is transformed normally by Vite.
+        await writeFile(
+          join(target, "src", "components", "BookTitle.tsx"),
+          [
+            "// Renders the title of the book it is given.",
+            "export function BookTitle({ title }: { title: string }) {",
+            "  return <h1>{title}</h1>;",
+            "}",
+            "",
+          ].join("\n"),
+        );
+
+        // Spec root INSIDE the target, two dirs deep, so the property runs in
+        // place and its relative import of the component resolves.
+        const specRel = ".spec-lantern/book-title";
+        const specRoot = join(target, specRel);
+        const claimId = "claim-renders-title";
+        const propertyId = `property-1.${claimId}`;
+        await mkdir(join(specRoot, "properties"), { recursive: true });
+        // The property file: a `.test.ts` extension, CONTAINS JSX, imports
+        // @testing-library/react and the `.tsx` component, and sets NO
+        // environment pragma. This is the exact shape of the second-run stumble.
+        await writeFile(
+          join(specRoot, "properties", `${propertyId}.test.ts`),
+          [
+            "// Feature: spec-lantern, Property 1: BookTitle renders its title",
+            'import { test, expect } from "vitest";',
+            'import fc from "fast-check";',
+            'import { render, cleanup } from "@testing-library/react";',
+            // Relative import of the REAL .tsx component (a DOM signal), resolving
+            // from <copy>/.spec-lantern/book-title/properties/ up three dirs.
+            'import { BookTitle } from "../../../src/components/BookTitle";',
+            "",
+            'test("BookTitle renders the title it is given", () => {',
+            "  fc.assert(",
+            "    fc.property(fc.string({ minLength: 1 }), (title) => {",
+            // JSX in a `.test.ts` file — the stumble-#1 trigger. The component
+            // renders into a DOM — the stumble-#2 trigger (no pragma set).
+            "      const { container } = render(<BookTitle title={title} />);",
+            "      try {",
+            '        const heading = container.querySelector("h1");',
+            "        expect(heading).not.toBeNull();",
+            "        expect(heading?.textContent).toBe(title);",
+            "      } finally {",
+            "        cleanup();",
+            "      }",
+            "    }),",
+            "    { numRuns: 100 },",
+            "  );",
+            "});",
+            "",
+          ].join("\n"),
+        );
+
+        const request: PropertyExecutionRequest = {
+          targetRepoRef: target,
+          properties: [
+            {
+              id: propertyId,
+              claimId,
+              title: "BookTitle renders its title",
+              statement: "the heading text equals the title prop",
+              kind: "component_rendered",
+              validatesRequirements: ["R5"],
+            },
+          ],
+          phase: "initial",
+        };
+
+        // Real container run. The JSX must parse (tsx loader) and the render must
+        // find a DOM (auto-jsdom) — a VERDICT, never the EXECUTION_ERROR the two
+        // stumbles produced ("Expected '>', got ..." / "document is not defined").
+        const result = await executeProperties(request, {
+          specRoot,
+          timeoutSeconds: 600,
+        });
+
+        expect(result.results).toHaveLength(1);
+        const actual = result.results[0];
+        expect(actual?.propertyId).toBe(propertyId);
+        // The key assertion: a real verdict was reached (so the file parsed and
+        // rendered), and it PASSES (the heading text equals the title).
+        expect(actual?.outcome).toBe("VERDICT");
+        if (actual?.outcome === "VERDICT") {
+          expect(actual.verdict).toBe("PASS");
+        }
+      } finally {
+        await rm(target, { recursive: true, force: true }).catch(
+          () => undefined,
+        );
+      }
+    },
+    E2E_TIMEOUT_MS,
+  );
+});

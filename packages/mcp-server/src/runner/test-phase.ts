@@ -111,6 +111,7 @@ import {
   domEnvironmentHint,
   parseVitestJson,
 } from "./vitest-classify.js";
+import { propertyFileNeedsDom } from "./dom-detect.js";
 
 /* -------------------------------------------------------------------------- */
 /* Defaults                                                                   */
@@ -394,6 +395,20 @@ function buildTestScript(inContainerTestPath: string, ctx: ExecutionContext): st
 async function stageSeedClockConfig(
   repoAbs: string,
   timezone: string,
+  options: {
+    /**
+     * POSIX-relative path (inside the mount) to the ONE staged property test
+     * file this run executes, so the generated config parses it with the `tsx`
+     * loader (JSX in a `.test.ts` property) and can auto-select jsdom for it.
+     */
+    propertyTestFileRel?: string;
+    /**
+     * When `true`, default the generated config's `test.environment` to
+     * `jsdom` (the property imports react-dom / @testing-library/* / a .tsx
+     * module and set no environment pragma). A per-file pragma still overrides.
+     */
+    autoJsdom?: boolean;
+  } = {},
 ): Promise<() => Promise<void>> {
   const setupHostPath = join(repoAbs, SEED_SETUP_FILE);
   const configHostPath = join(repoAbs, SEED_CONFIG_FILE);
@@ -434,6 +449,10 @@ async function stageSeedClockConfig(
       // null when it has none.
       baseConfigModule,
       timezone,
+      // Parse the staged property file as tsx (JSX in a .test.ts property) and,
+      // when it touches the DOM with no pragma, default its environment to jsdom.
+      propertyTestFileRel: options.propertyTestFileRel,
+      autoJsdom: options.autoJsdom,
     }),
   );
 
@@ -545,10 +564,43 @@ export async function runTestPhaseWithContext(
 
   try {
     staged = await resolveTestFileInMount(repoAbs, propertyTestFile);
+
+    // The staged property file's path RELATIVE to the mount root (POSIX). The
+    // generated config uses it to parse that one file with the `tsx` loader (so
+    // JSX in a `.test.ts` property loads) and to scope the auto-jsdom default.
+    const propertyTestFileRel = staged.inContainerPath.startsWith(
+      `${CONTAINER_WORKDIR}/`,
+    )
+      ? staged.inContainerPath.slice(CONTAINER_WORKDIR.length + 1)
+      : undefined;
+
+    // Scan the property file's source for DOM imports (react-dom,
+    // @testing-library/*, a .tsx import). When present AND the file set no
+    // `// @vitest-environment` pragma, default the run to jsdom automatically so
+    // a forgotten pragma does not crash with "document is not defined". Reading
+    // the file is not executing it. A read failure is non-fatal — we simply do
+    // not auto-select jsdom and fall back to the runtime DOM hint.
+    let autoJsdom = false;
+    if (propertyTestFileRel !== undefined) {
+      try {
+        const propertySource = await readFile(
+          join(repoAbs, propertyTestFileRel),
+          "utf8",
+        );
+        autoJsdom = propertyFileNeedsDom(propertySource);
+      } catch {
+        autoJsdom = false;
+      }
+    }
+
     // Stage the seed/clock setup module + merge-config into the mount so the
     // in-container Vitest seeds fast-check from the recorded Random_Seed and
-    // pins TZ (task 10.3), merging the target's own config.
-    cleanupSeedConfig = await stageSeedClockConfig(repoAbs, ctx.timezone);
+    // pins TZ (task 10.3), merging the target's own config. Also parses the
+    // staged property file as tsx and (when it touches the DOM) defaults to jsdom.
+    cleanupSeedConfig = await stageSeedClockConfig(repoAbs, ctx.timezone, {
+      propertyTestFileRel,
+      autoJsdom,
+    });
     const script = buildTestScript(staged.inContainerPath, ctx);
 
     // Environment carrying the recorded Execution_Context into the container:
