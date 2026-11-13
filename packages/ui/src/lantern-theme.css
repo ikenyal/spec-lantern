@@ -1708,3 +1708,7 @@ body {
     width: 100%;
   }
 }
+
+/* Demo video link sits next to the game link in the header. */
+.lantern-play-link--video { margin-left: 0.5rem; }
+@media (max-width: 420px) { .lantern-play-link--video { margin-left: 0; margin-top: 0.5rem; } }

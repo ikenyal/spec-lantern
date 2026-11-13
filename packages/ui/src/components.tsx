@@ -149,6 +149,7 @@ export const TEST_IDS = {
   tryIt: "lantern-try-it",
   // "Play the game" link (report header + Try it section) to the #play route.
   playLink: "lantern-play-link",
+  watchVideo: "watch-video",
   // Page footer at the very bottom of every target.
   footer: "lantern-footer",
   footerCredit: "lantern-footer-credit",
@@ -1466,6 +1467,28 @@ export function PlayGameLink(): ReactElement {
   );
 }
 
+
+/** The 2-minute demo video on YouTube. */
+export const DEMO_VIDEO_URL = "https://youtu.be/H2C7ndx9C8c";
+
+/** A small link to the demo video, shown next to {@link PlayGameLink}. */
+export function WatchVideoLink(): ReactElement {
+  return (
+    <a
+      className="lantern-play-link lantern-play-link--video"
+      data-testid={TEST_IDS.watchVideo}
+      href={DEMO_VIDEO_URL}
+      target="_blank"
+      rel="noopener noreferrer"
+    >
+      <span className="lantern-play-link__flame" aria-hidden="true">
+        ▶
+      </span>
+      Watch the 2-minute demo
+    </a>
+  );
+}
+
 /* -------------------------------------------------------------------------- */
 /* TryItSection                                                               */
 /* -------------------------------------------------------------------------- */
@@ -1713,6 +1736,7 @@ export function LanternReportView({
             {sampleBadge}
           </p>
           <PlayGameLink />
+          <WatchVideoLink />
           
           <h1
             className="lantern-header__headline"
@@ -1745,6 +1769,7 @@ export function LanternReportView({
             Target: {targetLabel}
           </p>
           <PlayGameLink />
+          <WatchVideoLink />
         </header>
       )}
       {story ? (

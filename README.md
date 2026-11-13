@@ -3,7 +3,9 @@
 > AI reviewers read a comment, believe it, and sign off. spec-lantern executes every claim a comment makes and reports where the code lies.
 
 **Hosted demo:** <https://d2xayupxggkiqt.cloudfront.net/> ([base URL in source](./packages/ui/src/site-meta.ts))
-· **3-minute video:** _(placeholder — to be added)_
+· **Demo video (2 min):** <https://youtu.be/H2C7ndx9C8c>
+
+[![spec-lantern demo video](https://img.youtube.com/vi/H2C7ndx9C8c/maxresdefault.jpg)](https://youtu.be/H2C7ndx9C8c)
 
 Built for [Kiroween 2026](https://kiroween.devpost.com/), category: Resurrection.
 
