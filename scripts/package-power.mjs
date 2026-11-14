@@ -177,6 +177,8 @@ never stops at reading.
 - Source, spec and design: https://github.com/ikenyal/spec-lantern
 - Kiroween 2026 submission: https://devpost.com/software/spec-lantern
 
+[![spec-lantern demo video](https://img.youtube.com/vi/H2C7ndx9C8c/maxresdefault.jpg)](https://youtu.be/H2C7ndx9C8c)
+
 ## Requirements
 
 - **Kiro** (the AI IDE that loads Powers).
