@@ -172,6 +172,11 @@ properties in an isolated runner and compares predicted vs actual. The guiding
 rule: an agent that only *reads* code trusts misleading comments — so this Power
 never stops at reading.
 
+- Demo video (2 min): https://youtu.be/H2C7ndx9C8c
+- Live report and the "Trust or Test?" game: https://d2xayupxggkiqt.cloudfront.net/
+- Source, spec and design: https://github.com/ikenyal/spec-lantern
+- Kiroween 2026 submission: https://devpost.com/software/spec-lantern
+
 ## Requirements
 
 - **Kiro** (the AI IDE that loads Powers).
